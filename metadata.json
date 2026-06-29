@@ -1,0 +1,6 @@
+{
+  "name": "Farmer's Gate",
+  "description": "Multi-store management blueprint for crop outlets divided into Sales, Purchases, and Inventory, with store requirements aggregation, WhatsApp ordering, and Supabase integrations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
