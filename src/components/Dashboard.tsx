@@ -13,7 +13,7 @@ import {
   Smartphone,
   ShieldCheck
 } from 'lucide-react';
-import { Store, Sale, Purchase, InventoryItem } from '../types';
+import { Store, Sale, Purchase, InventoryItem, TerminalActivityLog } from '../types';
 
 interface DashboardProps {
   stores: Store[];
@@ -22,6 +22,8 @@ interface DashboardProps {
   inventory: InventoryItem[];
   role?: string;
   onSelectStore?: (store: Store) => void;
+  terminalLogs?: TerminalActivityLog[];
+  onClearLogs?: () => void;
 }
 
 export default function Dashboard({
@@ -30,7 +32,9 @@ export default function Dashboard({
   purchases,
   inventory,
   role,
-  onSelectStore
+  onSelectStore,
+  terminalLogs = [],
+  onClearLogs
 }: DashboardProps) {
   const [selectedFilterStore, setSelectedFilterStore] = useState<string>('all');
   const isEmployee = role === 'Employee';
@@ -282,6 +286,88 @@ export default function Dashboard({
           )}
         </div>
       </div>
+
+      {/* 4. SECURE TERMINAL AUDIT LOGS */}
+      {role === 'Admin' && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                <span className="p-1 rounded bg-slate-100 text-slate-800">🔒</span>
+                Farmer's Gate Terminal Activity Logs
+              </h3>
+              <p className="text-[11px] text-slate-500">Real-time audit track of admin and store manager logins & logouts.</p>
+            </div>
+            {terminalLogs.length > 0 && onClearLogs && (
+              <button
+                onClick={onClearLogs}
+                className="text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/80 px-2.5 py-1.5 rounded-lg border border-rose-100 transition-colors cursor-pointer text-center shrink-0 self-start sm:self-auto"
+              >
+                Clear Audit History
+              </button>
+            )}
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-100">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                  <th className="p-3">Timestamp (IST)</th>
+                  <th className="p-3">Terminal ID</th>
+                  <th className="p-3">Branch / Portal Name</th>
+                  <th className="p-3">Access Role</th>
+                  <th className="p-3 text-right">Event Type</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {terminalLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-6 text-center text-slate-400 italic">
+                      No terminal logouts or logins recorded in this session.
+                    </td>
+                  </tr>
+                ) : (
+                  terminalLogs.slice(0, 15).map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="p-3 font-mono text-[11px] text-slate-500">
+                        {new Date(log.timestamp).toLocaleString('en-IN', {
+                          timeZone: 'Asia/Kolkata',
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                          hour12: true
+                        })}
+                      </td>
+                      <td className="p-3 font-mono text-[11px] text-indigo-600 font-bold">{log.terminalId}</td>
+                      <td className="p-3 text-slate-800 font-bold">{log.terminalName}</td>
+                      <td className="p-3">
+                        <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                          {log.role}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wider ${
+                            log.action === 'login'
+                              ? 'bg-emerald-50 border border-emerald-100 text-emerald-700'
+                              : 'bg-rose-50 border border-rose-100 text-rose-700'
+                          }`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${log.action === 'login' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                          {log.action}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
     </div>
   );

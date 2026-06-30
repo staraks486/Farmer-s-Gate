@@ -414,7 +414,7 @@ export default function HeadOffice({
           </div>
           <h3 className="text-base font-black text-slate-900">Access Denied</h3>
           <p className="text-xs text-slate-500">
-            Head Office central administration views are limited to **Administrator** or **Store Manager** roles only. Please use the Active Role Simulator on the sidebar bottom to elevate your access role.
+            Head Office central administration views are limited to **Administrator** or **Store Manager** roles only.
           </p>
         </div>
       </div>

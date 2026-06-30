@@ -162,5 +162,38 @@ export interface AppNotification {
   };
 }
 
+export interface TerminalActivityLog {
+  id: string;
+  timestamp: string;
+  action: 'login' | 'logout';
+  terminalId: string;
+  terminalName: string;
+  role: string;
+}
+
+export interface CpanelSettings {
+  currencySymbol: string;
+  defaultTaxRate: number; // e.g., 0, 5, 12, 18 percent
+  allowNegativeStockCheckout: boolean;
+  autoReorderThresholdPercent: number; // percentage threshold to auto-reorder from HQ
+  alertSoundEnabled: boolean;
+  whatsappMessageTemplate: string;
+  enableCustomerOrderReview: boolean;
+  enableMultipleRegisters: boolean;
+  quickDemoDataEnabled: boolean;
+}
+
+export interface StorefrontAd {
+  id: string;
+  title: string;
+  subtitle: string;
+  discountBadge?: string;
+  imageUrl?: string;
+  isActive: boolean;
+  tagline?: string;
+  actionText?: string;
+}
+
+
 
 

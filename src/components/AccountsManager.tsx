@@ -215,6 +215,63 @@ export default function AccountsManager({ stores, sales, purchases, role }: Acco
     return st ? st.name.replace("Farmer's Gate - ", "") : 'Branch';
   };
 
+  const handleDownloadCSV = () => {
+    // 1. Determine Scope Name
+    const activeStoreName = selectedStoreId === 'all' 
+      ? 'Consolidated (All Branches)' 
+      : selectedStoreId === 'global' 
+        ? 'HQ or Global accounts' 
+        : getStoreName(selectedStoreId);
+
+    let csvContent = "";
+    
+    // Add Company Metadata
+    csvContent += "Farmer's Gate - Financial Report\n";
+    csvContent += `Generated On: ${new Date().toLocaleString()}\n`;
+    csvContent += `Scope: ${activeStoreName}\n`;
+    csvContent += `Filter Type: ${filterType}\n`;
+    csvContent += `Filter Category: ${filterCategory}\n\n`;
+    
+    // Add KPI Summary Section
+    csvContent += "FINANCIAL KEY PERFORMANCE METRICS\n";
+    csvContent += `Total Revenue,INR ${stats.totalRevenue.toFixed(2)}\n`;
+    csvContent += `Total Expense,INR ${stats.totalExpense.toFixed(2)}\n`;
+    csvContent += `Net Profit,INR ${stats.netProfit.toFixed(2)}\n`;
+    csvContent += `Net Profit Margin,${stats.grossMargin.toFixed(2)}%\n`;
+    csvContent += `Sales Revenue (Crops),INR ${stats.salesRev.toFixed(2)}\n`;
+    csvContent += `Stock Procurement Expenses,INR ${stats.purchaseExp.toFixed(2)}\n`;
+    csvContent += `Operational Expenses,INR ${stats.operationalExp.toFixed(2)}\n\n`;
+    
+    // Add Detailed Transaction Log Section
+    csvContent += "TRANSACTION LEDGER DETAILS\n";
+    csvContent += "Date,Transaction ID,Store/Entity,Type,Category,Amount (INR),Description,Source Type\n";
+    
+    filteredTransactions.forEach(tx => {
+      const dateStr = new Date(tx.entryDate).toLocaleDateString();
+      const storeName = getStoreName(tx.storeId);
+      const isManual = tx.id.startsWith('acc-') ? 'Manual Entry' : 'Auto System Sync';
+      
+      // Escape strings to prevent formatting issues in Excel
+      const escapedDesc = `"${tx.description.replace(/"/g, '""')}"`;
+      const escapedCat = `"${tx.category.replace(/"/g, '""')}"`;
+      const escapedStore = `"${storeName.replace(/"/g, '""')}"`;
+      
+      csvContent += `${dateStr},${tx.id},${escapedStore},${tx.type},${escapedCat},${tx.amount.toFixed(2)},${escapedDesc},${isManual}\n`;
+    });
+    
+    // Create blob & trigger immediate browser download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    const fileName = `Farmers_Gate_Ledger_Report_${activeStoreName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.setAttribute("download", fileName);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
       
@@ -232,19 +289,33 @@ export default function AccountsManager({ stores, sales, purchases, role }: Acco
           </p>
         </div>
 
-        {role !== 'Employee' && (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Download CSV Report Button */}
           <button
-            onClick={() => {
-              setFormCategory('Other Expense');
-              setFormType('Expense');
-              setShowForm(!showForm);
-            }}
-            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+            id="btn-export-csv"
+            onClick={handleDownloadCSV}
+            className="border border-slate-200 hover:bg-slate-50 text-slate-700 bg-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+            title="Export financial report to CSV (fully Excel and Sheets compatible)"
           >
-            <Plus className="h-4 w-4" />
-            <span>Log Other Transaction</span>
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+            <span>Download CSV Report</span>
           </button>
-        )}
+
+          {role !== 'Employee' && (
+            <button
+              id="btn-log-tx"
+              onClick={() => {
+                setFormCategory('Other Expense');
+                setFormType('Expense');
+                setShowForm(!showForm);
+              }}
+              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Log Other Transaction</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {successMsg && (

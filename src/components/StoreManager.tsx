@@ -18,9 +18,10 @@ import {
   Minus,
   ShoppingCart,
   IndianRupee,
-  X
+  X,
+  Edit2
 } from 'lucide-react';
-import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings } from '../types';
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
 
 interface StoreManagerProps {
@@ -42,6 +43,7 @@ interface StoreManagerProps {
   onFulfillCustomerOrder?: (order: CustomerOrder) => void;
   onUpdateCustomerOrder?: (order: CustomerOrder) => void;
   onDeleteCustomerOrder?: (id: string) => void;
+  cpanelSettings?: CpanelSettings;
 }
 
 interface PosCartItem {
@@ -144,8 +146,10 @@ export default function StoreManager({
   onDeleteRequirement,
   onFulfillCustomerOrder,
   onUpdateCustomerOrder,
-  onDeleteCustomerOrder
+  onDeleteCustomerOrder,
+  cpanelSettings
 }: StoreManagerProps) {
+  const currencySymbol = cpanelSettings?.currencySymbol || '₹';
   const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info'>('sale');
   const [offlineMode, setOfflineMode] = useState<boolean>(dbGetForceOffline());
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
@@ -180,6 +184,113 @@ export default function StoreManager({
   const [billingQuote, setBillingQuote] = useState('');
   const [posCart, setPosCart] = useState<Record<string, PosCartItem>>({});
   const [posCustomerName, setPosCustomerName] = useState('');
+  
+  // Multiple POS Billing Tabs State
+  const [billingTabs, setBillingTabs] = useState<{
+    id: string;
+    label: string;
+    cart: Record<string, PosCartItem>;
+    customerName: string;
+    whatsappPhone: string;
+  }[]>([
+    { id: 'bill-1', label: 'Bill 1', cart: {}, customerName: '', whatsappPhone: '' },
+    { id: 'bill-2', label: 'Bill 2', cart: {}, customerName: '', whatsappPhone: '' },
+    { id: 'bill-3', label: 'Bill 3', cart: {}, customerName: '', whatsappPhone: '' }
+  ]);
+  const [activeBillingTabId, setActiveBillingTabId] = useState<string>('bill-1');
+
+  const handleSwitchBillingTab = (targetTabId: string) => {
+    setBillingTabs(prev => {
+      const updated = prev.map(t => {
+        if (t.id === activeBillingTabId) {
+          return {
+            ...t,
+            cart: posCart,
+            customerName: posCustomerName,
+            whatsappPhone: whatsappPhone
+          };
+        }
+        return t;
+      });
+      const targetTab = updated.find(t => t.id === targetTabId);
+      if (targetTab) {
+        setPosCart(targetTab.cart);
+        setPosCustomerName(targetTab.customerName);
+        setWhatsappPhone(targetTab.whatsappPhone);
+        setActiveBillingTabId(targetTabId);
+      }
+      return updated;
+    });
+  };
+
+  const handleAddBillingTab = () => {
+    setBillingTabs(prev => {
+      const updated = prev.map(t => {
+        if (t.id === activeBillingTabId) {
+          return { ...t, cart: posCart, customerName: posCustomerName, whatsappPhone: whatsappPhone };
+        }
+        return t;
+      });
+      const newId = `bill-${Date.now()}`;
+      const nextNum = updated.length + 1;
+      const newTab = { id: newId, label: `Bill ${nextNum}`, cart: {}, customerName: '', whatsappPhone: '' };
+      
+      setPosCart({});
+      setPosCustomerName('');
+      setWhatsappPhone('');
+      setActiveBillingTabId(newId);
+      
+      return [...updated, newTab];
+    });
+  };
+
+  const handleRenameBillingTab = (tabId: string) => {
+    const tab = billingTabs.find(t => t.id === tabId);
+    if (!tab) return;
+    const currentName = tabId === activeBillingTabId ? (posCustomerName || tab.label) : (tab.customerName || tab.label);
+    const newName = prompt(`Enter customer name or reference for this billing tab:`, currentName);
+    if (newName === null) return;
+    
+    setBillingTabs(prev => prev.map(t => {
+      if (t.id === tabId) {
+        return { 
+          ...t, 
+          label: newName.trim() || t.label,
+          customerName: tabId === activeBillingTabId ? newName.trim() : t.customerName
+        };
+      }
+      return t;
+    }));
+    
+    if (tabId === activeBillingTabId) {
+      setPosCustomerName(newName.trim());
+    }
+  };
+
+  const handleDeleteBillingTab = (tabId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (billingTabs.length <= 1) {
+      alert("At least one active billing tab must be open.");
+      return;
+    }
+    
+    if (!confirm("Are you sure you want to close this billing tab? All unsaved items in this cart will be lost.")) {
+      return;
+    }
+    
+    setBillingTabs(prev => {
+      const filtered = prev.filter(t => t.id !== tabId);
+      if (activeBillingTabId === tabId) {
+        const nextActive = filtered[0];
+        setPosCart(nextActive.cart);
+        setPosCustomerName(nextActive.customerName);
+        setWhatsappPhone(nextActive.whatsappPhone);
+        setActiveBillingTabId(nextActive.id);
+      }
+      return filtered;
+    });
+  };
+
   const [posSearch, setPosSearch] = useState('');
   const [activeCropFilter, setActiveCropFilter] = useState<'ALL' | 'VEGGIES' | 'FRUITS' | 'GROCERY'>('ALL');
   const [rowInputs, setRowInputs] = useState<Record<string, { quantity: string; unit: string }>>({});
@@ -1410,6 +1521,76 @@ export default function StoreManager({
           ) : (
             /* --- EXPRESS POS POINT OF SALE COUNTER --- */
             <div className="space-y-4 animate-fade-in">
+              {/* POS Multi-Billing Tabs Bar */}
+              <div className="bg-white p-3 rounded-2xl border border-slate-200/85 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:pb-0">
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider pr-2 border-r border-slate-200">
+                    Billing Registers
+                  </div>
+                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                    {billingTabs.map((tab) => {
+                      const isActive = tab.id === activeBillingTabId;
+                      const tabCart = isActive ? posCart : tab.cart;
+                      const itemCount = Object.keys(tabCart).length;
+                      const subtotal = Object.keys(tabCart).reduce((sum, key) => sum + getSubtotal(tabCart[key]), 0);
+                      const customerNameStr = isActive ? (posCustomerName || tab.label) : (tab.customerName || tab.label);
+                      
+                      return (
+                        <div
+                          key={tab.id}
+                          onClick={() => handleSwitchBillingTab(tab.id)}
+                          className={`group flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer shrink-0 ${
+                            isActive
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs'
+                              : 'bg-slate-50 hover:bg-slate-100 border-slate-200/80 text-slate-600'
+                          }`}
+                        >
+                          <div className="flex flex-col text-left">
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate max-w-[100px] font-black">{customerNameStr}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRenameBillingTab(tab.id);
+                                }}
+                                className="opacity-60 group-hover:opacity-100 p-0.5 hover:bg-emerald-100/50 rounded transition-opacity text-slate-400 hover:text-slate-600"
+                                title="Rename bill customer"
+                              >
+                                <Edit2 className="h-2.5 w-2.5" />
+                              </button>
+                            </div>
+                            <span className="text-[9px] font-mono font-bold text-slate-400 group-hover:text-slate-500">
+                              {itemCount} item(s) • ₹{subtotal.toFixed(2)}
+                            </span>
+                          </div>
+
+                          {billingTabs.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteBillingTab(tab.id, e)}
+                              className="p-0.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                              title="Close bill"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAddBillingTab}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3.5 py-2 rounded-xl text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors shadow-sm shrink-0 cursor-pointer self-start md:self-auto"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>New Customer Cart</span>
+                </button>
+              </div>
+
               {/* Sticky/Prominent checkout bar */}
               <div className="bg-slate-900 text-white rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md border border-slate-800">
                 <div className="flex items-center gap-3">
