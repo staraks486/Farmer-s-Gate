@@ -177,6 +177,7 @@ export interface CpanelSettings {
   allowNegativeStockCheckout: boolean;
   autoReorderThresholdPercent: number; // percentage threshold to auto-reorder from HQ
   alertSoundEnabled: boolean;
+  audioNotificationEnabled: boolean;
   whatsappMessageTemplate: string;
   enableCustomerOrderReview: boolean;
   enableMultipleRegisters: boolean;

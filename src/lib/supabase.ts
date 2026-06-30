@@ -178,9 +178,16 @@ let supabaseInstance: SupabaseClient | null = null;
 
 // Load Config
 export function getSupabaseConfig(): SupabaseConfig {
-  const url = localStorage.getItem('supabase_url') || '';
-  const key = localStorage.getItem('supabase_key') || '';
-  const isConnected = localStorage.getItem('supabase_connected') === 'true';
+  // Check for client-side environment variables first for instant third-party deployment
+  const envUrl = typeof import.meta !== 'undefined' && (import.meta as any).env ? ((import.meta as any).env.VITE_SUPABASE_URL || '') : '';
+  const envKey = typeof import.meta !== 'undefined' && (import.meta as any).env ? ((import.meta as any).env.VITE_SUPABASE_ANON_KEY || '') : '';
+
+  const url = localStorage.getItem('supabase_url') || envUrl;
+  const key = localStorage.getItem('supabase_key') || envKey;
+  
+  const isConnectedStored = localStorage.getItem('supabase_connected');
+  // If there are environment variables and no explicit connection status stored, default to connected
+  const isConnected = isConnectedStored === 'true' || (isConnectedStored === null && !!envUrl && !!envKey) || (!!url && !!key && isConnectedStored !== 'false');
   const forceOffline = localStorage.getItem('force_offline') === 'true';
 
   return {

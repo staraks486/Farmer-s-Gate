@@ -138,6 +138,7 @@ export default function App() {
     allowNegativeStockCheckout: true,
     autoReorderThresholdPercent: 15,
     alertSoundEnabled: true,
+    audioNotificationEnabled: true,
     whatsappMessageTemplate: 'Hello {customer}, your billing summary for {amount} from {store} is confirmed!',
     enableCustomerOrderReview: true,
     enableMultipleRegisters: true,
@@ -297,7 +298,8 @@ export default function App() {
     const savedCpanel = localStorage.getItem('fg_cpanel_settings');
     if (savedCpanel) {
       try {
-        setCpanelSettings(JSON.parse(savedCpanel));
+        const parsed = JSON.parse(savedCpanel);
+        setCpanelSettings(prev => ({ ...prev, ...parsed }));
       } catch (e) {
         console.error(e);
       }
@@ -409,6 +411,124 @@ export default function App() {
     setCpanelSettings(newSettings);
     localStorage.setItem('fg_cpanel_settings', JSON.stringify(newSettings));
   };
+
+  // --- SOUND NOTIFICATION ENGINE ---
+  const playSoundAlert = (type: 'new_order' | 'low_stock') => {
+    if (!cpanelSettings.audioNotificationEnabled) return;
+
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      if (type === 'new_order') {
+        // High ascending three-note chime for B2C Customer Order
+        const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+        notes.forEach((freq, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.12);
+          
+          gain.gain.setValueAtTime(0, audioCtx.currentTime + idx * 0.12);
+          gain.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + idx * 0.12 + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + idx * 0.12 + 0.3);
+          
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          
+          osc.start(audioCtx.currentTime + idx * 0.12);
+          osc.stop(audioCtx.currentTime + idx * 0.12 + 0.3);
+        });
+      } else if (type === 'low_stock') {
+        // Warning alert: medium double beep
+        const times = [0, 0.2];
+        times.forEach((startTime) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(392.00, audioCtx.currentTime + startTime); // G4
+          
+          gain.gain.setValueAtTime(0, audioCtx.currentTime + startTime);
+          gain.gain.linearRampToValueAtTime(0.06, audioCtx.currentTime + startTime + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + 0.18);
+          
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          
+          osc.start(audioCtx.currentTime + startTime);
+          osc.stop(audioCtx.currentTime + startTime + 0.18);
+        });
+      }
+    } catch (e) {
+      console.warn('Sound play failed:', e);
+    }
+  };
+
+  const prevLowStockIdsRef = React.useRef<Set<string>>(new Set());
+  const prevOrderIdsRef = React.useRef<Set<string>>(new Set());
+
+  // 1. Monitor inventory changes for new transitions to low stock
+  useEffect(() => {
+    if (inventory.length === 0) {
+      prevLowStockIdsRef.current = new Set();
+      return;
+    }
+
+    const currentLowStockIds = new Set<string>();
+    let triggered = false;
+
+    inventory.forEach(item => {
+      const isLow = item.quantity <= item.minStockThreshold;
+      if (isLow) {
+        currentLowStockIds.add(item.id);
+        // If we have already initialized our previous items set and this is a NEW low stock event
+        if (prevLowStockIdsRef.current.size > 0 && !prevLowStockIdsRef.current.has(item.id)) {
+          triggered = true;
+        }
+      }
+    });
+
+    // Handle initialization on first load
+    if (prevLowStockIdsRef.current.size === 0 && currentLowStockIds.size > 0) {
+      prevLowStockIdsRef.current = currentLowStockIds;
+    } else {
+      prevLowStockIdsRef.current = currentLowStockIds;
+    }
+
+    if (triggered) {
+      playSoundAlert('low_stock');
+    }
+  }, [inventory]);
+
+  // 2. Monitor customer orders changes for brand new pending/processing orders
+  useEffect(() => {
+    if (customerOrders.length === 0) {
+      prevOrderIdsRef.current = new Set();
+      return;
+    }
+
+    const currentOrderIds = new Set(customerOrders.map(o => o.id));
+    let hasNewOrder = false;
+
+    customerOrders.forEach(order => {
+      const isPending = order.status === 'Pending' || order.status === 'Processing';
+      if (isPending && prevOrderIdsRef.current.size > 0 && !prevOrderIdsRef.current.has(order.id)) {
+        hasNewOrder = true;
+      }
+    });
+
+    // Handle initialization on first load
+    if (prevOrderIdsRef.current.size === 0 && currentOrderIds.size > 0) {
+      prevOrderIdsRef.current = currentOrderIds;
+    } else {
+      prevOrderIdsRef.current = currentOrderIds;
+    }
+
+    if (hasNewOrder) {
+      playSoundAlert('new_order');
+    }
+  }, [customerOrders]);
 
   // High-fidelity Realistic Demo Data Generator
   const handleResetToDemoData = () => {

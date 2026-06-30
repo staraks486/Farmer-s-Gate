@@ -905,6 +905,28 @@ export default function AdminPanel({
                 </button>
               </div>
 
+              {/* Audio Notifications for Orders & Stock */}
+              <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-100/70">
+                <div className="space-y-0.5 text-left">
+                  <span className="block text-xs font-bold text-zinc-800">Audio Notifications (Orders & Stock)</span>
+                  <span className="block text-[9px] text-zinc-400">Play distinctive melodies on low-stock warning and new customer orders.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUpdateCpanelSettings({ 
+                    ...cpanelSettings, 
+                    audioNotificationEnabled: !cpanelSettings.audioNotificationEnabled 
+                  })}
+                  className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+                    cpanelSettings.audioNotificationEnabled ? 'bg-emerald-600' : 'bg-zinc-300'
+                  }`}
+                >
+                  <span className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${
+                    cpanelSettings.audioNotificationEnabled ? 'left-6' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+
               {/* Customer storefront order review */}
               <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-100/70">
                 <div className="space-y-0.5 text-left">
