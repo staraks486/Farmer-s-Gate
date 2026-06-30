@@ -19,10 +19,18 @@ import {
   ShoppingCart,
   IndianRupee,
   X,
-  Edit2
+  Edit2,
+  Scan,
+  Bell,
+  AlertCircle,
+  Store as StoreIcon,
+  Mic,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings } from '../types';
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
+import { QrScanner } from './QrScanner';
 
 interface StoreManagerProps {
   store: Store;
@@ -178,6 +186,14 @@ export default function StoreManager({
   const [saleWarning, setSaleWarning] = useState('');
 
   // NEW: State for User Friendly Quick POS Sale Mode
+  const [saleSubView, setSaleSubView] = useState<'items' | 'checkout' | 'details' | 'notifications'>('items');
+
+  useEffect(() => {
+    if (saleSubView === 'checkout') {
+      setShowCheckoutModal(true);
+      setSaleSubView('items');
+    }
+  }, [saleSubView]);
   const [saleMode, setSaleMode] = useState<'pos' | 'classic'>('pos');
   const [mobilePosTab, setMobilePosTab] = useState<'crops' | 'cart'>('crops');
   const [whatsappPhone, setWhatsappPhone] = useState('');
@@ -198,6 +214,56 @@ export default function StoreManager({
     { id: 'bill-3', label: 'Bill 3', cart: {}, customerName: '', whatsappPhone: '' }
   ]);
   const [activeBillingTabId, setActiveBillingTabId] = useState<string>('bill-1');
+
+  // New States for Redesigned Sale Panel, Breadcrumbs, and Voice Speech Input
+  const [isStoreBreadcrumbOpen, setIsStoreBreadcrumbOpen] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceFeedback, setVoiceFeedback] = useState('');
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
+  const [cancellingOrder, setCancellingOrder] = useState<CustomerOrder | null>(null);
+  const [cancellationReason, setCancellationReason] = useState('');
+
+  const handleStartVoiceInput = (onTranscript: (text: string) => void) => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice speech recognition is not natively supported in this browser. Please use Google Chrome or Safari for full speech capability.");
+      return;
+    }
+    
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-IN'; // Optimized for bilingual pronunciation in India
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setVoiceFeedback('Listening for speech...');
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setVoiceFeedback(transcript);
+      onTranscript(transcript);
+      
+      // Auto-clear feedback after 4 seconds
+      setTimeout(() => {
+        setVoiceFeedback('');
+      }, 4000);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error", event.error);
+      setIsListening(false);
+      setVoiceFeedback(`Error: ${event.error}`);
+      setTimeout(() => setVoiceFeedback(''), 3000);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.start();
+  };
 
   const handleSwitchBillingTab = (targetTabId: string) => {
     setBillingTabs(prev => {
@@ -905,6 +971,46 @@ export default function StoreManager({
     link.click();
   };
 
+  // --- QR & BARCODE SCANNER INTEGRATION STATE ---
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerTarget, setScannerTarget] = useState<'pos' | 'sale' | 'purchase' | 'inventory'>('pos');
+
+  const handleQrScanSuccess = (scannedValue: string) => {
+    setIsScannerOpen(false);
+    
+    // Attempt standard lookup case-insensitively
+    const matchedItem = storeInventory.find(
+      item => item.vegetableName.toLowerCase() === scannedValue.toLowerCase() || item.id === scannedValue
+    );
+
+    if (scannerTarget === 'pos') {
+      if (matchedItem) {
+        // Automatically add 1 unit/kg directly to the Point of Sale cart
+        handleAddToPosCartWithParams(matchedItem, 1, 'kg');
+        setPosSearch(''); // clear search
+      } else {
+        // Fallback to searching/quick-adding
+        setPosSearch(scannedValue);
+      }
+    } else if (scannerTarget === 'sale') {
+      if (matchedItem) {
+        setSaleVegName(matchedItem.vegetableName);
+        handleSaleVegSelect(matchedItem.vegetableName);
+      } else {
+        setSaleVegName(scannedValue);
+        handleSaleVegSelect(scannedValue);
+      }
+    } else if (scannerTarget === 'purchase') {
+      if (matchedItem) {
+        setPurchaseVegName(matchedItem.vegetableName);
+      } else {
+        setPurchaseVegName(scannedValue);
+      }
+    } else if (scannerTarget === 'inventory') {
+      setVegSearchQuery(scannedValue);
+    }
+  };
+
   // 2. STATE FOR PURCHASE TAB
   const [purchaseVegName, setPurchaseVegName] = useState('');
   const [purchaseQty, setPurchaseQty] = useState<number>(0);
@@ -1159,6 +1265,21 @@ export default function StoreManager({
     setReqNotes('');
   };
 
+  const handleReuseRequirement = (oldReq: Requirement) => {
+    const newReq: Requirement = {
+      id: `req-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      storeId: store.id,
+      vegetableName: oldReq.vegetableName,
+      quantity: oldReq.quantity,
+      priority: oldReq.priority || 'Medium',
+      status: 'Pending',
+      notes: oldReq.notes ? `Reused requisition: ${oldReq.notes}` : `Reused requisition`,
+      createdAt: new Date().toISOString()
+    };
+    onAddRequirement(newReq);
+    alert(`Successfully reused requisition! Raised a new Pending restock request for ${oldReq.quantity}kg of ${oldReq.vegetableName}.`);
+  };
+
   const handleQuickAdjustStock = (item: InventoryItem, newQty: number) => {
     onUpdateInventoryItem({
       ...item,
@@ -1234,42 +1355,6 @@ export default function StoreManager({
   return (
     <div className="space-y-4 animate-fade-in text-slate-900">
       
-      {/* Minimal Breadcrumb Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-50 border border-slate-200/60 rounded-xl p-3 shadow-sm">
-        <div className="flex items-center justify-between w-full sm:w-auto gap-2.5">
-          <div className="flex items-center gap-1.5">
-            <span className={`flex h-2.5 w-2.5 items-center justify-center rounded-full ${offlineMode ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`}></span>
-            <span className="text-[11px] font-black uppercase tracking-widest text-slate-700">
-              {store.name.replace("Farmer's Gate - ", "")}
-            </span>
-          </div>
-          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 bg-slate-200/50 px-2 py-0.5 rounded-md">
-            {store.location || 'Branch Unit'}
-          </span>
-        </div>
-
-        {/* Dynamic Offline / Connection Controls */}
-        <div className="flex items-center gap-2 self-end sm:self-auto">
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-            offlineMode 
-              ? 'bg-amber-50 text-amber-700 border border-amber-200' 
-              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-          }`}>
-            {offlineMode ? '🟠 Offline Mode' : '🟢 Cloud Syncing'}
-          </span>
-          <button
-            onClick={handleToggleOfflineMode}
-            className={`text-[10px] font-extrabold px-3 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1 shadow-xs ${
-              offlineMode 
-                ? 'bg-white border-amber-300 text-amber-700 hover:bg-amber-50' 
-                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            {offlineMode ? '🔌 Switch Online' : '✈️ Work Offline'}
-          </button>
-        </div>
-      </div>
-
       {/* Categories Tabs Menu */}
       <div className="flex border-b border-slate-200 gap-1 overflow-x-auto scrollbar-none shrink-0">
         <button
@@ -1520,459 +1605,671 @@ export default function StoreManager({
             </div>
           ) : (
             /* --- EXPRESS POS POINT OF SALE COUNTER --- */
-            <div className="space-y-4 animate-fade-in">
-              {/* POS Multi-Billing Tabs Bar */}
-              <div className="bg-white p-3 rounded-2xl border border-slate-200/85 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:pb-0">
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider pr-2 border-r border-slate-200">
-                    Billing Registers
-                  </div>
-                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                    {billingTabs.map((tab) => {
-                      const isActive = tab.id === activeBillingTabId;
-                      const tabCart = isActive ? posCart : tab.cart;
-                      const itemCount = Object.keys(tabCart).length;
-                      const subtotal = Object.keys(tabCart).reduce((sum, key) => sum + getSubtotal(tabCart[key]), 0);
-                      const customerNameStr = isActive ? (posCustomerName || tab.label) : (tab.customerName || tab.label);
-                      
-                      return (
-                        <div
-                          key={tab.id}
-                          onClick={() => handleSwitchBillingTab(tab.id)}
-                          className={`group flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer shrink-0 ${
-                            isActive
-                              ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs'
-                              : 'bg-slate-50 hover:bg-slate-100 border-slate-200/80 text-slate-600'
-                          }`}
-                        >
-                          <div className="flex flex-col text-left">
-                            <div className="flex items-center gap-1.5">
-                              <span className="truncate max-w-[100px] font-black">{customerNameStr}</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRenameBillingTab(tab.id);
-                                }}
-                                className="opacity-60 group-hover:opacity-100 p-0.5 hover:bg-emerald-100/50 rounded transition-opacity text-slate-400 hover:text-slate-600"
-                                title="Rename bill customer"
-                              >
-                                <Edit2 className="h-2.5 w-2.5" />
-                              </button>
-                            </div>
-                            <span className="text-[9px] font-mono font-bold text-slate-400 group-hover:text-slate-500">
-                              {itemCount} item(s) • ₹{subtotal.toFixed(2)}
-                            </span>
-                          </div>
-
-                          {billingTabs.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleDeleteBillingTab(tab.id, e)}
-                              className="p-0.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                              title="Close bill"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
+            <div className="space-y-5 animate-fade-in text-left">
+              {/* Simplified Inner Desk sub-tabs placed prominently at the top */}
+              <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-1">
                 <button
                   type="button"
-                  onClick={handleAddBillingTab}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3.5 py-2 rounded-xl text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors shadow-sm shrink-0 cursor-pointer self-start md:self-auto"
+                  onClick={() => setSaleSubView('items')}
+                  className={`flex-1 py-2 px-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    saleSubView === 'items'
+                      ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/30'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
+                  }`}
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>New Customer Cart</span>
+                  <span className="text-sm">🥦</span>
+                  <span>Sale Items</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSaleSubView('checkout')}
+                  className={`flex-1 py-2 px-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    saleSubView === 'checkout'
+                      ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/30'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
+                  }`}
+                >
+                  <span className="text-sm">🛒</span>
+                  <span>Checkout</span>
+                  {Object.keys(posCart).length > 0 && (
+                    <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                      {Object.keys(posCart).length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSaleSubView('details')}
+                  className={`flex-1 py-2 px-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    saleSubView === 'details'
+                      ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/30'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
+                  }`}
+                >
+                  <span className="text-sm">🏪</span>
+                  <span>Store Details & Alerts</span>
+                  {(() => {
+                    const lowStockCount = storeInventory.filter(item => item.quantity <= item.minStockThreshold).length;
+                    const pendingOrdersCount = customerOrders.filter(co => co.storeId === store.id && co.status !== 'Completed' && co.status !== 'Cancelled').length;
+                    const totalAlerts = lowStockCount + pendingOrdersCount;
+                    return totalAlerts > 0 ? (
+                      <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                        {totalAlerts}
+                      </span>
+                    ) : null;
+                  })()}
                 </button>
               </div>
 
-              {/* Sticky/Prominent checkout bar */}
-              <div className="bg-slate-900 text-white rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md border border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 p-2.5 rounded-xl">
-                    <ShoppingCart className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs sm:text-sm font-black text-slate-100">
-                      {Object.keys(posCart).length === 0 ? 'No crops selected' : `${Object.keys(posCart).length} Crop line(s) added`}
-                    </h3>
-                    <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5">
-                      Subtotal: <span className="text-emerald-400 font-extrabold font-mono">₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)}</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {Object.keys(posCart).length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleClearPosCart}
-                      className="px-3 py-2 text-[10px] uppercase font-black text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    disabled={Object.keys(posCart).length === 0}
-                    onClick={() => {
-                      const randomIdx = Math.floor(Math.random() * HEALTHY_QUOTES.length);
-                      setBillingQuote(HEALTHY_QUOTES[randomIdx]);
-                      setShowCheckoutModal(true);
-                    }}
-                    className="flex-1 sm:flex-initial bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 text-slate-950 disabled:text-slate-500 font-black px-5 py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg shadow-emerald-950/20 active:scale-95 cursor-pointer"
-                  >
-                    🛒 View Bill & Checkout <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                
-                {/* POS Column: Crop selection */}
-                <div className="w-full space-y-4">
-                
-                {/* POS Crop search & quick description */}
-                <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-                  <div className="relative flex-1 w-full">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search available crops..."
-                      value={posSearch}
-                      onChange={(e) => setPosSearch(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50/50"
-                    />
-                  </div>
-                  {posSearch && (
-                    <button 
-                      onClick={() => setPosSearch('')}
-                      className="text-xs text-slate-400 hover:text-slate-600 font-bold shrink-0"
-                    >
-                      Clear Search
-                    </button>
-                  )}
-                  {storeInventory.length < 6 && (
-                    <button
-                      type="button"
-                      onClick={handleBulkSeedCrops}
-                      className="text-[10px] uppercase font-black tracking-wider text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 px-3 py-2 rounded-xl transition-all cursor-pointer"
-                    >
-                      Seed Standard Crops
-                    </button>
-                  )}
-                </div>
-
-                {/* Categories Tabs Selector */}
-                <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none shrink-0 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
-                  {(['ALL', 'VEGGIES', 'FRUITS', 'GROCERY'] as const).map((cat) => {
-                    const isActive = activeCropFilter === cat;
-                    const icon = cat === 'ALL' ? '🌾' : cat === 'VEGGIES' ? '🥦' : cat === 'FRUITS' ? '🍎' : '🛒';
-                    const label = cat === 'ALL' ? 'All Items' : cat === 'VEGGIES' ? 'Vegetables' : cat === 'FRUITS' ? 'Fruits' : 'Groceries';
-                    
-                    return (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setActiveCropFilter(cat)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                          isActive
-                            ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-200'
-                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/50'
-                        }`}
-                      >
-                        <span className="text-sm">{icon}</span>
-                        <span>{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Quick Add Custom Item directly to bill if not found */}
-                {posSearch && storeInventory.filter(item => item.vegetableName.toLowerCase().includes(posSearch.toLowerCase())).length === 0 && (
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center space-y-3 mt-2 animate-in fade-in duration-200">
-                    <p className="text-xs font-bold text-slate-700">
-                      Crop "{posSearch}" not registered. Quick-add it below:
-                    </p>
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      <div className="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1">
-                        <span className="text-xs text-slate-400 font-bold mr-1">₹</span>
-                        <input
-                          type="number"
-                          placeholder="Price"
-                          className="w-16 text-xs font-bold text-slate-800 focus:outline-none bg-white"
-                          id="quick-add-price"
-                          defaultValue={60}
-                        />
+              {/* Sub-view: SALE ITEMS */}
+              {saleSubView === 'items' && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  {/* Multi-Billing Registers at top of Sale Panel */}
+                  <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-left">
+                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:pb-0 w-full">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider pr-2 border-r border-slate-200 shrink-0">
+                        Registers
                       </div>
-                      <select
-                        id="quick-add-unit"
-                        className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-700 cursor-pointer"
-                        defaultValue="kg"
-                      >
-                        <option value="kg">kg</option>
-                        <option value="g">g</option>
-                        <option value="pcs">pcs</option>
-                        <option value="bunch">bunch</option>
-                        <option value="pack">pack</option>
-                        <option value="box">box</option>
-                        <option value="crate">crate</option>
-                        <option value="sack">sack</option>
-                        <option value="dozen">dozen</option>
-                        <option value="bundle">bundle</option>
-                        <option value="bag">bag</option>
-                      </select>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const priceInput = document.getElementById('quick-add-price') as HTMLInputElement;
-                          const unitSelect = document.getElementById('quick-add-unit') as HTMLSelectElement;
-                          const price = parseFloat(priceInput?.value) || 60;
-                          const unit = (unitSelect?.value || 'kg') as any;
+                      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none flex-1">
+                        {billingTabs.map((tab) => {
+                          const isActive = tab.id === activeBillingTabId;
+                          const tabCart = isActive ? posCart : tab.cart;
+                          const itemCount = Object.keys(tabCart).length;
+                          const subtotal = Object.keys(tabCart).reduce((sum, key) => sum + getSubtotal(tabCart[key]), 0);
+                          const customerNameStr = isActive ? (posCustomerName || tab.label) : (tab.customerName || tab.label);
                           
-                          // Register in inventory on-the-fly
-                          const newItem: InventoryItem = {
-                            id: `item-${Date.now()}`,
-                            storeId: store.id,
-                            vegetableName: posSearch.trim(),
-                            quantity: 100, // standard bulk starting stock
-                            costPrice: price * 0.75,
-                            sellingPrice: price,
-                            minStockThreshold: 10,
-                            lastUpdated: new Date().toISOString()
-                          };
-                          await onUpdateInventoryItem(newItem);
-                          
-                          // Add to POS Cart
-                          setPosCart(prev => ({
-                            ...prev,
-                            [newItem.vegetableName]: {
-                              quantity: 1,
-                              unit: unit,
-                              pricePerKg: price,
-                              item: newItem
-                            }
-                          }));
-                          setPosSearch('');
-                        }}
-                        className="bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer"
-                      >
-                        ADD TO BILL
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Linear List of Crop Items to save space */}
-                <div className="flex flex-col gap-2.5 max-h-[550px] overflow-y-auto pr-1">
-                  {storeInventory
-                    .filter(item => item.vegetableName.toLowerCase().includes(posSearch.toLowerCase()))
-                    .filter(item => {
-                      if (activeCropFilter === 'ALL') return true;
-                      const category = getItemCategory(item.vegetableName);
-                      if (activeCropFilter === 'VEGGIES') return category === 'Vegetable';
-                      if (activeCropFilter === 'FRUITS') return category === 'Fruit';
-                      if (activeCropFilter === 'GROCERY') return category === 'Grocery';
-                      return true;
-                    })
-                    .map(item => {
-                      const isOutOfStock = item.quantity <= 0;
-                      const cartItem = posCart[item.vegetableName];
-                      
-                      return (
-                        <div
-                          key={item.id}
-                          className={`relative rounded-xl border p-2 bg-white shadow-xs hover:border-emerald-300 transition-all flex items-center justify-between gap-3 border-slate-200/80 ${
-                            isOutOfStock ? 'opacity-60 bg-slate-50' : ''
-                          }`}
-                        >
-                          {/* Left part: Emoji, Name, and standard price tag in a single row */}
-                          <div className="flex-1 min-w-0 flex items-center gap-2">
-                            <span className="text-sm shrink-0">{getVegEmoji(item.vegetableName)}</span>
-                            <div className="min-w-0">
-                              <h4 className="font-extrabold text-xs sm:text-sm text-slate-800 truncate" title={item.vegetableName}>
-                                {item.vegetableName}
-                              </h4>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] font-bold text-slate-500">
-                                  ₹{item.sellingPrice.toFixed(0)}/kg
+                          return (
+                            <div
+                              key={tab.id}
+                              onClick={() => handleSwitchBillingTab(tab.id)}
+                              className={`group flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer shrink-0 ${
+                                isActive
+                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-3xs'
+                                  : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-600'
+                              }`}
+                            >
+                              <div className="flex flex-col text-left">
+                                <div className="flex items-center gap-1">
+                                  <span className="truncate max-w-[90px] font-black">{customerNameStr}</span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRenameBillingTab(tab.id);
+                                    }}
+                                    className="opacity-50 group-hover:opacity-100 p-0.5 hover:bg-emerald-100/50 rounded transition-opacity text-slate-400 hover:text-slate-600"
+                                    title="Rename customer"
+                                  >
+                                    <Edit2 className="h-2.5 w-2.5" />
+                                  </button>
+                                </div>
+                                <span className="text-[9px] font-mono font-bold text-slate-400 group-hover:text-slate-500">
+                                  {itemCount} item(s) • ₹{subtotal.toFixed(0)}
                                 </span>
-                                {item.quantity <= 10 && (
-                                  <span className="text-[9px] font-bold text-rose-500 bg-rose-50 px-1 rounded">
-                                    Low: {item.quantity.toFixed(0)}
-                                  </span>
-                                )}
                               </div>
+
+                              {billingTabs.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteBillingTab(tab.id, e)}
+                                  className="p-0.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ml-1"
+                                  title="Close bill"
+                                >
+                                  ✕
+                                </button>
+                              )}
                             </div>
-                          </div>
-
-                          {/* Right part: Adding and Quantity input controls on the same row */}
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {!cartItem ? (
-                              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5">
-                                {/* Compact quantity input */}
-                                <input
-                                  type="number"
-                                  id={`input-qty-${item.id}`}
-                                  placeholder="1"
-                                  defaultValue="1"
-                                  disabled={isOutOfStock}
-                                  step="0.05"
-                                  className="w-8 text-center text-xs font-black text-slate-850 bg-transparent focus:outline-none"
-                                />
-                                {/* Unit dropdown */}
-                                <select
-                                  id={`input-unit-${item.id}`}
-                                  disabled={isOutOfStock}
-                                  className="bg-transparent border-0 text-[10px] font-extrabold text-slate-500 focus:outline-none cursor-pointer pr-1"
-                                  defaultValue="kg"
-                                >
-                                  <option value="kg">kg</option>
-                                  <option value="g">g</option>
-                                  <option value="pcs">pcs</option>
-                                  <option value="bunch">bunch</option>
-                                  <option value="pack">pack</option>
-                                </select>
-                                {/* Quick Add Button */}
-                                <button
-                                  type="button"
-                                  disabled={isOutOfStock}
-                                  onClick={() => {
-                                    const qtyInput = document.getElementById(`input-qty-${item.id}`) as HTMLInputElement;
-                                    const unitSelect = document.getElementById(`input-unit-${item.id}`) as HTMLSelectElement;
-                                    const qty = parseFloat(qtyInput?.value) || 1;
-                                    const unit = (unitSelect?.value || 'kg') as any;
-                                    handleAddToPosCartWithParams(item, qty, unit);
-                                  }}
-                                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white h-5.5 px-2 rounded-md text-[10px] font-black transition-all flex items-center justify-center cursor-pointer uppercase shadow-xs"
-                                >
-                                  {isOutOfStock ? 'OUT' : 'ADD'}
-                                </button>
-                              </div>
-                            ) : (
-                              /* Standard +/- quantity adjustment controls inside a super compact colored pill */
-                              <div className="flex items-center gap-0.5 bg-emerald-50 border border-emerald-100 rounded-lg p-0.5 h-6.5">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const step = cartItem.unit === 'g' ? 100 : 1;
-                                    handleUpdatePosCartQty(item.vegetableName, cartItem.quantity - step);
-                                  }}
-                                  className="h-4.5 w-4.5 hover:bg-emerald-100 active:scale-95 rounded flex items-center justify-center text-xs font-black text-emerald-850 cursor-pointer shrink-0"
-                                >
-                                  -
-                                </button>
-                                
-                                <span className="text-[10px] font-black text-emerald-900 px-1 font-mono">
-                                  {cartItem.quantity} {cartItem.unit}
-                                </span>
-
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const step = cartItem.unit === 'g' ? 100 : 1;
-                                    handleUpdatePosCartQty(item.vegetableName, cartItem.quantity + step);
-                                  }}
-                                  className="h-4.5 w-4.5 hover:bg-emerald-100 active:scale-95 rounded flex items-center justify-center text-xs font-black text-emerald-850 cursor-pointer shrink-0"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                  {storeInventory.filter(item => item.vegetableName.toLowerCase().includes(posSearch.toLowerCase())).length === 0 && (
-                    <div className="py-16 text-center text-slate-400 bg-white border border-slate-150 rounded-2xl">
-                      <p className="text-xs font-bold">No matching crops found</p>
-                    </div>
-                  )}
-                </div>
-
-              </div>
-
-              {/* Checkout Bill Pop-up Modal */}
-              {showCheckoutModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
-                  <div className="relative w-full max-w-xl bg-slate-900 text-white rounded-3xl p-6 shadow-2xl border border-slate-800/80 flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200 text-left">
-                    
-                    {/* Header */}
-                    <div className="flex justify-between items-center border-b border-slate-800 pb-3 shrink-0">
-                      <div className="flex items-center gap-2">
-                        <span className="p-1 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/10">
-                          <ShoppingCart className="h-4 w-4" />
-                        </span>
-                        <h3 className="font-extrabold text-sm text-slate-200">Active Sale Invoice Checkout</h3>
+                          );
+                        })}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowCheckoutModal(false)}
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
                     </div>
 
-                    {/* Modal content - Scrollable */}
-                    <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
-                      {/* Customer Info */}
-                      <div className="space-y-1">
-                        <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Customer Identity Name</label>
+                    <button
+                      type="button"
+                      onClick={handleAddBillingTab}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-[10px] font-black transition-all cursor-pointer shrink-0 uppercase tracking-wider shadow-3xs"
+                    >
+                      + Add Register
+                    </button>
+                  </div>
+
+                  {/* Crop search & scan code */}
+                  <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="relative flex-1 w-full flex gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                         <input
                           type="text"
-                          placeholder="Walk-in Counter Customer"
-                          value={posCustomerName}
-                          onChange={(e) => setPosCustomerName(e.target.value)}
-                          className="w-full rounded-xl bg-slate-850 border border-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          placeholder="Search available crops..."
+                          value={posSearch}
+                          onChange={(e) => setPosSearch(e.target.value)}
+                          className="w-full pl-9 pr-12 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50/50"
                         />
+                        {/* Voice Input Trigger Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleStartVoiceInput((text) => setPosSearch(text))}
+                          className={`absolute right-2.5 top-1.5 p-1 rounded-lg transition-all ${
+                            isListening
+                              ? 'bg-rose-500 text-white animate-pulse shadow-md shadow-rose-500/20'
+                              : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-150'
+                          }`}
+                          title="Speak crop name to search"
+                        >
+                          <Mic className={`h-4 w-4 ${isListening ? 'animate-bounce' : ''}`} />
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setScannerTarget('pos');
+                          setIsScannerOpen(true);
+                        }}
+                        title="Scan package code"
+                        className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700 border border-emerald-100 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-3xs hover:scale-[1.01]"
+                      >
+                        <Scan className="h-4 w-4 text-emerald-600 animate-pulse" />
+                        <span>Scan Code</span>
+                      </button>
+                    </div>
+                    {voiceFeedback && (
+                      <div className="w-full text-left bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-xl px-3 py-1.5 text-[10px] font-black flex items-center gap-1.5 animate-pulse">
+                        <span>🎙️ Heard:</span>
+                        <span className="font-mono text-emerald-950 font-bold">"{voiceFeedback}"</span>
+                      </div>
+                    )}
+                    {posSearch && (
+                      <button 
+                        onClick={() => setPosSearch('')}
+                        className="text-xs text-slate-400 hover:text-slate-600 font-bold shrink-0"
+                      >
+                        Clear Search
+                      </button>
+                    )}
+                    {storeInventory.length < 6 && (
+                      <button
+                        type="button"
+                        onClick={handleBulkSeedCrops}
+                        className="text-[10px] uppercase font-black tracking-wider text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 px-3 py-2 rounded-xl transition-all cursor-pointer"
+                      >
+                        Seed Standard Crops
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Categories Tabs Selector */}
+                  <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none shrink-0 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
+                    {(['ALL', 'VEGGIES', 'FRUITS', 'GROCERY'] as const).map((cat) => {
+                      const isActive = activeCropFilter === cat;
+                      const icon = cat === 'ALL' ? '🌾' : cat === 'VEGGIES' ? '🥦' : cat === 'FRUITS' ? '🍎' : '🛒';
+                      const label = cat === 'ALL' ? 'All Items' : cat === 'VEGGIES' ? 'Vegetables' : cat === 'FRUITS' ? 'Fruits' : 'Groceries';
+                      
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setActiveCropFilter(cat)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                            isActive
+                              ? 'bg-emerald-600 text-white shadow-sm'
+                              : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/50'
+                          }`}
+                        >
+                          <span className="text-sm">{icon}</span>
+                          <span>{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Quick Add Custom Item directly to bill if not found */}
+                  {posSearch && storeInventory.filter(item => item.vegetableName.toLowerCase().includes(posSearch.toLowerCase())).length === 0 && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center space-y-3 mt-2 animate-in fade-in duration-200">
+                      <p className="text-xs font-bold text-slate-700">
+                        Crop "{posSearch}" not registered. Quick-add it below:
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <div className="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1">
+                          <span className="text-xs text-slate-400 font-bold mr-1">₹</span>
+                          <input
+                            type="number"
+                            placeholder="Price"
+                            className="w-16 text-xs font-bold text-slate-800 focus:outline-none bg-white"
+                            id="quick-add-price"
+                            defaultValue={60}
+                          />
+                        </div>
+                        <select
+                          id="quick-add-unit"
+                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-700 cursor-pointer"
+                          defaultValue="kg"
+                        >
+                          <option value="kg">kg</option>
+                          <option value="g">g</option>
+                          <option value="pcs">pcs</option>
+                          <option value="bunch">bunch</option>
+                          <option value="pack">pack</option>
+                          <option value="box">box</option>
+                          <option value="crate">crate</option>
+                          <option value="sack">sack</option>
+                          <option value="dozen">dozen</option>
+                          <option value="bundle">bundle</option>
+                          <option value="bag">bag</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const priceInput = document.getElementById('quick-add-price') as HTMLInputElement;
+                            const unitSelect = document.getElementById('quick-add-unit') as HTMLSelectElement;
+                            const price = parseFloat(priceInput?.value) || 60;
+                            const unit = (unitSelect?.value || 'kg') as any;
+                            
+                            // Register in inventory on-the-fly
+                            const newItem: InventoryItem = {
+                              id: `item-${Date.now()}`,
+                              storeId: store.id,
+                              vegetableName: posSearch.trim(),
+                              quantity: 100, // standard bulk starting stock
+                              costPrice: price * 0.75,
+                              sellingPrice: price,
+                              minStockThreshold: 10,
+                              lastUpdated: new Date().toISOString()
+                            };
+                            await onUpdateInventoryItem(newItem);
+                            
+                            // Add to POS Cart
+                            setPosCart(prev => ({
+                              ...prev,
+                              [newItem.vegetableName]: {
+                                quantity: 1,
+                                unit: unit,
+                                pricePerKg: price,
+                                item: newItem
+                              }
+                            }));
+                            setPosSearch('');
+                          }}
+                          className="bg-slate-850 hover:bg-slate-900 text-white px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer"
+                        >
+                          ADD TO BILL
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Linear List of Crop Items */}
+                  <div className="flex flex-col gap-2.5 max-h-[550px] overflow-y-auto pr-1">
+                    {storeInventory
+                      .filter(item => item.vegetableName.toLowerCase().includes(posSearch.toLowerCase()))
+                      .filter(item => {
+                        if (activeCropFilter === 'ALL') return true;
+                        const category = getItemCategory(item.vegetableName);
+                        if (activeCropFilter === 'VEGGIES') return category === 'Vegetable';
+                        if (activeCropFilter === 'FRUITS') return category === 'Fruit';
+                        if (activeCropFilter === 'GROCERY') return category === 'Grocery';
+                        return true;
+                      })
+                      .map(item => {
+                        const isOutOfStock = item.quantity <= 0;
+                        const cartItem = posCart[item.vegetableName];
+                        
+                        return (
+                          <div
+                            key={item.id}
+                            className={`relative rounded-xl border p-2.5 bg-white shadow-xs hover:border-emerald-300 transition-all flex items-center justify-between gap-3 border-slate-200/80 ${
+                              isOutOfStock ? 'opacity-60 bg-slate-50' : ''
+                            }`}
+                          >
+                            {/* Left part: Emoji, Name, and standard price tag */}
+                            <div className="flex-1 min-w-0 flex items-center gap-2.5">
+                              <span className="text-base shrink-0">{getVegEmoji(item.vegetableName)}</span>
+                              <div className="min-w-0">
+                                <h4 className="font-extrabold text-xs sm:text-sm text-slate-800 truncate" title={item.vegetableName}>
+                                  {item.vegetableName}
+                                </h4>
+                                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-mono">
+                                    ₹{item.sellingPrice.toFixed(0)}/kg
+                                  </span>
+                                  {item.quantity <= 10 ? (
+                                    <span className="text-[9px] font-bold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">
+                                      {item.quantity === 0 ? 'Out of Stock' : `Low Stock: ${item.quantity.toFixed(0)} kg`}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-mono">
+                                      Stock: {item.quantity.toFixed(0)} kg
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Right part: Adding and Quantity input controls */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {!cartItem ? (
+                                <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5">
+                                  {/* Compact quantity input */}
+                                  <input
+                                    type="number"
+                                    id={`input-qty-${item.id}`}
+                                    placeholder="1"
+                                    defaultValue="1"
+                                    disabled={isOutOfStock}
+                                    step="0.05"
+                                    className="w-10 text-center text-xs font-black text-slate-850 bg-transparent focus:outline-none"
+                                  />
+                                  {/* Unit dropdown */}
+                                  <select
+                                    id={`input-unit-${item.id}`}
+                                    disabled={isOutOfStock}
+                                    className="bg-transparent border-0 text-[10px] font-extrabold text-slate-500 focus:outline-none cursor-pointer pr-1"
+                                    defaultValue="kg"
+                                  >
+                                    <option value="kg">kg</option>
+                                    <option value="g">g</option>
+                                    <option value="pcs">pcs</option>
+                                    <option value="bunch">bunch</option>
+                                    <option value="pack">pack</option>
+                                  </select>
+                                  {/* Quick Add Button */}
+                                  <button
+                                    type="button"
+                                    disabled={isOutOfStock}
+                                    onClick={() => {
+                                      const qtyInput = document.getElementById(`input-qty-${item.id}`) as HTMLInputElement;
+                                      const unitSelect = document.getElementById(`input-unit-${item.id}`) as HTMLSelectElement;
+                                      const qty = parseFloat(qtyInput?.value) || 1;
+                                      const unit = (unitSelect?.value || 'kg') as any;
+                                      handleAddToPosCartWithParams(item, qty, unit);
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white h-6.5 px-2.5 rounded-lg text-[10px] font-black transition-all flex items-center justify-center cursor-pointer uppercase shadow-xs"
+                                  >
+                                    {isOutOfStock ? 'OUT' : 'ADD'}
+                                  </button>
+                                </div>
+                              ) : (
+                                /* Standard +/- quantity adjustment controls inside a colored pill */
+                                <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-100 rounded-lg p-0.5 h-7.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const step = cartItem.unit === 'g' ? 100 : 1;
+                                      handleUpdatePosCartQty(item.vegetableName, cartItem.quantity - step);
+                                    }}
+                                    className="h-5 w-5 hover:bg-emerald-100 active:scale-95 rounded flex items-center justify-center text-xs font-black text-emerald-850 cursor-pointer shrink-0"
+                                  >
+                                    -
+                                  </button>
+                                  
+                                  <span className="text-[10px] font-black text-emerald-900 px-1 font-mono">
+                                    {cartItem.quantity} {cartItem.unit}
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const step = cartItem.unit === 'g' ? 100 : 1;
+                                      handleUpdatePosCartQty(item.vegetableName, cartItem.quantity + step);
+                                    }}
+                                    className="h-5 w-5 hover:bg-emerald-100 active:scale-95 rounded flex items-center justify-center text-xs font-black text-emerald-850 cursor-pointer shrink-0"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                    {storeInventory.filter(item => item.vegetableName.toLowerCase().includes(posSearch.toLowerCase())).length === 0 && (
+                      <div className="py-16 text-center text-slate-400 bg-white border border-slate-150 rounded-2xl">
+                        <p className="text-xs font-bold">No matching crops found</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Persistent Sticky Cart Summary Bar at bottom */}
+                  {Object.keys(posCart).length > 0 && (
+                    <div 
+                      onClick={() => setSaleSubView('checkout')}
+                      className="bg-slate-900 hover:bg-slate-800 text-white rounded-2xl p-4 flex items-center justify-between shadow-lg border border-slate-800 cursor-pointer transition-all hover:scale-[1.005] group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 p-2.5 rounded-xl">
+                          <ShoppingCart className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-xs sm:text-sm font-black text-slate-100">
+                            {Object.keys(posCart).length} Crop line{Object.keys(posCart).length > 1 ? 's' : ''} added
+                          </h3>
+                          <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5">
+                            Subtotal: <span className="text-emerald-400 font-extrabold font-mono">₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)}</span>
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5 text-emerald-400 group-hover:translate-x-1 transition-transform">
+                        Proceed to checkout <ArrowRight className="h-4 w-4" />
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-view: BILL & CHECKOUT */}
+              {saleSubView === 'checkout' && (
+                <div className="space-y-4 animate-in fade-in duration-200 text-left">
+                  {/* Multi-Billing Registers */}
+                  <div className="bg-white p-3 rounded-2xl border border-slate-200/85 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:pb-0">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider pr-2 border-r border-slate-200">
+                        Registers
+                      </div>
+                      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                        {billingTabs.map((tab) => {
+                          const isActive = tab.id === activeBillingTabId;
+                          const tabCart = isActive ? posCart : tab.cart;
+                          const itemCount = Object.keys(tabCart).length;
+                          const subtotal = Object.keys(tabCart).reduce((sum, key) => sum + getSubtotal(tabCart[key]), 0);
+                          const customerNameStr = isActive ? (posCustomerName || tab.label) : (tab.customerName || tab.label);
+                          
+                          return (
+                            <div
+                              key={tab.id}
+                              onClick={() => handleSwitchBillingTab(tab.id)}
+                              className={`group flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer shrink-0 ${
+                                isActive
+                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs'
+                                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200/80 text-slate-600'
+                              }`}
+                            >
+                              <div className="flex flex-col text-left">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="truncate max-w-[100px] font-black">{customerNameStr}</span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRenameBillingTab(tab.id);
+                                    }}
+                                    className="opacity-60 group-hover:opacity-100 p-0.5 hover:bg-emerald-100/50 rounded transition-opacity text-slate-400 hover:text-slate-600"
+                                    title="Rename bill customer"
+                                  >
+                                    <Edit2 className="h-2.5 w-2.5" />
+                                  </button>
+                                </div>
+                                <span className="text-[9px] font-mono font-bold text-slate-400 group-hover:text-slate-500">
+                                  {itemCount} item(s) • ₹{subtotal.toFixed(2)}
+                                </span>
+                              </div>
+
+                              {billingTabs.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteBillingTab(tab.id, e)}
+                                  className="p-0.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                  title="Close bill"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddBillingTab}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3 py-1.5 rounded-xl text-[10px] uppercase tracking-wider flex items-center justify-center gap-1 transition-colors shadow-sm shrink-0 cursor-pointer self-start md:self-auto"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>New Cart</span>
+                    </button>
+                  </div>
+
+                  {/* Option to Load Customer Order */}
+                  {customerOrders && customerOrders.filter(co => co.storeId === store.id && co.status === 'Pending').length > 0 && (
+                    <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 space-y-2.5 animate-in fade-in">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-xs font-black text-indigo-950 uppercase tracking-wide">
+                          <span className="animate-pulse">📥</span> Load Customer Order to Edit / Checkout
+                        </span>
+                        <span className="bg-indigo-200 text-indigo-800 text-[9px] px-2 py-0.5 rounded-full font-black">
+                          {customerOrders.filter(co => co.storeId === store.id && co.status === 'Pending').length} Pending
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
+                        {customerOrders
+                          .filter(co => co.storeId === store.id && co.status === 'Pending')
+                          .map(order => (
+                            <button
+                              key={order.id}
+                              type="button"
+                              onClick={() => {
+                                // Load this order into the active register
+                                setPosCustomerName(order.customerName);
+                                setWhatsappPhone(order.customerPhone);
+                                
+                                // Build cart representation
+                                const newCart: Record<string, PosCartItem> = {};
+                                order.items.forEach(it => {
+                                  const invItem = storeInventory.find(inv => inv.vegetableName.toLowerCase() === it.vegetableName.toLowerCase());
+                                  newCart[it.vegetableName] = {
+                                    quantity: it.quantity,
+                                    unit: 'kg', // standard
+                                    pricePerKg: it.pricePerKg,
+                                    item: invItem || {
+                                      id: `temp-${Date.now()}`,
+                                      storeId: store.id,
+                                      vegetableName: it.vegetableName,
+                                      quantity: 100,
+                                      costPrice: it.pricePerKg * 0.75,
+                                      sellingPrice: it.pricePerKg,
+                                      minStockThreshold: 10,
+                                      lastUpdated: new Date().toISOString()
+                                    }
+                                  };
+                                });
+                                setPosCart(newCart);
+                                setSaleSubView('items'); // Switch back to items so they can edit it!
+                              }}
+                              className="bg-white hover:bg-indigo-50/50 text-left border border-indigo-100 p-2.5 rounded-xl hover:border-indigo-300 transition-all cursor-pointer flex flex-col gap-1 shadow-3xs"
+                            >
+                              <div className="flex justify-between items-center w-full">
+                                <span className="font-extrabold text-xs text-indigo-950 truncate max-w-[150px]">{order.customerName}</span>
+                                <span className="font-mono text-[10px] text-indigo-500 font-extrabold">₹{order.totalAmount.toFixed(0)}</span>
+                              </div>
+                              <p className="text-[10px] text-indigo-700 font-medium truncate w-full font-mono">
+                                {order.items.map(it => `${it.vegetableName} (${it.quantity}kg)`).join(', ')}
+                              </p>
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {Object.keys(posCart).length === 0 ? (
+                    <div className="py-20 text-center bg-white border border-slate-200 rounded-3xl p-6">
+                      <span className="text-4xl block mb-2">🛒</span>
+                      <h4 className="text-sm font-black text-slate-800">Your billing cart is empty</h4>
+                      <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Browse crops in the Sale Items tab to add items and generate a bill receipt.</p>
+                      <button 
+                        onClick={() => setSaleSubView('items')}
+                        className="mt-4 inline-flex items-center gap-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                      >
+                        ← Browse Sale Items
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-white border border-slate-200/85 rounded-3xl p-5 md:p-6 shadow-sm space-y-5">
+                      {/* Customer Info Form */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Customer Identity Name</label>
+                          <input
+                            type="text"
+                            placeholder="Walk-in Counter Customer"
+                            value={posCustomerName}
+                            onChange={(e) => setPosCustomerName(e.target.value)}
+                            className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Send Receipt WhatsApp (+91)</label>
+                          <div className="relative">
+                            <span className="absolute inset-y-0 left-3 flex items-center text-xs font-extrabold text-slate-400">
+                              +91
+                            </span>
+                            <input
+                              type="tel"
+                              placeholder="9876543210"
+                              maxLength={10}
+                              value={whatsappPhone}
+                              onChange={(e) => setWhatsappPhone(e.target.value.replace(/\D/g, ''))}
+                              className="w-full rounded-xl bg-slate-50 border border-slate-200 py-2 pl-11 pr-3 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50 font-mono"
+                            />
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Ambient tip */}
-                      <div className="bg-slate-850/60 rounded-xl p-3 border border-slate-800/80">
-                        <p className="text-[8px] font-black uppercase text-emerald-400 tracking-wider">Health Tip</p>
-                        <p className="text-[11px] text-slate-300 italic font-medium mt-0.5 leading-snug">
-                          "{billingQuote || "Enjoy fresh vegetables every day!"}"
-                        </p>
-                      </div>
-
-                      {/* Itemized list */}
-                      <div className="space-y-2.5 divide-y divide-slate-800/60">
-                        <span className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400 pb-1">Itemized Cart Ledger</span>
+                      {/* Itemized Cart List */}
+                      <div className="space-y-3.5 divide-y divide-slate-100">
+                        <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 pb-1.5">Itemized Cart Ledger</span>
                         {Object.keys(posCart).map((vegName, idx) => {
                           const cartItem = posCart[vegName];
                           const itemSubtotal = getSubtotal(cartItem);
                           const changeStep = cartItem.unit === 'g' ? 50 : cartItem.unit === 'kg' ? 0.25 : 1;
                           
                           return (
-                            <div key={cartItem.item.id} className={`${idx > 0 ? 'pt-3' : ''} flex flex-col gap-2`}>
+                            <div key={cartItem.item.id} className={`${idx > 0 ? 'pt-4' : ''} flex flex-col gap-2`}>
                               <div className="flex justify-between items-start">
-                                <h4 className="text-xs font-black text-slate-200">{cartItem.item.vegetableName}</h4>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-sm">{getVegEmoji(cartItem.item.vegetableName)}</span>
+                                  <h4 className="text-xs sm:text-sm font-black text-slate-800">{cartItem.item.vegetableName}</h4>
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveFromPosCart(cartItem.item.vegetableName)}
-                                  className="text-[10px] uppercase font-black text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                                  className="text-[10px] uppercase font-black text-rose-500 hover:text-rose-600 transition-colors cursor-pointer"
                                 >
                                   Remove
                                 </button>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2.5 bg-slate-850/40 p-2 rounded-xl border border-slate-800/30">
-                                {/* Quantity */}
+                              <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-3 bg-slate-50/55 p-3 rounded-xl border border-slate-200/50">
+                                {/* Quantity Adjuster */}
                                 <div className="flex flex-col gap-0.5">
-                                  <span className="text-[8px] uppercase font-black text-slate-500 tracking-wider">Weight / Qty</span>
-                                  <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                                  <span className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Weight / Qty</span>
+                                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
                                     <button
                                       type="button"
                                       onClick={() => handleUpdatePosCartQty(cartItem.item.vegetableName, cartItem.quantity - changeStep)}
-                                      className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800 cursor-pointer text-xs font-black"
+                                      className="h-5 w-5 rounded flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer text-xs font-black"
                                     >
                                       -
                                     </button>
@@ -1982,25 +2279,25 @@ export default function StoreManager({
                                       min="0.01"
                                       value={cartItem.quantity}
                                       onChange={(e) => handleUpdatePosCartQty(cartItem.item.vegetableName, parseFloat(e.target.value) || 0)}
-                                      className="w-12 bg-transparent text-center text-xs font-black text-slate-100 focus:outline-none font-sans"
+                                      className="w-12 bg-transparent text-center text-xs font-black text-slate-800 focus:outline-none font-mono"
                                     />
                                     <button
                                       type="button"
                                       onClick={() => handleUpdatePosCartQty(cartItem.item.vegetableName, cartItem.quantity + changeStep)}
-                                      className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-slate-800 cursor-pointer text-xs font-black"
+                                      className="h-5 w-5 rounded flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer text-xs font-black"
                                     >
                                       +
                                     </button>
                                   </div>
                                 </div>
 
-                                {/* Unit */}
+                                {/* Billing Unit Selector */}
                                 <div className="flex flex-col gap-0.5">
-                                  <span className="text-[8px] uppercase font-black text-slate-500 tracking-wider">Billing Unit</span>
+                                  <span className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Billing Unit</span>
                                   <select
                                     value={cartItem.unit}
                                     onChange={(e) => handleUpdatePosCartUnit(cartItem.item.vegetableName, e.target.value as any)}
-                                    className="bg-slate-900 text-[10px] font-black text-emerald-400 border border-slate-850 rounded-lg px-2 py-1.5 focus:outline-none focus:border-emerald-600 cursor-pointer w-full"
+                                    className="bg-white text-[10px] font-black text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-emerald-600 cursor-pointer w-full"
                                   >
                                     <option value="kg">kg</option>
                                     <option value="g">g</option>
@@ -2016,24 +2313,24 @@ export default function StoreManager({
                                   </select>
                                 </div>
 
-                                {/* Price adjustment & Subtotal */}
-                                <div className="flex justify-between items-center bg-slate-900/60 p-1.5 rounded-lg border border-slate-800/40">
+                                {/* Price Adjustment & Subtotal */}
+                                <div className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-200">
                                   <div className="flex flex-col">
-                                    <span className="text-[8px] uppercase font-black text-slate-500 tracking-wider">Rate/Unit</span>
-                                    <div className="flex items-center gap-0.5 mt-0.5">
-                                      <span className="text-[10px] text-slate-500">₹</span>
+                                    <span className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Rate (₹)</span>
+                                    <div className="flex items-center gap-0.5">
+                                      <span className="text-[10px] text-slate-400 font-bold">₹</span>
                                       <input
                                         type="number"
                                         step="0.1"
                                         value={cartItem.pricePerKg}
                                         onChange={(e) => handleUpdatePosCartPrice(cartItem.item.vegetableName, parseFloat(e.target.value) || 0)}
-                                        className="w-10 bg-transparent text-left text-xs font-bold text-slate-300 focus:outline-none"
+                                        className="w-12 bg-transparent text-left text-xs font-bold text-slate-700 focus:outline-none font-mono"
                                       />
                                     </div>
                                   </div>
                                   <div className="flex flex-col items-end">
-                                    <span className="text-[8px] uppercase font-black text-slate-500 tracking-wider">Subtotal</span>
-                                    <span className="text-xs font-black text-emerald-400 font-mono mt-0.5">₹{itemSubtotal.toFixed(1)}</span>
+                                    <span className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Subtotal</span>
+                                    <span className="text-xs font-black text-emerald-600 font-mono">₹{itemSubtotal.toFixed(2)}</span>
                                   </div>
                                 </div>
                               </div>
@@ -2041,41 +2338,228 @@ export default function StoreManager({
                           );
                         })}
                       </div>
-                    </div>
 
-                    {/* Footer with grand total and submit action */}
-                    <div className="border-t border-slate-800 pt-4 mt-2 space-y-3.5 shrink-0 text-left">
-                      <div className="flex justify-between items-baseline">
-                        <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Estimated Invoice Sum</span>
-                        <span className="text-2xl font-black text-emerald-400 font-mono">
-                          ₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)}
-                        </span>
+                      {/* Grand Total Footer */}
+                      <div className="border-t border-slate-100 pt-5 mt-2 flex flex-col sm:flex-row justify-between items-center gap-4">
+                        <div className="text-center sm:text-left">
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Grand Invoice Sum</span>
+                          <div className="text-2xl font-black text-emerald-600 font-mono mt-0.5">
+                            ₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2.5 w-full sm:w-auto">
+                          <button
+                            type="button"
+                            onClick={handleClearPosCart}
+                            className="flex-1 sm:flex-initial bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl px-5 py-3 text-xs transition-colors cursor-pointer"
+                          >
+                            CLEAR CART
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handlePosCheckoutSubmit}
+                            className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl px-8 py-3 text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-200"
+                          >
+                            <span>COMPLETE SALE</span>
+                            <ArrowRight className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <button
-                          type="button"
-                          onClick={() => setShowCheckoutModal(false)}
-                          className="bg-slate-800 text-slate-300 font-black rounded-xl py-3 text-xs hover:bg-slate-750 transition-colors cursor-pointer"
-                        >
-                          ADD MORE CROPS
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handlePosCheckoutSubmit}
-                          className="bg-emerald-500 text-slate-950 font-black rounded-xl py-3 text-xs hover:bg-emerald-400 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-950/20"
-                        >
-                          Complete Sale ➔
-                        </button>
-                      </div>
                     </div>
-
-                  </div>
+                  )}
                 </div>
               )}
 
+              {/* Sub-view: STORE DETAILS & ALERTS */}
+              {saleSubView === 'details' && (
+                <div className="space-y-5 animate-in fade-in duration-200 text-left">
+                  {/* Part 1: Store Overview and Stats Card */}
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+                    <div>
+                      <span className="bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider">
+                        Active Outlet Workspace
+                      </span>
+                      <h3 className="text-lg font-black mt-2 tracking-tight text-slate-800">{store.name}</h3>
+                      <p className="text-xs text-slate-400 mt-1">Detailed configurations, real-time statistics, and active alerts compiled on a single unified sheet.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                        <span className="block text-[8px] font-black text-slate-400 uppercase tracking-wide">Registered Crops</span>
+                        <span className="text-base font-black text-slate-800 mt-1 block">{storeInventory.length} crop catalog line items</span>
+                      </div>
+
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                        <span className="block text-[8px] font-black text-slate-400 uppercase tracking-wide">Revenue Today</span>
+                        <span className="text-base font-black text-emerald-600 mt-1 block font-mono">₹{storeSales.reduce((a,c) => a + c.totalPrice, 0).toFixed(2)}</span>
+                      </div>
+
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                        <span className="block text-[8px] font-black text-slate-400 uppercase tracking-wide">Volume Dispatched</span>
+                        <span className="text-base font-black text-amber-600 mt-1 block font-mono">{storeSales.reduce((a,c) => a + c.quantity, 0).toFixed(1)} kg</span>
+                      </div>
+                    </div>
+
+                    {/* Part 2: Branch Configurations */}
+                    <div className="border-t border-slate-100 pt-5 space-y-4">
+                      <h4 className="text-xs font-black tracking-wider uppercase text-slate-400">Branch Configuration</h4>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs text-slate-700">
+                        <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-200/80 flex justify-between items-center">
+                          <span className="text-slate-400 font-bold">Location Desk:</span>
+                          <span className="font-extrabold text-slate-800">{store.location || 'Not Specified'}</span>
+                        </div>
+                        <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-200/80 flex justify-between items-center">
+                          <span className="text-slate-400 font-bold">WhatsApp Hotline:</span>
+                          <span className="font-extrabold text-slate-800 font-mono">{store.whatsappNumber || 'Not Configured'}</span>
+                        </div>
+                        <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-200/80 flex justify-between items-center">
+                          <span className="text-slate-400 font-bold">User Permission Access:</span>
+                          <span className="font-extrabold text-blue-600 uppercase bg-blue-50 px-2 py-0.5 rounded text-[10px]">{role || 'Store Employee'}</span>
+                        </div>
+                        <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-200/80 flex justify-between items-center">
+                          <span className="text-slate-400 font-bold">Safety Warn Threshold:</span>
+                          <span className="font-extrabold text-rose-600 bg-rose-50 px-2 py-0.5 rounded text-[10px]">≤ 10 kg</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Part 3: Live Alerts, Low Stocks, and Customer Orders notifications list */}
+                  {(() => {
+                    const lowStockItems = storeInventory.filter(item => item.quantity <= item.minStockThreshold);
+                    const pendingOrders = customerOrders.filter(co => co.storeId === store.id && co.status !== 'Completed' && co.status !== 'Cancelled');
+                    const pendingRequests = storeRequirements.filter(r => r.status === 'Pending' || r.status === 'Ordered');
+                    
+                    const noAlerts = lowStockItems.length === 0 && pendingOrders.length === 0 && pendingRequests.length === 0;
+
+                    if (noAlerts) {
+                      return (
+                        <div className="py-12 text-center bg-emerald-50 border border-emerald-200 rounded-3xl p-6">
+                          <span className="text-3xl block mb-2">✨</span>
+                          <h4 className="text-xs font-black text-emerald-900">Your branch desk is fully operational!</h4>
+                          <p className="text-[11px] text-emerald-700 mt-1 max-w-sm mx-auto">All parameters are healthy. No low stock crops, pending online customer orders, or urgent restock requests requiring attention.</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-5">
+                        {/* Pending online customer orders section */}
+                        {pendingOrders.length > 0 && (
+                          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3">
+                            <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2.5">
+                              <span className="text-base">🛒</span>
+                              <h4 className="text-xs font-black uppercase text-slate-500 tracking-wider">Pending Customer Orders ({pendingOrders.length})</h4>
+                            </div>
+                            <div className="space-y-3">
+                              {pendingOrders.map(order => (
+                                <div key={order.id} className="p-3 bg-slate-50 rounded-xl border border-slate-150 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-black text-slate-800">#{order.orderNumber} - {order.customerName}</span>
+                                      <span className="text-[9px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.5 rounded-full uppercase">{order.status}</span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1">
+                                      Ordered {order.items.length} crop items • Grand sum: <span className="font-bold text-slate-600 font-mono">₹{order.totalAmount.toFixed(2)}</span>
+                                    </p>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => setActiveSubTab('customer-orders' as any)}
+                                      className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider self-start sm:self-auto cursor-pointer"
+                                    >
+                                      Manage Order
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setCancellingOrder(order);
+                                        setCancellationReason('');
+                                      }}
+                                      className="bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-100 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider self-start sm:self-auto cursor-pointer"
+                                    >
+                                      Cancel Order
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Low stock alerts section */}
+                        {lowStockItems.length > 0 && (
+                          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3">
+                            <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2.5">
+                              <span className="text-base">🚨</span>
+                              <h4 className="text-xs font-black uppercase text-slate-500 tracking-wider">Low Stock Inventory Warnings ({lowStockItems.length})</h4>
+                            </div>
+                            <div className="space-y-3">
+                              {lowStockItems.map(item => (
+                                <div key={item.id} className="p-3 bg-rose-50/40 rounded-xl border border-rose-100 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm">{getVegEmoji(item.vegetableName)}</span>
+                                      <span className="text-xs font-extrabold text-slate-800">{item.vegetableName}</span>
+                                      <span className="text-[9px] bg-rose-100 text-rose-800 font-black px-1.5 py-0.5 rounded-full uppercase">
+                                        {item.quantity === 0 ? 'Out of stock' : `${item.quantity.toFixed(1)} kg Left`}
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1">
+                                      Minimum safety stock warning threshold set to <span className="font-semibold text-slate-600">{item.minStockThreshold} kg</span>.
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      setActiveSubTab('requirements');
+                                      setSaleVegName(item.vegetableName);
+                                    }}
+                                    className="bg-rose-100 text-rose-800 hover:bg-rose-200 px-3.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider self-start sm:self-auto cursor-pointer"
+                                  >
+                                    Request Restock
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Pending Restock Requests section */}
+                        {pendingRequests.length > 0 && (
+                          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3">
+                            <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2.5">
+                              <span className="text-base">📨</span>
+                              <h4 className="text-xs font-black uppercase text-slate-500 tracking-wider">Branch Restock Requests Status ({pendingRequests.length})</h4>
+                            </div>
+                            <div className="space-y-3">
+                              {pendingRequests.map(req => (
+                                <div key={req.id} className="p-3 bg-slate-50 rounded-xl border border-slate-150 flex items-center justify-between gap-3 text-xs">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm">{getVegEmoji(req.vegetableName)}</span>
+                                      <span className="text-xs font-bold text-slate-800">{req.vegetableName} ({req.quantity} kg)</span>
+                                    </div>
+                                    <p className="text-[9px] text-slate-400 mt-0.5">Priority: {req.priority} • Filed on {new Date(req.createdAt || '').toLocaleDateString()}</p>
+                                  </div>
+                                  <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${
+                                    req.status === 'Pending' 
+                                      ? 'bg-amber-100 text-amber-800' 
+                                      : 'bg-blue-100 text-blue-800 animate-pulse'
+                                  }`}>
+                                    {req.status === 'Ordered' ? '🚚 In Transit' : '⏳ Pending Head Office'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
-          </div>
           )}
         </div>
       )}
@@ -2149,13 +2633,26 @@ export default function StoreManager({
                   
                   {/* Vegetable Name Selection / Input */}
                   <div>
-                    <label htmlFor="sale-veg" className="block text-xs font-bold text-zinc-500 uppercase mb-1">Vegetable Name *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="sale-veg" className="block text-xs font-bold text-zinc-500 uppercase">Vegetable Name *</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setScannerTarget('sale');
+                          setIsScannerOpen(true);
+                        }}
+                        className="flex items-center gap-1 text-[10px] uppercase font-black tracking-wider text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-100 px-2 py-0.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        <Scan className="h-3 w-3 text-emerald-600" />
+                        Scan Package
+                      </button>
+                    </div>
                     <select
                       id="sale-veg"
                       required
                       value={saleVegName}
                       onChange={(e) => handleSaleVegSelect(e.target.value)}
-                      className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800 font-semibold"
+                      className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800 font-semibold bg-white"
                     >
                       <option value="">-- Choose Vegetable --</option>
                       {storeInventory.map(item => (
@@ -2351,7 +2848,20 @@ export default function StoreManager({
               
               {/* Vegetable Name */}
               <div>
-                <label htmlFor="pur-veg" className="block text-xs font-bold text-zinc-500 uppercase mb-1">Vegetable Crop Name *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="pur-veg" className="block text-xs font-bold text-zinc-500 uppercase">Vegetable Crop Name *</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScannerTarget('purchase');
+                      setIsScannerOpen(true);
+                    }}
+                    className="flex items-center gap-1 text-[10px] uppercase font-black tracking-wider text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-100 px-2 py-0.5 rounded-lg transition-all cursor-pointer"
+                  >
+                    <Scan className="h-3 w-3 text-emerald-600" />
+                    Scan Package
+                  </button>
+                </div>
                 <input
                   id="pur-veg"
                   type="text"
@@ -2359,7 +2869,7 @@ export default function StoreManager({
                   placeholder="e.g. Potatoes, Onions, Tomatoes"
                   value={purchaseVegName}
                   onChange={(e) => setPurchaseVegName(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800 font-semibold"
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800 font-semibold bg-white"
                 />
               </div>
 
@@ -2462,15 +2972,28 @@ export default function StoreManager({
           
           {/* Actions line with Search */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-zinc-50 rounded-2xl p-4 border border-zinc-200">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
-              <input
-                type="text"
-                placeholder="Search stock ledger (e.g. Tomato, Onion)..."
-                value={vegSearchQuery}
-                onChange={(e) => setVegSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-zinc-200 bg-white py-1.5 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800"
-              />
+            <div className="relative flex-1 max-w-md flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
+                <input
+                  type="text"
+                  placeholder="Search stock ledger (e.g. Tomato, Onion)..."
+                  value={vegSearchQuery}
+                  onChange={(e) => setVegSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-zinc-200 bg-white py-1.5 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setScannerTarget('inventory');
+                  setIsScannerOpen(true);
+                }}
+                className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700 border border-emerald-100 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-3xs hover:scale-[1.01]"
+              >
+                <Scan className="h-4 w-4 text-emerald-600 animate-pulse" />
+                <span>Scan Code</span>
+              </button>
             </div>
 
             {role !== 'Employee' && (
@@ -2663,72 +3186,112 @@ export default function StoreManager({
       {activeSubTab === 'requirements' && (
         <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
           
-          {/* Create Requirement */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm space-y-4 h-fit">
-            <div>
-              <h3 className="font-bold text-zinc-900">Request Stock Requisition</h3>
-              <p className="text-xs text-zinc-400">Add custom requirements that consolidate under administrative panel.</p>
+          {/* Create Requirement & History */}
+          <div className="space-y-6">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm space-y-4 h-fit text-left">
+              <div>
+                <h3 className="font-bold text-zinc-900">Request Stock Requisition</h3>
+                <p className="text-xs text-zinc-400">Add custom requirements that consolidate under administrative panel.</p>
+              </div>
+
+              <form onSubmit={handleAddRequirementSubmit} className="space-y-3.5">
+                
+                {/* Crop Name */}
+                <div>
+                  <label htmlFor="req-veg" className="block text-xs font-bold text-zinc-500 uppercase mb-1">Predefined Item *</label>
+                  <select
+                    id="req-veg"
+                    required
+                    value={reqVegName}
+                    onChange={(e) => setReqVegName(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-zinc-700 cursor-pointer"
+                  >
+                    <option value="" disabled>-- Select a predefined item --</option>
+                    {PREDEFINED_REQS.map(item => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Requirement Qty */}
+                <div>
+                  <label htmlFor="req-qty" className="block text-xs font-bold text-zinc-500 uppercase mb-1">Required Quantity (kg) *</label>
+                  <div className="relative">
+                    <input
+                      id="req-qty"
+                      type="number"
+                      step="1"
+                      min="1"
+                      required
+                      placeholder="e.g. 50"
+                      value={reqQty || ''}
+                      onChange={(e) => setReqQty(parseInt(e.target.value) || 0)}
+                      className="w-full rounded-xl border border-zinc-200 py-2 pl-3 pr-12 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-zinc-850"
+                    />
+                    <span className="absolute inset-y-0 right-3 flex items-center text-xs font-bold text-zinc-400">
+                      kg
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full rounded-xl bg-zinc-900 py-2.5 text-xs font-bold text-white shadow-md shadow-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  File Stock Requirement
+                </button>
+
+              </form>
             </div>
 
-            <form onSubmit={handleAddRequirementSubmit} className="space-y-3.5">
-              
-              {/* Crop Name */}
+            {/* Requisition History & Quick Reuse Card */}
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/40 p-5 shadow-sm space-y-3.5 text-left">
               <div>
-                <label htmlFor="req-veg" className="block text-xs font-bold text-zinc-500 uppercase mb-1">Predefined Item *</label>
-                <select
-                  id="req-veg"
-                  required
-                  value={reqVegName}
-                  onChange={(e) => setReqVegName(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-zinc-700 cursor-pointer"
-                >
-                  <option value="" disabled>-- Select a predefined item --</option>
-                  {PREDEFINED_REQS.map(item => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
+                <h3 className="font-bold text-zinc-900 text-xs flex items-center gap-1.5">
+                  <span>⏱️</span> Requisition History
+                </h3>
+                <p className="text-[10px] text-zinc-400 mt-1">Past fulfilled restock requests. Click reuse to raise a new requisition with identical item & weight.</p>
               </div>
 
-              {/* Requirement Qty */}
-              <div>
-                <label htmlFor="req-qty" className="block text-xs font-bold text-zinc-500 uppercase mb-1">Required Quantity (kg) *</label>
-                <div className="relative">
-                  <input
-                    id="req-qty"
-                    type="number"
-                    step="1"
-                    min="1"
-                    required
-                    placeholder="e.g. 50"
-                    value={reqQty || ''}
-                    onChange={(e) => setReqQty(parseInt(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-zinc-200 py-2 pl-3 pr-12 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
-                  />
-                  <span className="absolute inset-y-0 right-3 flex items-center text-xs font-bold text-zinc-400">
-                    kg
-                  </span>
-                </div>
+              <div className="max-h-[280px] overflow-y-auto space-y-2 pr-1">
+                {storeRequirements.filter(r => r.status === 'Fulfilled').length > 0 ? (
+                  storeRequirements.filter(r => r.status === 'Fulfilled').map(req => (
+                    <div key={req.id} className="p-2.5 rounded-xl border border-zinc-150 bg-white flex items-center justify-between gap-2.5 shadow-3xs hover:bg-zinc-50 transition-colors">
+                      <div className="text-left">
+                        <h4 className="text-[11px] font-bold text-zinc-850">{req.quantity}kg of {req.vegetableName}</h4>
+                        <p className="text-[9px] text-emerald-600 font-extrabold flex items-center gap-0.5 mt-0.5">
+                          <span>✅</span> Fulfilled • {new Date(req.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleReuseRequirement(req)}
+                        className="bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700 border border-emerald-100/60 px-2 py-1 rounded-lg text-[10px] font-black tracking-tight transition-all cursor-pointer flex items-center gap-1 hover:scale-[1.01]"
+                        title="Reuse requisition parameters"
+                      >
+                        <span>🔄</span> Reuse
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-8 text-center text-zinc-400 border border-dashed border-zinc-200 rounded-xl bg-white/50">
+                    <p className="text-[10px] font-bold">No historical requisitions found</p>
+                    <p className="text-[9px] text-zinc-400 mt-0.5">Fulfilled requests appear here.</p>
+                  </div>
+                )}
               </div>
-
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-zinc-900 py-2.5 text-xs font-bold text-white shadow-md shadow-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
-              >
-                File Stock Requirement
-              </button>
-
-            </form>
+            </div>
           </div>
 
           {/* Active Requirements List */}
-          <div className="lg:col-span-2 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm flex flex-col h-full max-h-[500px]">
+          <div className="lg:col-span-2 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm flex flex-col h-full max-h-[580px] text-left">
             <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-zinc-100 pb-3">
               <div>
                 <h3 className="font-bold text-zinc-900">Branch Requisition Sheet</h3>
-                <p className="text-xs text-zinc-400 font-medium">Requisition items filed by this outlet.</p>
+                <p className="text-xs text-zinc-400 font-medium">Active Requisition items filed by this outlet.</p>
               </div>
 
-              {storeRequirements.length > 0 && (
+              {storeRequirements.filter(r => r.status !== 'Fulfilled').length > 0 && (
                 <a
                   href={sendAllRequirementsOnWhatsApp()}
                   target="_blank"
@@ -2742,7 +3305,7 @@ export default function StoreManager({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {storeRequirements.map(req => (
+              {storeRequirements.filter(r => r.status !== 'Fulfilled').map(req => (
                 <div key={req.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3.5 rounded-xl border border-zinc-100 gap-3 hover:bg-zinc-50/50 transition-colors">
                   <div className="flex items-start gap-3">
                     <span className={`inline-block rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
@@ -2770,7 +3333,7 @@ export default function StoreManager({
                     {req.status === 'Pending' && (
                       <button
                         onClick={() => onUpdateRequirementStatus(req.id, 'Ordered')}
-                        className="text-[10px] font-bold px-2 py-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100"
+                        className="text-[10px] font-bold px-2 py-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 cursor-pointer"
                       >
                         Order
                       </button>
@@ -2778,7 +3341,7 @@ export default function StoreManager({
                     {req.status === 'Ordered' && (
                       <button
                         onClick={() => onUpdateRequirementStatus(req.id, 'Fulfilled')}
-                        className="text-[10px] font-bold px-2 py-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                        className="text-[10px] font-bold px-2 py-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 cursor-pointer"
                       >
                         Fulfill
                       </button>
@@ -2789,7 +3352,7 @@ export default function StoreManager({
                       href={getWhatsAppStoreLink(req)}
                       target="_blank"
                       referrerPolicy="no-referrer"
-                      className="p-1 rounded text-[#25D366] hover:bg-emerald-50"
+                      className="p-1 rounded text-[#25D366] hover:bg-emerald-50 cursor-pointer"
                       title="Send this requirement on WhatsApp"
                     >
                       <PhoneCall className="h-4 w-4" />
@@ -2797,7 +3360,7 @@ export default function StoreManager({
 
                     <button
                       onClick={() => onDeleteRequirement(req.id)}
-                      className="p-1 rounded text-red-500 hover:bg-red-50"
+                      className="p-1 rounded text-red-500 hover:bg-red-50 cursor-pointer"
                       title="Delete requirement"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -2806,11 +3369,11 @@ export default function StoreManager({
                 </div>
               ))}
 
-              {storeRequirements.length === 0 && (
+              {storeRequirements.filter(r => r.status !== 'Fulfilled').length === 0 && (
                 <div className="py-24 text-center text-zinc-400">
                   <Send className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
-                  <p className="text-xs font-semibold">No store requisitions raised</p>
-                  <p className="text-[10px] text-zinc-500">Add vegetable requirements to notify the administrator.</p>
+                  <p className="text-xs font-semibold">No active store requisitions raised</p>
+                  <p className="text-[10px] text-zinc-500">All filed stock requirements are fulfilled. Add vegetable requirements to notify the administrator.</p>
                 </div>
               )}
             </div>
@@ -2832,8 +3395,55 @@ export default function StoreManager({
             </span>
           </div>
 
+          {/* Search bar with Voice Input for Customer Orders */}
+          <div className="flex flex-col sm:flex-row items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search orders by customer name, phone, or ID..."
+                value={orderSearchQuery}
+                onChange={(e) => setOrderSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-12 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+              />
+              {/* Voice Input Trigger for Orders Search */}
+              <button
+                type="button"
+                onClick={() => handleStartVoiceInput((text) => setOrderSearchQuery(text))}
+                className={`absolute right-2.5 top-1.5 p-1 rounded-lg transition-all ${
+                  isListening
+                    ? 'bg-rose-500 text-white animate-pulse shadow-md shadow-rose-500/20'
+                    : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
+                }`}
+                title="Speak to search orders"
+              >
+                <Mic className={`h-4 w-4 ${isListening ? 'animate-bounce' : ''}`} />
+              </button>
+            </div>
+            {orderSearchQuery && (
+              <button 
+                onClick={() => setOrderSearchQuery('')}
+                className="text-xs text-slate-400 hover:text-slate-600 font-bold shrink-0"
+              >
+                Clear Search
+              </button>
+            )}
+          </div>
+
           <div className="space-y-3">
-            {customerOrders.filter(co => co.storeId === store.id).map(order => {
+            {customerOrders
+              .filter(co => co.storeId === store.id)
+              .filter(co => {
+                if (!orderSearchQuery) return true;
+                const q = orderSearchQuery.toLowerCase();
+                return (
+                  co.customerName.toLowerCase().includes(q) ||
+                  co.customerPhone.includes(q) ||
+                  co.id.toLowerCase().includes(q) ||
+                  (co.notes && co.notes.toLowerCase().includes(q))
+                );
+              })
+              .map(order => {
               const isUnprocessed = order.status === 'Pending' || order.status === 'Processing' || order.status === 'Ready';
               const isEditing = editingOrderId === order.id;
 
@@ -3105,6 +3715,21 @@ export default function StoreManager({
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {/* Send a pre-filled status update message on WhatsApp */}
+                      <a
+                        href={`https://wa.me/91${order.customerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                          `Hello ${order.customerName}, this is a status update regarding your order #${order.id} of amount ₹${order.totalAmount.toFixed(2)} at ${store.name}. ` +
+                          `Your order is currently "${order.status}"! We are preparing the fresh crops for you.`
+                        )}`}
+                        target="_blank"
+                        referrerPolicy="no-referrer"
+                        className="px-2.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-[#25D366] text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        title="Send WhatsApp update to customer"
+                      >
+                        <PhoneCall className="h-3 w-3" />
+                        <span>Send Message</span>
+                      </a>
+
                       {isUnprocessed && onUpdateCustomerOrder && (
                         <button
                           onClick={() => handleStartEditOrder(order)}
@@ -3130,9 +3755,8 @@ export default function StoreManager({
                       {isUnprocessed && onDeleteCustomerOrder && (
                         <button
                           onClick={() => {
-                            if (confirm('Cancel this consumer order?')) {
-                              onDeleteCustomerOrder(order.id);
-                            }
+                            setCancellingOrder(order);
+                            setCancellationReason('');
                           }}
                           className="px-2.5 py-1.5 rounded-lg border border-red-250 bg-red-50 text-red-700 text-xs font-bold hover:bg-red-100 transition-colors cursor-pointer"
                         >
@@ -3145,13 +3769,28 @@ export default function StoreManager({
               );
             })}
 
-            {customerOrders.filter(co => co.storeId === store.id).length === 0 && (
+            {customerOrders.filter(co => co.storeId === store.id).length === 0 ? (
               <div className="py-24 text-center text-zinc-400">
                 <span>📦</span>
                 <p className="text-xs font-semibold mt-2">No consumer orders received yet</p>
                 <p className="text-[10px] text-zinc-500">Customers can order fresh crops from the storefront tab.</p>
               </div>
-            )}
+            ) : customerOrders.filter(co => co.storeId === store.id).filter(co => {
+              if (!orderSearchQuery) return true;
+              const q = orderSearchQuery.toLowerCase();
+              return (
+                co.customerName.toLowerCase().includes(q) ||
+                co.customerPhone.includes(q) ||
+                co.id.toLowerCase().includes(q) ||
+                (co.notes && co.notes.toLowerCase().includes(q))
+              );
+            }).length === 0 ? (
+              <div className="py-24 text-center text-zinc-400 border border-dashed border-zinc-200 rounded-2xl bg-white p-6">
+                <span>🔍</span>
+                <p className="text-xs font-semibold mt-2">No matching consumer orders found</p>
+                <p className="text-[10px] text-zinc-500">Refine your search parameters or check your spellings.</p>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
@@ -3233,6 +3872,474 @@ export default function StoreManager({
                   className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-black px-4 py-2.5 rounded-xl text-xs transition-all cursor-pointer border border-slate-700/50"
                 >
                   ♻️ Reset Cart Buffer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Minimal Breadcrumb Bar - Placed at the bottom of the page */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-50 border border-slate-200/60 rounded-xl p-3 shadow-sm mt-6">
+        <div className="flex items-center justify-between w-full sm:w-auto gap-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className={`flex h-2.5 w-2.5 items-center justify-center rounded-full ${offlineMode ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`}></span>
+            <span className="text-[11px] font-black uppercase tracking-widest text-slate-700">
+              {store.name.replace("Farmer's Gate - ", "")}
+            </span>
+          </div>
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 bg-slate-200/50 px-2 py-0.5 rounded-md">
+            {store.location || 'Branch Unit'}
+          </span>
+        </div>
+
+        {/* Dynamic Offline / Connection Controls */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+            offlineMode 
+              ? 'bg-amber-50 text-amber-700 border border-amber-200' 
+              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+          }`}>
+            {offlineMode ? '🟠 Offline Mode' : '🟢 Cloud Syncing'}
+          </span>
+          <button
+            type="button"
+            onClick={handleToggleOfflineMode}
+            className={`text-[10px] font-extrabold px-3 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1 shadow-xs ${
+              offlineMode 
+                ? 'bg-white border-amber-300 text-amber-700 hover:bg-amber-50' 
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {offlineMode ? '🔌 Switch Online' : '✈️ Work Offline'}
+          </button>
+        </div>
+      </div>
+
+      {/* Qr & Barcode Scanner Modal Component */}
+      <QrScanner
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScanSuccess={handleQrScanSuccess}
+        inventory={storeInventory}
+        title={
+          scannerTarget === 'pos' 
+            ? 'POS Quick Barcode Scanner' 
+            : scannerTarget === 'sale' 
+            ? 'Invoice Sale Barcode Scanner' 
+            : scannerTarget === 'purchase'
+              ? 'Supplier Purchase Barcode Scanner'
+              : 'Inventory Ledger QR Scanner'
+        }
+      />
+
+      {/* --- RETAIL BILLING CHECKOUT POP-UP MODAL --- */}
+      {showCheckoutModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-3xl p-6 shadow-2xl border border-slate-200 text-left animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3.5 mb-4 shrink-0">
+              <div>
+                <h3 className="font-black text-slate-800 text-base flex items-center gap-2">
+                  <span className="text-emerald-600">🛒</span> Point of Sale Checkout
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Finalize products weight, prices, and complete customer payment.</p>
+              </div>
+              <button 
+                onClick={() => setShowCheckoutModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-extrabold text-sm p-1.5 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable Body Content */}
+            <div className="flex-1 overflow-y-auto space-y-5 pr-1 text-slate-700">
+              
+              {/* Load Pending Customer Order Banner */}
+              {customerOrders && customerOrders.filter(co => co.storeId === store.id && co.status === 'Pending').length > 0 && (
+                <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-black text-indigo-950 uppercase tracking-wide">
+                      <span className="animate-pulse">📥</span> Load Customer Order to Checkout
+                    </span>
+                    <span className="bg-indigo-200 text-indigo-800 text-[9px] px-2 py-0.5 rounded-full font-black">
+                      {customerOrders.filter(co => co.storeId === store.id && co.status === 'Pending').length} Pending
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-28 overflow-y-auto pr-1">
+                    {customerOrders
+                      .filter(co => co.storeId === store.id && co.status === 'Pending')
+                      .map(order => (
+                        <button
+                          key={order.id}
+                          type="button"
+                          onClick={() => {
+                            setPosCustomerName(order.customerName);
+                            setWhatsappPhone(order.customerPhone);
+                            const newCart: Record<string, PosCartItem> = {};
+                            order.items.forEach(it => {
+                              const invItem = storeInventory.find(inv => inv.vegetableName.toLowerCase() === it.vegetableName.toLowerCase());
+                              newCart[it.vegetableName] = {
+                                quantity: it.quantity,
+                                unit: 'kg',
+                                pricePerKg: it.pricePerKg,
+                                item: invItem || {
+                                  id: `temp-${Date.now()}`,
+                                  storeId: store.id,
+                                  vegetableName: it.vegetableName,
+                                  quantity: 100,
+                                  costPrice: it.pricePerKg * 0.75,
+                                  sellingPrice: it.pricePerKg,
+                                  minStockThreshold: 10,
+                                  lastUpdated: new Date().toISOString()
+                                }
+                              };
+                            });
+                            setPosCart(newCart);
+                          }}
+                          className="bg-white hover:bg-indigo-50/50 text-left border border-indigo-100 p-2 rounded-xl hover:border-indigo-300 transition-all cursor-pointer flex flex-col gap-0.5 shadow-3xs"
+                        >
+                          <div className="flex justify-between items-center w-full">
+                            <span className="font-extrabold text-[11px] text-indigo-950 truncate max-w-[150px]">{order.customerName}</span>
+                            <span className="font-mono text-[10px] text-indigo-500 font-extrabold font-black">₹{order.totalAmount.toFixed(0)}</span>
+                          </div>
+                          <p className="text-[9px] text-indigo-700 font-medium truncate w-full font-mono">
+                            {order.items.map(it => `${it.vegetableName} (${it.quantity}kg)`).join(', ')}
+                          </p>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Multi-Billing Registers inside Checkout Pop-up */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-150/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 sm:pb-0">
+                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider pr-2 border-r border-slate-200">
+                    Registers
+                  </div>
+                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                    {billingTabs.map((tab) => {
+                      const isActive = tab.id === activeBillingTabId;
+                      const tabCart = isActive ? posCart : tab.cart;
+                      const itemCount = Object.keys(tabCart).length;
+                      const subtotal = Object.keys(tabCart).reduce((sum, key) => sum + getSubtotal(tabCart[key]), 0);
+                      const customerNameStr = isActive ? (posCustomerName || tab.label) : (tab.customerName || tab.label);
+                      
+                      return (
+                        <div
+                          key={tab.id}
+                          onClick={() => handleSwitchBillingTab(tab.id)}
+                          className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-bold transition-all border cursor-pointer shrink-0 ${
+                            isActive
+                              ? 'bg-white border-emerald-500 text-emerald-800 shadow-3xs'
+                              : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+                          }`}
+                        >
+                          <span>🎛️</span>
+                          <span className="truncate max-w-[50px]">{customerNameStr}</span>
+                          {itemCount > 0 && (
+                            <span className="bg-emerald-100 text-emerald-800 font-mono text-[8px] px-1 py-0.5 rounded-full font-black">
+                              ₹{subtotal.toFixed(0)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAddBillingTab}
+                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-100 px-3 py-1 rounded-xl text-[10px] font-black transition-all cursor-pointer shrink-0"
+                >
+                  + Add Register
+                </button>
+              </div>
+
+              {Object.keys(posCart).length === 0 ? (
+                <div className="py-12 text-center bg-slate-50 border border-dashed border-slate-200 rounded-3xl p-6">
+                  <span className="text-3xl block mb-2">🛒</span>
+                  <h4 className="text-xs font-black text-slate-700">Your billing cart is empty</h4>
+                  <p className="text-[10px] text-slate-400 mt-1">Please close this modal and add some items from the Sale Items tab first.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Customer Info Form */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Customer Identity Name</label>
+                      <input
+                        type="text"
+                        placeholder="Walk-in Counter Customer"
+                        value={posCustomerName}
+                        onChange={(e) => setPosCustomerName(e.target.value)}
+                        className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Send Receipt WhatsApp (+91)</label>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 left-3 flex items-center text-xs font-extrabold text-slate-400 font-mono">
+                          +91
+                        </span>
+                        <input
+                          type="tel"
+                          placeholder="9876543210"
+                          maxLength={10}
+                          value={whatsappPhone}
+                          onChange={(e) => setWhatsappPhone(e.target.value.replace(/\D/g, ''))}
+                          className="w-full rounded-xl bg-slate-50 border border-slate-200 py-2 pl-11 pr-3 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Itemized Cart List inside pop-up */}
+                  <div className="border border-slate-200 rounded-2xl p-3 bg-slate-50/40 space-y-3.5 divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                    <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400 text-left">Itemized Cart Ledger</span>
+                    {Object.keys(posCart).map((vegName, idx) => {
+                      const cartItem = posCart[vegName];
+                      const itemSubtotal = getSubtotal(cartItem);
+                      const changeStep = cartItem.unit === 'g' ? 50 : cartItem.unit === 'kg' ? 0.25 : 1;
+                      
+                      return (
+                        <div key={cartItem.item.id} className={`${idx > 0 ? 'pt-3.5' : ''} flex flex-col gap-2`}>
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs">{getVegEmoji(cartItem.item.vegetableName)}</span>
+                              <h4 className="text-xs font-bold text-slate-800">{cartItem.item.vegetableName}</h4>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFromPosCart(cartItem.item.vegetableName)}
+                              className="text-[9px] uppercase font-bold text-rose-500 hover:text-rose-600 cursor-pointer"
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2 bg-white p-2 rounded-xl border border-slate-150">
+                            {/* Quantity Adjuster */}
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-[8px] uppercase font-bold text-slate-400">Qty / Wt</span>
+                              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdatePosCartQty(cartItem.item.vegetableName, cartItem.quantity - changeStep)}
+                                  className="h-5 w-5 rounded flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer text-xs font-black"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  step={changeStep}
+                                  min="0.01"
+                                  value={cartItem.quantity}
+                                  onChange={(e) => handleUpdatePosCartQty(cartItem.item.vegetableName, parseFloat(e.target.value) || 0)}
+                                  className="w-10 bg-transparent text-center text-[11px] font-black text-slate-800 focus:outline-none font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdatePosCartQty(cartItem.item.vegetableName, cartItem.quantity + changeStep)}
+                                  className="h-5 w-5 rounded flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer text-xs font-black"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Billing Unit */}
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-[8px] uppercase font-bold text-slate-400">Unit</span>
+                              <select
+                                value={cartItem.unit}
+                                onChange={(e) => handleUpdatePosCartUnit(cartItem.item.vegetableName, e.target.value as any)}
+                                className="bg-slate-50 text-[10px] font-bold text-slate-700 border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none cursor-pointer w-full"
+                              >
+                                <option value="kg">kg</option>
+                                <option value="g">g</option>
+                                <option value="pcs">pcs</option>
+                                <option value="bunch">bunch</option>
+                                <option value="pack">pack</option>
+                              </select>
+                            </div>
+
+                            {/* Price adjustment & Subtotal */}
+                            <div className="flex justify-between items-center bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                              <div className="flex flex-col text-left">
+                                <span className="text-[8px] uppercase font-bold text-slate-400">Price (₹)</span>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  value={cartItem.pricePerKg}
+                                  onChange={(e) => handleUpdatePosCartPrice(cartItem.item.vegetableName, parseFloat(e.target.value) || 0)}
+                                  className="w-12 bg-transparent text-left text-[11px] font-black text-slate-800 focus:outline-none font-mono"
+                                />
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-[8px] uppercase font-bold text-slate-400">Subtotal</span>
+                                <span className="text-[11px] font-black text-emerald-600 font-mono">₹{itemSubtotal.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Footer containing Total amount & Action Buttons */}
+            {Object.keys(posCart).length > 0 && (
+              <div className="border-t border-slate-100 pt-4 mt-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
+                <div className="text-center sm:text-left">
+                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Grand Invoice Sum</span>
+                  <div className="text-2xl font-black text-emerald-600 font-mono mt-0.5">
+                    ₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)}
+                  </div>
+                </div>
+
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleClearPosCart}
+                    className="flex-1 sm:flex-initial bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl px-4 py-3 text-xs transition-colors cursor-pointer font-bold"
+                  >
+                    CLEAR CART
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePosCheckoutSubmit}
+                    className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl px-6 py-3 text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-emerald-200 hover:scale-[1.01]"
+                  >
+                    <span>COMPLETE SALE</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* --- CONSUMER ORDER CANCELLATION MODAL DIALOG --- */}
+      {cancellingOrder && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 text-left animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
+              <h3 className="font-black text-slate-800 text-sm flex items-center gap-1.5">
+                <span className="text-red-500">🚫</span> Cancel Order #{cancellingOrder.id}
+              </h3>
+              <button 
+                onClick={() => {
+                  setCancellingOrder(null);
+                  setCancellationReason('');
+                }}
+                className="text-slate-400 hover:text-slate-600 font-extrabold text-xs p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-150 text-xs text-slate-600">
+                <p className="font-semibold text-slate-800">Customer Details:</p>
+                <p className="mt-1">Name: <strong className="text-slate-900">{cancellingOrder.customerName}</strong></p>
+                <p>Phone: <strong className="text-slate-900 font-mono">{cancellingOrder.customerPhone}</strong></p>
+                <p className="mt-1">Order Amount: <strong className="text-indigo-600 font-mono">₹{cancellingOrder.totalAmount.toFixed(2)}</strong></p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">
+                  Cancellation Reason / Message
+                </label>
+                <textarea
+                  rows={3}
+                  value={cancellationReason}
+                  onChange={(e) => setCancellationReason(e.target.value)}
+                  placeholder="e.g., Cucumber is currently out of stock. Apologies for the inconvenience!"
+                  className="w-full rounded-xl border border-slate-200 p-3 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500 bg-white"
+                />
+                <p className="text-[9px] text-slate-400 mt-1">This message can be saved in the system logs or sent to the customer.</p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-1 gap-2 border-t border-slate-100 pt-4">
+                
+                {/* 1. Cancel and Keep in Logs with Reason (Update Status to Cancelled) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onUpdateCustomerOrder) {
+                      const updatedNotes = cancellationReason.trim()
+                        ? `${cancellationReason.trim()} | ${cancellingOrder.notes || ''}`
+                        : cancellingOrder.notes;
+                      
+                      const updated: CustomerOrder = {
+                        ...cancellingOrder,
+                        status: 'Cancelled',
+                        notes: updatedNotes
+                      };
+                      onUpdateCustomerOrder(updated);
+                      alert(`Order #${cancellingOrder.id} status updated to "Cancelled" with reason notes.`);
+                      setCancellingOrder(null);
+                      setCancellationReason('');
+                    }
+                  }}
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl py-2.5 text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  📝 Mark Cancelled in Database
+                </button>
+
+                {/* 2. Complete Delete Archive */}
+                {onDeleteCustomerOrder && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Delete this order completely from active lists? This action is irreversible.')) {
+                        onDeleteCustomerOrder(cancellingOrder.id);
+                        alert(`Order #${cancellingOrder.id} deleted completely from active lists.`);
+                        setCancellingOrder(null);
+                        setCancellationReason('');
+                      }
+                    }}
+                    className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-xl py-2.5 text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    🗑️ Delete completely (Archive)
+                  </button>
+                )}
+
+                {/* 3. Send update on WhatsApp */}
+                <a
+                  href={`https://wa.me/91${cancellingOrder.customerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                    `Hello ${cancellingOrder.customerName}, this is regarding your order #${cancellingOrder.id} of amount ₹${cancellingOrder.totalAmount.toFixed(2)}. ` +
+                    `We regret to inform you that your order has been cancelled. ` +
+                    (cancellationReason.trim() ? `Reason: ${cancellationReason.trim()}. ` : '') +
+                    `Thank you for your understanding!`
+                  )}`}
+                  target="_blank"
+                  referrerPolicy="no-referrer"
+                  className="w-full bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold rounded-xl py-2.5 text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                >
+                  <PhoneCall className="h-3.5 w-3.5" />
+                  Notify Customer on WhatsApp
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCancellingOrder(null);
+                    setCancellationReason('');
+                  }}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl py-2.5 text-xs transition-all cursor-pointer"
+                >
+                  Discard / Keep Active
                 </button>
               </div>
             </div>

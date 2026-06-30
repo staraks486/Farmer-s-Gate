@@ -309,6 +309,111 @@ initializeLocalStorage();
 // Initialize client if configured
 initSupabase();
 
+// --- OFFLINE QUEUE & SYNCHRONIZATION ENGINE ---
+export interface UnsyncedOp {
+  id: string;
+  table: string;
+  action: 'insert' | 'update' | 'delete';
+  data: any;
+  timestamp: string;
+}
+
+export function dbGetUnsyncedOps(): UnsyncedOp[] {
+  const local = localStorage.getItem('fg_unsynced_ops');
+  return local ? JSON.parse(local) : [];
+}
+
+export function dbGetUnsyncedOpsCount(): number {
+  return dbGetUnsyncedOps().length;
+}
+
+export function dbClearUnsyncedOps(): void {
+  localStorage.removeItem('fg_unsynced_ops');
+}
+
+export function dbAddUnsyncedOp(table: string, action: 'insert' | 'update' | 'delete', data: any): void {
+  const ops = dbGetUnsyncedOps();
+  // Filter out any duplicate pending operations on the same primary key to keep the queue minimal and efficient
+  let filteredOps = ops;
+  if (data && data.id) {
+    if (action === 'delete') {
+      // If we are deleting a record, we can drop any pending inserts/updates for it
+      filteredOps = ops.filter(op => !(op.table === table && op.data && op.data.id === data.id));
+    } else if (action === 'update' || action === 'insert') {
+      // If we are updating/inserting, we can remove any prior insert/update of this same record to avoid redundancy
+      filteredOps = ops.filter(op => !(op.table === table && op.data && op.data.id === data.id && (op.action === 'insert' || op.action === 'update')));
+    }
+  }
+  
+  const newOp: UnsyncedOp = {
+    id: `op-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    table,
+    action,
+    data,
+    timestamp: new Date().toISOString()
+  };
+  filteredOps.push(newOp);
+  localStorage.setItem('fg_unsynced_ops', JSON.stringify(filteredOps));
+}
+
+export async function dbSyncLocalCache(): Promise<{ success: boolean; syncedCount: number; message: string }> {
+  const config = getSupabaseConfig();
+  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+    return { success: false, syncedCount: 0, message: "Supabase not configured in settings." };
+  }
+  
+  if (!supabaseInstance) {
+    initSupabase();
+  }
+  
+  if (!supabaseInstance) {
+    return { success: false, syncedCount: 0, message: "Unable to connect to Supabase backend client." };
+  }
+
+  const ops = dbGetUnsyncedOps();
+  if (ops.length === 0) {
+    return { success: true, syncedCount: 0, message: "Everything is already synchronized!" };
+  }
+
+  let syncedCount = 0;
+  const failedOps: UnsyncedOp[] = [];
+
+  for (const op of ops) {
+    try {
+      const { table, action, data } = op;
+      
+      if (action === 'insert' || action === 'update') {
+        const { error } = await supabaseInstance.from(table).upsert(data);
+        if (error) throw error;
+      } else if (action === 'delete') {
+        const { error } = await supabaseInstance.from(table).delete().eq('id', data.id);
+        if (error) throw error;
+      }
+      
+      syncedCount++;
+    } catch (e: any) {
+      console.error(`Sync failed for operation on ${op.table}:`, e);
+      failedOps.push(op);
+    }
+  }
+
+  if (failedOps.length > 0) {
+    localStorage.setItem('fg_unsynced_ops', JSON.stringify(failedOps));
+    return {
+      success: false,
+      syncedCount,
+      message: `Synced ${syncedCount} items, but ${failedOps.length} failed. Please verify credentials or schema.`
+    };
+  } else {
+    dbClearUnsyncedOps();
+    return {
+      success: true,
+      syncedCount,
+      message: `Successfully pushed all ${syncedCount} offline operations to Supabase!`
+    };
+  }
+}
+
 // --- DATABASE OPERATIONS WRAPPER ---
 
 // STORES
@@ -343,7 +448,10 @@ export async function dbAddStore(store: Store): Promise<Store> {
       return data as Store;
     } catch (e) {
       console.warn('Supabase save failed, writing to local storage:', e);
+      dbAddUnsyncedOp('stores', 'insert', store);
     }
+  } else {
+    dbAddUnsyncedOp('stores', 'insert', store);
   }
   
   const stores = await dbGetStores();
@@ -366,7 +474,10 @@ export async function dbUpdateStore(store: Store): Promise<Store> {
       return data as Store;
     } catch (e) {
       console.warn('Supabase update failed, falling back to local storage:', e);
+      dbAddUnsyncedOp('stores', 'update', store);
     }
+  } else {
+    dbAddUnsyncedOp('stores', 'update', store);
   }
 
   const stores = await dbGetStores();
@@ -390,7 +501,10 @@ export async function dbDeleteStore(id: string): Promise<void> {
       return;
     } catch (e) {
       console.warn('Supabase delete failed, writing to local storage:', e);
+      dbAddUnsyncedOp('stores', 'delete', { id });
     }
+  } else {
+    dbAddUnsyncedOp('stores', 'delete', { id });
   }
 
   const stores = await dbGetStores();
@@ -440,7 +554,10 @@ export async function dbAddSale(sale: Sale): Promise<Sale> {
       return data as Sale;
     } catch (e) {
       console.warn('Supabase save sale failed, writing to local storage:', e);
+      dbAddUnsyncedOp('sales', 'insert', sale);
     }
+  } else {
+    dbAddUnsyncedOp('sales', 'insert', sale);
   }
 
   const sales = await dbGetSales();
@@ -469,7 +586,10 @@ export async function dbDeleteSale(id: string): Promise<void> {
       return;
     } catch (e) {
       console.warn('Supabase delete sale failed, writing to local storage:', e);
+      dbAddUnsyncedOp('sales', 'delete', { id });
     }
+  } else {
+    dbAddUnsyncedOp('sales', 'delete', { id });
   }
 
   const filtered = sales.filter(s => s.id !== id);
@@ -518,7 +638,10 @@ export async function dbAddPurchase(purchase: Purchase): Promise<Purchase> {
       return data as Purchase;
     } catch (e) {
       console.warn('Supabase save purchase failed, writing to local storage:', e);
+      dbAddUnsyncedOp('purchases', 'insert', purchase);
     }
+  } else {
+    dbAddUnsyncedOp('purchases', 'insert', purchase);
   }
 
   const purchases = await dbGetPurchases();
@@ -547,7 +670,10 @@ export async function dbDeletePurchase(id: string): Promise<void> {
       return;
     } catch (e) {
       console.warn('Supabase delete purchase failed, writing to local storage:', e);
+      dbAddUnsyncedOp('purchases', 'delete', { id });
     }
+  } else {
+    dbAddUnsyncedOp('purchases', 'delete', { id });
   }
 
   const filtered = purchases.filter(p => p.id !== id);
@@ -593,7 +719,10 @@ export async function dbAddOrUpdateInventoryItem(item: InventoryItem): Promise<I
       return data as InventoryItem;
     } catch (e) {
       console.warn('Supabase upsert inventory failed, writing to local storage:', e);
+      dbAddUnsyncedOp('inventory', 'insert', item);
     }
+  } else {
+    dbAddUnsyncedOp('inventory', 'insert', item);
   }
 
   const inventory = await dbGetInventory();
@@ -684,7 +813,10 @@ export async function dbAddRequirement(req: Requirement): Promise<Requirement> {
       return data as Requirement;
     } catch (e) {
       console.warn('Supabase save requirement failed, writing to local storage:', e);
+      dbAddUnsyncedOp('requirements', 'insert', req);
     }
+  } else {
+    dbAddUnsyncedOp('requirements', 'insert', req);
   }
 
   const reqs = await dbGetRequirements();
@@ -707,7 +839,10 @@ export async function dbUpdateRequirement(req: Requirement): Promise<Requirement
       return data as Requirement;
     } catch (e) {
       console.warn('Supabase update requirement failed, writing to local storage:', e);
+      dbAddUnsyncedOp('requirements', 'update', req);
     }
+  } else {
+    dbAddUnsyncedOp('requirements', 'update', req);
   }
 
   const reqs = await dbGetRequirements();
@@ -731,7 +866,10 @@ export async function dbDeleteRequirement(id: string): Promise<void> {
       return;
     } catch (e) {
       console.warn('Supabase delete requirement failed, writing to local storage:', e);
+      dbAddUnsyncedOp('requirements', 'delete', { id });
     }
+  } else {
+    dbAddUnsyncedOp('requirements', 'delete', { id });
   }
 
   const reqs = await dbGetRequirements();
@@ -771,7 +909,10 @@ export async function dbAddSupplier(supplier: Supplier): Promise<Supplier> {
       return data as Supplier;
     } catch (e) {
       console.warn('Supabase save supplier failed, writing to local storage:', e);
+      dbAddUnsyncedOp('suppliers', 'insert', supplier);
     }
+  } else {
+    dbAddUnsyncedOp('suppliers', 'insert', supplier);
   }
   const suppliers = await dbGetSuppliers();
   suppliers.push(supplier);
@@ -793,7 +934,10 @@ export async function dbUpdateSupplier(supplier: Supplier): Promise<Supplier> {
       return data as Supplier;
     } catch (e) {
       console.warn('Supabase update supplier failed, writing to local storage:', e);
+      dbAddUnsyncedOp('suppliers', 'update', supplier);
     }
+  } else {
+    dbAddUnsyncedOp('suppliers', 'update', supplier);
   }
   const suppliers = await dbGetSuppliers();
   const index = suppliers.findIndex(s => s.id === supplier.id);
@@ -816,7 +960,10 @@ export async function dbDeleteSupplier(id: string): Promise<void> {
       return;
     } catch (e) {
       console.warn('Supabase delete supplier failed, writing to local storage:', e);
+      dbAddUnsyncedOp('suppliers', 'delete', { id });
     }
+  } else {
+    dbAddUnsyncedOp('suppliers', 'delete', { id });
   }
   const suppliers = await dbGetSuppliers();
   const filtered = suppliers.filter(s => s.id !== id);
@@ -860,7 +1007,10 @@ export async function dbAddPurchaseOrder(po: PurchaseOrder): Promise<PurchaseOrd
       return data as PurchaseOrder;
     } catch (e) {
       console.warn('Supabase save PO failed, writing to local storage:', e);
+      dbAddUnsyncedOp('purchase_orders', 'insert', po);
     }
+  } else {
+    dbAddUnsyncedOp('purchase_orders', 'insert', po);
   }
   const pos = await dbGetPurchaseOrders();
   pos.unshift(po);
@@ -882,7 +1032,10 @@ export async function dbUpdatePurchaseOrder(po: PurchaseOrder): Promise<Purchase
       return data as PurchaseOrder;
     } catch (e) {
       console.warn('Supabase update PO failed, writing to local storage:', e);
+      dbAddUnsyncedOp('purchase_orders', 'update', po);
     }
+  } else {
+    dbAddUnsyncedOp('purchase_orders', 'update', po);
   }
   const pos = await dbGetPurchaseOrders();
   const index = pos.findIndex(p => p.id === po.id);
@@ -905,7 +1058,10 @@ export async function dbDeletePurchaseOrder(id: string): Promise<void> {
       return;
     } catch (e) {
       console.warn('Supabase delete PO failed, writing to local storage:', e);
+      dbAddUnsyncedOp('purchase_orders', 'delete', { id });
     }
+  } else {
+    dbAddUnsyncedOp('purchase_orders', 'delete', { id });
   }
   const pos = await dbGetPurchaseOrders();
   const filtered = pos.filter(p => p.id !== id);
@@ -949,7 +1105,10 @@ export async function dbAddCustomerOrder(co: CustomerOrder): Promise<CustomerOrd
       return data as CustomerOrder;
     } catch (e) {
       console.warn('Supabase save customer order failed, writing to local storage:', e);
+      dbAddUnsyncedOp('customer_orders', 'insert', co);
     }
+  } else {
+    dbAddUnsyncedOp('customer_orders', 'insert', co);
   }
   const cos = await dbGetCustomerOrders();
   cos.unshift(co);
@@ -971,7 +1130,10 @@ export async function dbUpdateCustomerOrder(co: CustomerOrder): Promise<Customer
       return data as CustomerOrder;
     } catch (e) {
       console.warn('Supabase update customer order failed, writing to local storage:', e);
+      dbAddUnsyncedOp('customer_orders', 'update', co);
     }
+  } else {
+    dbAddUnsyncedOp('customer_orders', 'update', co);
   }
   const cos = await dbGetCustomerOrders();
   const index = cos.findIndex(c => c.id === co.id);
@@ -994,7 +1156,10 @@ export async function dbDeleteCustomerOrder(id: string): Promise<void> {
       return;
     } catch (e) {
       console.warn('Supabase delete customer order failed, writing to local storage:', e);
+      dbAddUnsyncedOp('customer_orders', 'delete', { id });
     }
+  } else {
+    dbAddUnsyncedOp('customer_orders', 'delete', { id });
   }
   const cos = await dbGetCustomerOrders();
   const filtered = cos.filter(c => c.id !== id);
@@ -1033,7 +1198,10 @@ export async function dbAddOrUpdateMasterCrop(crop: MasterCrop): Promise<MasterC
       return data as MasterCrop;
     } catch (e) {
       console.warn('Supabase upsert master crop failed, writing to local storage:', e);
+      dbAddUnsyncedOp('master_crops', 'insert', crop);
     }
+  } else {
+    dbAddUnsyncedOp('master_crops', 'insert', crop);
   }
   const crops = await dbGetMasterCrops();
   const idx = crops.findIndex(c => c.id === crop.id);
@@ -1058,7 +1226,10 @@ export async function dbDeleteMasterCrop(id: string): Promise<void> {
       return;
     } catch (e) {
       console.warn('Supabase delete master crop failed, writing to local storage:', e);
+      dbAddUnsyncedOp('master_crops', 'delete', { id });
     }
+  } else {
+    dbAddUnsyncedOp('master_crops', 'delete', { id });
   }
   const crops = await dbGetMasterCrops();
   const filtered = crops.filter(c => c.id !== id);

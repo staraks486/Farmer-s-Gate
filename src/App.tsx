@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import Dashboard from './components/Dashboard';
 import StoreManager from './components/StoreManager';
 import AdminPanel from './components/AdminPanel';
@@ -41,9 +42,11 @@ import {
   dbDeleteMasterCrop,
   getSupabaseConfig,
   saveSupabaseConfig,
-  initSupabase
+  initSupabase,
+  dbGetUnsyncedOpsCount,
+  dbSyncLocalCache
 } from './lib/supabase';
-import { Sparkles, HelpCircle, Store as StoreIcon, RefreshCw, Layers, Shield, User, Users, ShoppingCart, Truck, Bell, BellRing, Settings2, CheckCheck, X, Link, Check } from 'lucide-react';
+import { Sparkles, HelpCircle, Store as StoreIcon, RefreshCw, Layers, Shield, User, Users, ShoppingCart, Truck, Bell, BellRing, Settings2, CheckCheck, X, Link, Check, Cloud, CloudUpload, AlertCircle } from 'lucide-react';
 
 export default function App() {
   // Navigation State
@@ -835,6 +838,76 @@ export default function App() {
 
   const currentNotifications = getAppNotifications();
   const unreadCount = currentNotifications.filter(n => !readNotificationIds.includes(n.id)).length;
+
+  // --- SYNCHRONIZATION STATES & EFFECTS ---
+  const [unsyncedCount, setUnsyncedCount] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const refreshUnsyncedCount = () => {
+    setUnsyncedCount(dbGetUnsyncedOpsCount());
+  };
+
+  useEffect(() => {
+    refreshUnsyncedCount();
+    const interval = setInterval(refreshUnsyncedCount, 2500);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleTriggerSync = async (silent: boolean = false) => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    if (!silent) {
+      setSyncFeedback({ type: 'success', text: 'Connecting & Synchronizing local queue...' });
+    }
+    
+    try {
+      const result = await dbSyncLocalCache();
+      refreshUnsyncedCount();
+      
+      if (result.success) {
+        if (result.syncedCount > 0) {
+          setSyncFeedback({ 
+            type: 'success', 
+            text: `Sync completed: pushed ${result.syncedCount} transaction(s) to cloud.` 
+          });
+          await loadData();
+        } else if (!silent) {
+          setSyncFeedback({ 
+            type: 'success', 
+            text: 'Database is completely synchronized!' 
+          });
+        }
+      } else {
+        if (!silent || result.syncedCount > 0) {
+          setSyncFeedback({ 
+            type: 'error', 
+            text: result.message || 'Sync encountered errors.' 
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Sync failed:', error);
+      if (!silent) {
+        setSyncFeedback({ 
+          type: 'error', 
+          text: 'Synchronization failed. Check network.' 
+        });
+      }
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => {
+        setSyncFeedback(null);
+      }, 4000);
+    }
+  };
+
+  // Background auto-sync once connectivity is restored or detected
+  useEffect(() => {
+    if (dbConfig.isConnected && unsyncedCount > 0 && !isSyncing) {
+      handleTriggerSync(true); // Silent auto-sync
+    }
+  }, [dbConfig.isConnected, unsyncedCount]);
 
   // Load all data on mount or database configuration change
   const loadData = async () => {
@@ -1744,6 +1817,7 @@ export default function App() {
                   inventory={inventory}
                   customerOrders={customerOrders}
                   onPlaceOrder={handleAddCustomerOrder}
+                  onUpdateOrder={handleUpdateCustomerOrder}
                   storefrontAds={storefrontAds}
                 />
               )}
@@ -1797,22 +1871,87 @@ export default function App() {
 
         {/* Unified High Density footer */}
         <footer className="border-t border-slate-200 bg-white py-3 px-6 md:px-8 shrink-0">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-bold text-slate-400">
-            <div className="flex items-center gap-2">
-              <Layers className="h-4 w-4 text-emerald-600 font-bold" />
-              <span className="uppercase tracking-tight">SYSTEM STATUS</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-500">
-              <span className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${dbConfig.isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                {dbConfig.isConnected ? 'Supabase Connected' : 'Local Cache'}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span> WhatsApp API Ready
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> Auto-Sync: Active
-              </span>
+          <div className="max-w-7xl mx-auto">
+            {/* Sync Feedback Alert Banner */}
+            <AnimatePresence>
+              {syncFeedback && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: 'auto' }}
+                  exit={{ opacity: 0, y: -10, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className={`mb-2 px-4 py-2 rounded text-xs font-bold border flex items-center justify-between gap-2 shadow-sm ${
+                    syncFeedback.type === 'success' 
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                      : 'bg-rose-50 text-rose-800 border-rose-200'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      {syncFeedback.type === 'success' ? (
+                        <CheckCheck className="h-4 w-4 text-emerald-600 animate-bounce" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 text-rose-600 animate-pulse" />
+                      )}
+                      <span>{syncFeedback.text}</span>
+                    </div>
+                    <button onClick={() => setSyncFeedback(null)} className="hover:opacity-80 p-0.5 rounded hover:bg-slate-100 transition-colors">
+                      <X className="h-3.5 w-3.5 text-slate-400" />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-bold text-slate-400">
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-emerald-600 font-bold" />
+                <span className="uppercase tracking-tight">SYSTEM STATUS</span>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${dbConfig.isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                  {dbConfig.isConnected ? 'Supabase Connected' : 'Local Cache Mode'}
+                </span>
+                
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span> WhatsApp API Ready
+                </span>
+                
+                <div className="h-3 w-px bg-slate-200 hidden md:block"></div>
+
+                {/* Database Sync Status Indicator and Trigger */}
+                <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200/60 rounded-xl px-3 py-1">
+                  {unsyncedCount === 0 ? (
+                    <span className="flex items-center gap-1.5 text-emerald-600 font-extrabold text-[10px] uppercase">
+                      <Cloud className="h-3.5 w-3.5 animate-pulse" />
+                      <span>Cloud Sync OK</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-amber-600 font-black text-[10px] uppercase animate-pulse">
+                      <CloudUpload className="h-3.5 w-3.5" />
+                      <span>{unsyncedCount} Queued Offline</span>
+                    </span>
+                  )}
+
+                  {/* Manual Sync Trigger Button (Always present for on-demand cloud refresh/push) */}
+                  <button
+                    disabled={isSyncing}
+                    onClick={() => handleTriggerSync(false)}
+                    title="Force cloud synchronization"
+                    className={`flex items-center gap-1 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg border transition-all duration-150 ${
+                      isSyncing
+                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                        : unsyncedCount > 0
+                        ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500 hover:border-amber-600 shadow-xs hover:shadow active:scale-95 cursor-pointer animate-pulse'
+                        : 'bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-800 border-slate-200 hover:border-slate-300 shadow-3xs active:scale-95 cursor-pointer'
+                    }`}
+                  >
+                    <RefreshCw className={`h-2.5 w-2.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </footer>

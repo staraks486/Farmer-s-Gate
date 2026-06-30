@@ -27,6 +27,7 @@ interface CustomerHubProps {
   inventory: InventoryItem[];
   customerOrders: CustomerOrder[];
   onPlaceOrder: (newOrder: CustomerOrder) => Promise<void>;
+  onUpdateOrder?: (updatedOrder: CustomerOrder) => Promise<void>;
   storefrontAds?: StorefrontAd[];
 }
 
@@ -35,6 +36,7 @@ export default function CustomerHub({
   inventory,
   customerOrders,
   onPlaceOrder,
+  onUpdateOrder,
   storefrontAds = []
 }: CustomerHubProps) {
   const [activeTab, setActiveTab] = useState<'shop' | 'track' | 'profile'>('shop');
@@ -1150,6 +1152,39 @@ export default function CustomerHub({
                             </div>
                           )}
                         </div>
+
+                        {(order.status === 'Pending' || order.status === 'Processing') && onUpdateOrder && (
+                          <div className="pt-2 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const cancelReasonPrompt = prompt('Please enter a cancellation reason / message (optional):');
+                                if (cancelReasonPrompt === null) return; // User clicked Cancel
+                                
+                                const reasonStr = cancelReasonPrompt.trim() 
+                                  ? `Cancelled by Customer: "${cancelReasonPrompt.trim()}"` 
+                                  : 'Cancelled by Customer';
+                                  
+                                const cancelledOrder: CustomerOrder = {
+                                  ...order,
+                                  status: 'Cancelled',
+                                  notes: order.notes ? `${reasonStr} | ${order.notes}` : reasonStr
+                                };
+                                
+                                try {
+                                  await onUpdateOrder(cancelledOrder);
+                                  alert('Your order has been successfully cancelled.');
+                                } catch (err) {
+                                  console.error(err);
+                                  alert('Failed to cancel order. Please try again.');
+                                }
+                              }}
+                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer transition-all flex items-center gap-1 shadow-3xs"
+                            >
+                              <span>🚫</span> Cancel Order
+                            </button>
+                          </div>
+                        )}
 
                       </div>
                     );
