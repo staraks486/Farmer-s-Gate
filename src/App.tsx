@@ -887,7 +887,7 @@ export default function App() {
         }
       }
     } catch (error) {
-      console.error('Sync failed:', error);
+      console.warn('Sync failed:', error);
       if (!silent) {
         setSyncFeedback({ 
           type: 'error', 
@@ -946,7 +946,7 @@ export default function App() {
       const fetchedMasterCrops = await dbGetMasterCrops();
       setMasterCrops(fetchedMasterCrops);
     } catch (e) {
-      console.error('Error loading database tables:', e);
+      console.warn('Error loading database tables:', e);
     } finally {
       setLoading(false);
     }
@@ -1863,6 +1863,10 @@ export default function App() {
                   onResetToDemoData={handleResetToDemoData}
                   storefrontAds={storefrontAds}
                   onUpdateStorefrontAds={handleUpdateStorefrontAds}
+                  masterCrops={masterCrops}
+                  inventory={inventory}
+                  onUpdateMasterCrop={handleUpdateMasterCrop}
+                  onUpdateInventoryItem={handleUpdateInventoryItem}
                 />
               )}
             </div>

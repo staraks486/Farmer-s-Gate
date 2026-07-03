@@ -1,9 +1,13 @@
 import express from "express";
 import path from "path";
+import compression from "compression";
 import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
+  
+  // Enable standard compression middleware to optimize network transfer sizes
+  app.use(compression());
   
   // Third-party hosts (Heroku, Render, AWS, etc.) dynamically assign PORT via process.env.PORT.
   // We fall back to 3000 for local environment and AI Studio compatibility.
@@ -15,7 +19,7 @@ async function startServer() {
   });
 
   // Integrates Vite middleware in development mode to support fast development.
-  // In production, serves the pre-compiled production build inside the dist/ directory.
+  // In production, serves the pre-compiled production build inside the dist/ directory with caching headers.
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -24,7 +28,11 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    // Cache static assets (JS, CSS, images) for 1 day to make repeat page loads near-instantaneous
+    app.use(express.static(distPath, {
+      maxAge: '1d',
+      etag: true,
+    }));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });

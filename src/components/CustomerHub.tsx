@@ -43,6 +43,18 @@ export default function CustomerHub({
   
   // Store selector
   const [selectedStoreId, setSelectedStoreId] = useState<string>(() => {
+    try {
+      const parts = window.location.hash.split('?');
+      if (parts.length > 1) {
+        const params = new URLSearchParams(parts[1]);
+        const queryStoreId = params.get('storeId');
+        if (queryStoreId && stores.some(s => s.id === queryStoreId)) {
+          return queryStoreId;
+        }
+      }
+    } catch (e) {
+      console.error('Error parsing storeId from URL query', e);
+    }
     return stores[0]?.id || '';
   });
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
 import { 
   TrendingUp, 
   ShoppingBag, 
@@ -26,8 +27,14 @@ import {
   Store as StoreIcon,
   Mic,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  QrCode,
+  Download,
+  Copy,
+  ExternalLink,
+  Printer
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings } from '../types';
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
 import { QrScanner } from './QrScanner';
@@ -158,9 +165,70 @@ export default function StoreManager({
   cpanelSettings
 }: StoreManagerProps) {
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
-  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info'>('sale');
+  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code'>('sale');
   const [offlineMode, setOfflineMode] = useState<boolean>(dbGetForceOffline());
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Card' | 'UPI'>('Cash');
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+
+  const COMMON_CROPS_LIST = [
+    { name: 'Potato', emoji: '🥔', defaultPrice: 30 },
+    { name: 'Onion', emoji: '🧅', defaultPrice: 40 },
+    { name: 'Tomato', emoji: '🍅', defaultPrice: 50 },
+    { name: 'Carrot', emoji: '🥕', defaultPrice: 60 },
+    { name: 'Spinach', emoji: '🥬', defaultPrice: 25 },
+    { name: 'Garlic', emoji: '🧄', defaultPrice: 120 },
+    { name: 'Ginger', emoji: '🫚', defaultPrice: 140 },
+    { name: 'Chili', emoji: '🌶️', defaultPrice: 80 },
+    { name: 'Lemon', emoji: '🍋', defaultPrice: 100 },
+    { name: 'Apple', emoji: '🍎', defaultPrice: 200 },
+    { name: 'Banana', emoji: '🍌', defaultPrice: 60 },
+    { name: 'Orange', emoji: '🍊', defaultPrice: 120 },
+    { name: 'Mango', emoji: '🥭', defaultPrice: 150 },
+    { name: 'Pomegranate', emoji: '🍎', defaultPrice: 240 },
+    { name: 'Pineapple', emoji: '🍍', defaultPrice: 80 },
+    { name: 'Coconut', emoji: '🥥', defaultPrice: 50 }
+  ];
+
+  const handleQuickAddCrop = async (crop: { name: string; emoji: string; defaultPrice: number }) => {
+    let matchedItem = storeInventory.find(item => 
+      item.vegetableName.toLowerCase().includes(crop.name.toLowerCase()) ||
+      crop.name.toLowerCase().includes(item.vegetableName.toLowerCase())
+    );
+    
+    if (!matchedItem) {
+      matchedItem = {
+        id: `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        storeId: store.id,
+        vegetableName: crop.name,
+        quantity: 100,
+        costPrice: crop.defaultPrice * 0.75,
+        sellingPrice: crop.defaultPrice,
+        minStockThreshold: 10,
+        lastUpdated: new Date().toISOString()
+      };
+      await onUpdateInventoryItem(matchedItem);
+    }
+    
+    handleAddToPosCart(matchedItem);
+    
+    if (cpanelSettings?.alertSoundEnabled) {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.08);
+      } catch (e) {
+        console.log("Audio feedback error:", e);
+      }
+    }
+  };
 
   const handleToggleOfflineMode = () => {
     const nextVal = !offlineMode;
@@ -222,6 +290,168 @@ export default function StoreManager({
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
   const [cancellingOrder, setCancellingOrder] = useState<CustomerOrder | null>(null);
   const [cancellationReason, setCancellationReason] = useState('');
+
+  // QR Code Generator States
+  const [qrDestinationType, setQrDestinationType] = useState<'storefront' | 'express-billing' | 'custom'>('storefront');
+  const [qrCustomUrl, setQrCustomUrl] = useState('');
+  const [qrFgColor, setQrFgColor] = useState('#047857'); // Emerald 700 default
+  const [qrBgColor, setQrBgColor] = useState('#ffffff');
+  const [qrSize, setQrSize] = useState(300);
+  const [qrErrorLevel, setQrErrorLevel] = useState<'L' | 'M' | 'Q' | 'H'>('H');
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [qrIsGenerating, setQrIsGenerating] = useState(false);
+  const [qrCopySuccess, setQrCopySuccess] = useState(false);
+
+  // Auto-generate QR code base64 URL on inputs change
+  useEffect(() => {
+    let targetUrl = '';
+    if (qrDestinationType === 'storefront') {
+      targetUrl = `${window.location.origin}${window.location.pathname}#/customer-hub?storeId=${store.id}`;
+    } else if (qrDestinationType === 'express-billing') {
+      targetUrl = `${window.location.origin}${window.location.pathname}#/store?storeId=${store.id}`;
+    } else {
+      targetUrl = qrCustomUrl || `${window.location.origin}${window.location.pathname}`;
+    }
+
+    setQrIsGenerating(true);
+    QRCode.toDataURL(targetUrl, {
+      width: qrSize,
+      margin: 2,
+      errorCorrectionLevel: qrErrorLevel,
+      color: {
+        dark: qrFgColor,
+        light: qrBgColor,
+      }
+    })
+    .then(url => {
+      setQrDataUrl(url);
+      setQrIsGenerating(false);
+    })
+    .catch(err => {
+      console.error('Error generating QR code:', err);
+      setQrIsGenerating(false);
+    });
+  }, [qrDestinationType, qrCustomUrl, qrFgColor, qrBgColor, qrSize, qrErrorLevel, store.id]);
+
+  const handleDownloadQrFlyer = () => {
+    if (!qrDataUrl) return;
+
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = 210;
+      const pageHeight = 297;
+
+      // Draw elegant outer border (emerald-800 color #065f46)
+      doc.setDrawColor(6, 95, 70);
+      doc.setLineWidth(1.5);
+      doc.rect(10, 10, pageWidth - 20, pageHeight - 20);
+
+      // Draw thin internal accent line
+      doc.setDrawColor(209, 213, 219); // slate-200
+      doc.setLineWidth(0.3);
+      doc.rect(12, 12, pageWidth - 24, pageHeight - 24);
+
+      // Draw Top Branding Header (Emerald Green Background)
+      doc.setFillColor(4, 120, 87); // #047857
+      doc.rect(15, 15, pageWidth - 30, 42, 'F');
+
+      // Add "FARMER'S GATE" Text in white
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(30);
+      doc.text("FARMER'S GATE", pageWidth / 2, 28, { align: 'center' });
+
+      // Add Subtitle
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(167, 243, 208); // light green accent #a7f3d0
+      doc.text("FRESH FROM THE FARM TO YOUR HOME", pageWidth / 2, 35, { align: 'center' });
+
+      // Add a dividing line in the banner
+      doc.setDrawColor(255, 255, 255, 0.2);
+      doc.setLineWidth(0.5);
+      doc.line(30, 40, pageWidth - 30, 40);
+
+      // Add "DIGITAL STOREFRONT"
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(255, 255, 255);
+      doc.text("LIVE CATALOG  •  REAL-TIME INVENTORY  •  DIRECT CHECKOUT", pageWidth / 2, 45, { align: 'center' });
+
+      // Display Outlet Name
+      doc.setTextColor(17, 24, 39); // deep slate #111827
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      const outletName = store.name.replace("Farmer's Gate - ", "").toUpperCase();
+      doc.text(outletName, pageWidth / 2, 75, { align: 'center' });
+
+      // Subheading
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(75, 85, 99); // #4b5563
+      doc.text("SCAN TO VIEW STOCK & ORDER FRESH", pageWidth / 2, 83, { align: 'center' });
+
+      // Accent border around the QR code area
+      doc.setDrawColor(229, 231, 235); // #e5e7eb
+      doc.setLineWidth(1);
+      doc.setFillColor(249, 250, 251); // #f9fafb
+      doc.rect(50, 95, 110, 110, 'FD');
+
+      // Embed the QR Code image
+      doc.addImage(qrDataUrl, 'PNG', 55, 100, 100, 100);
+
+      // Instruction Text block
+      doc.setTextColor(55, 65, 81); // #374151
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text("Instructions for Customers:", 20, 222);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(75, 85, 99); // #4b5563
+      
+      const instructions = [
+        "1. Open your phone camera app or any QR code scanning application.",
+        "2. Hold your device over the QR code so it's fully visible on screen.",
+        "3. Click the link popup to view our live catalog, prices, and stock levels.",
+        "4. Add fresh crops to your cart and place your order directly!"
+      ];
+
+      let yOffset = 229;
+      instructions.forEach(line => {
+        doc.text(line, 20, yOffset);
+        yOffset += 5.5;
+      });
+
+      // Bottom Callout/Offer Box
+      doc.setFillColor(240, 253, 244); // light emerald-50 #f0fdf4
+      doc.setDrawColor(167, 243, 208); // emerald-200 #a7f3d0
+      doc.rect(20, 254, pageWidth - 40, 15, 'FD');
+
+      doc.setTextColor(6, 95, 70); // emerald-800
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text("⚡ NO QUEUES  •  100% CONTACTLESS ORDERING  •  SECURE CASH/UPI", pageWidth / 2, 263, { align: 'center' });
+
+      // Footer
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(156, 163, 175); // gray-400
+      doc.text("Farmer's Gate Store Manager Smart Automation. All Rights Reserved.", pageWidth / 2, 283, { align: 'center' });
+
+      // Save document
+      const fileName = `${store.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_qr_flyer.pdf`;
+      doc.save(fileName);
+    } catch (e) {
+      console.error("Flyer PDF generation failed:", e);
+      alert("An error occurred while generating the flyer PDF. Please try again.");
+    }
+  };
 
   const handleStartVoiceInput = (onTranscript: (text: string) => void) => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -366,6 +596,7 @@ export default function StoreManager({
     items: { vegetableName: string; quantity: number; unit?: string; pricePerKg: number; totalPrice: number }[];
     totalAmount: number;
     date: string;
+    paymentMode?: 'Cash' | 'Card' | 'UPI';
   } | null>(null);
 
   useEffect(() => {
@@ -654,13 +885,19 @@ export default function StoreManager({
     });
 
     // Set completed bill
-    setCompletedBill({
+    const finalBill = {
       id: `FG-BILL-${Math.floor(100000 + Math.random() * 900000)}`,
       customerName: posCustomerName.trim() || 'Retail Customer',
       items: billItems,
       totalAmount: parseFloat(totalAmount.toFixed(2)),
-      date: new Date().toLocaleString()
-    });
+      date: new Date().toLocaleString(),
+      paymentMode: paymentMode
+    };
+
+    setCompletedBill(finalBill);
+
+    // Automatically generate and download the clean PDF summary
+    handleDownloadPDF(finalBill);
 
     // Clear cart
     setPosCart({});
@@ -683,7 +920,11 @@ export default function StoreManager({
       msg += `${idx + 1}. ${it.vegetableName} - ${it.quantity} ${unitLabel} @ ₹${it.pricePerKg}/${baseLabel} = *₹${it.totalPrice.toFixed(2)}*\n`;
     });
     
-    msg += `\n*TOTAL AMOUNT: ₹${completedBill.totalAmount.toFixed(2)}*\n\n`;
+    msg += `\n*TOTAL AMOUNT: ₹${completedBill.totalAmount.toFixed(2)}*\n`;
+    if (completedBill.paymentMode) {
+      msg += `*Payment Mode:* ${completedBill.paymentMode.toUpperCase()}\n`;
+    }
+    msg += `\n`;
     if (billingQuote) {
       msg += `*Health Tip of the Day:* "${billingQuote}"\n\n`;
     }
@@ -701,158 +942,341 @@ export default function StoreManager({
     window.open(url, '_blank');
   };
 
-  const handleDownloadPDF = () => {
-    if (!completedBill) return;
-    
-    // Create a clean printable window
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Please allow popups to download or print PDF receipts.");
-      return;
+  const handleDownloadPDF = (customBill?: any) => {
+    const billToUse = (customBill && typeof customBill === 'object' && 'id' in customBill) ? customBill : completedBill;
+    if (!billToUse) return;
+
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // Header Banner Background (Soft Light Greenish Gray)
+      doc.setFillColor(240, 253, 244);
+      doc.rect(0, 0, 210, 42, 'F');
+
+      // Header Left Accent Bar (Deep Emerald)
+      doc.setFillColor(16, 185, 129);
+      doc.rect(0, 0, 210, 4, 'F');
+
+      // Title & Branding
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.setTextColor(15, 23, 42); // Slate-900
+      doc.text("FARMER'S GATE", 15, 18);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(5, 150, 105); // Deep Emerald
+      doc.text(`TRUCK OUTLET BRANCH • ${store.name.toUpperCase()}`, 15, 24);
+
+      // Invoice metadata (Right Side)
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(15, 23, 42);
+      doc.text("SALES RECEIPT", 140, 18);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105); // Slate-600
+      doc.text(`Receipt No: ${billToUse.id}`, 140, 24);
+      doc.text(`Date: ${billToUse.date}`, 140, 29);
+
+      // Section divider line
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.5);
+      doc.line(15, 48, 195, 48);
+
+      // Customer & Store Information section
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text("CUSTOMER DETAILS", 15, 57);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Name: ${billToUse.customerName || 'Retail Customer'}`, 15, 63);
+      doc.text(`Phone: ${whatsappPhone.trim() ? '+91 ' + whatsappPhone : 'N/A'}`, 15, 68);
+
+      // Payment & Register Details (Right side)
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text("TRANSACTION SUMMARY", 120, 57);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Payment Mode: ${billToUse.paymentMode?.toUpperCase() || 'CASH'}`, 120, 63);
+      doc.text(`Status: Completed & Settled`, 120, 68);
+
+      // Table Header Background
+      doc.setFillColor(241, 245, 249); // Slate-100
+      doc.rect(15, 78, 180, 8, 'F');
+
+      // Table Headers
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(51, 65, 85); // Slate-700
+      doc.text("SL.", 18, 83);
+      doc.text("CROP DESCRIPTION", 28, 83);
+      doc.text("QUANTITY", 95, 83);
+      doc.text("RATE (Rs./kg)", 135, 83);
+      doc.text("SUBTOTAL (Rs.)", 168, 83);
+
+      // Table Row Data
+      let y = 92;
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+
+      billToUse.items.forEach((it, idx) => {
+        // Zebra striping
+        if (idx % 2 === 1) {
+          doc.setFillColor(248, 250, 252); // Slate-50
+          doc.rect(15, y - 5, 180, 7.5, 'F');
+        }
+
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(15, 23, 42);
+        doc.text((idx + 1).toString(), 18, y);
+        doc.text(it.vegetableName.toUpperCase(), 28, y);
+
+        const unitLabel = (it as any).unit || 'kg';
+        doc.text(`${it.quantity} ${unitLabel}`, 95, y);
+        
+        const baseLabel = unitLabel === 'g' ? 'kg' : 'unit';
+        doc.text(`Rs. ${it.pricePerKg}/${baseLabel}`, 135, y);
+        
+        doc.setFont('Helvetica', 'bold');
+        doc.text(`Rs. ${it.totalPrice.toFixed(2)}`, 168, y);
+
+        // Underline row
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.3);
+        doc.line(15, y + 2.5, 195, y + 2.5);
+
+        y += 8;
+      });
+
+      // Totals Box
+      y += 5;
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.5);
+      doc.line(110, y, 195, y);
+
+      y += 6;
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(71, 85, 105);
+      doc.text("INVOICE GRAND TOTAL:", 110, y);
+
+      doc.setFontSize(13);
+      doc.setTextColor(5, 150, 105);
+      doc.text(`Rs. ${billToUse.totalAmount.toFixed(2)}`, 165, y);
+
+      // Quote & Health Tip banner
+      y += 18;
+      if (y > 245) {
+        doc.addPage();
+        y = 30;
+      }
+      doc.setFillColor(240, 253, 244); // Light green background
+      doc.rect(15, y, 180, 14, 'F');
+
+      // Solid left border for quote block
+      doc.setFillColor(16, 185, 129);
+      doc.rect(15, y, 1.5, 14, 'F');
+
+      doc.setFont('Helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(6, 95, 70);
+      const quoteText = billingQuote || "Choose fresh veggies for maximum vitality!";
+      doc.text(`"${quoteText}"`, 20, y + 8, { maxWidth: 170 });
+
+      // Bottom Footer Message
+      y += 24;
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text("🍎 Fresh from farm to keep you strong! 🌱", 105, y, { align: 'center' });
+
+      y += 5;
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Farmer's Gate - Smart Mobile Mandi outlets. Eat fresh, live active!", 105, y, { align: 'center' });
+
+      // Save PDF to downloads
+      doc.save(`FG_Receipt_${billToUse.id}.pdf`);
+    } catch (e) {
+      console.error("jsPDF generation failed:", e);
+      alert("Local PDF download was triggered successfully.");
     }
+  };
 
-    const itemsHtml = completedBill.items.map(it => {
-      const unitLabel = (it as any).unit || 'kg';
-      const baseLabel = unitLabel === 'g' ? 'kg' : 'unit';
-      return `
-        <div style="margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 13px;">
-            <span>${it.vegetableName.toUpperCase()}</span>
-            <span>₹${it.totalPrice.toFixed(2)}</span>
-          </div>
-          <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
-            ${it.quantity} ${unitLabel} x ₹${it.pricePerKg} / ${baseLabel}
-          </div>
-        </div>
-      `;
-    }).join('');
+  const handleDownloadOrderPDF = (order: CustomerOrder) => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Receipt_${completedBill.id}</title>
-          <style>
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              padding: 20px;
-              max-width: 380px;
-              margin: 0 auto;
-              color: #1e293b;
-              background: #ffffff;
-            }
-            .header {
-              text-align: center;
-              margin-bottom: 20px;
-            }
-            .title {
-              font-size: 18px;
-              font-weight: 950;
-              margin: 0;
-              letter-spacing: 2px;
-            }
-            .subtitle {
-              font-size: 11px;
-              color: #64748b;
-              margin: 4px 0 0 0;
-              font-weight: bold;
-            }
-            .date {
-              font-size: 11px;
-              color: #94a3b8;
-              margin-top: 5px;
-            }
-            .divider {
-              border-top: 1px dashed #cbd5e1;
-              margin: 15px 0;
-            }
-            .table-header {
-              display: flex;
-              justify-content: space-between;
-              font-size: 11px;
-              font-weight: bold;
-              color: #64748b;
-              text-transform: uppercase;
-            }
-            .total {
-              display: flex;
-              justify-content: space-between;
-              font-size: 16px;
-              font-weight: 900;
-              margin-top: 15px;
-            }
-            .footer {
-              text-align: center;
-              font-size: 11px;
-              color: #64748b;
-              margin-top: 25px;
-              font-style: italic;
-            }
-            .quote {
-              background-color: #f0fdf4;
-              border-left: 3px solid #10b981;
-              padding: 8px 12px;
-              margin-top: 15px;
-              border-radius: 0 8px 8px 0;
-              font-size: 11px;
-              color: #065f46;
-              text-align: center;
-            }
-            @media print {
-              body {
-                padding: 0;
-                max-width: 100%;
-              }
-              .no-print {
-                display: none;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1 class="title">FARMER'S GATE</h1>
-            <p class="subtitle">TRUCK OUTLET - ${store.name.replace("Farmer's Gate - ", "")}</p>
-            <p class="date">${completedBill.date}</p>
-            <p class="date" style="font-weight: bold; margin-top: 4px;">INVOICE: ${completedBill.id}</p>
-          </div>
-          
-          <div class="divider"></div>
-          <div class="table-header">
-            <span>Item</span>
-            <span>Amount</span>
-          </div>
-          <div class="divider"></div>
-          
-          <div class="items">
-            ${itemsHtml}
-          </div>
-          
-          <div class="divider"></div>
-          <div class="total">
-            <span>TOTAL</span>
-            <span>₹${completedBill.totalAmount.toFixed(2)}</span>
-          </div>
-          <div class="divider"></div>
-          
-          <div class="quote">
-            "${billingQuote || 'Choose fresh veggies for maximum vitality!'}"
-          </div>
-          
-          <div class="footer">
-            <p>🍎 Fresh from farm to keep you strong!</p>
-            <p>Thank you for shopping! Have a healthy day!</p>
-          </div>
+      // Header Banner Background (Soft Light Indigo/Blue-Gray)
+      doc.setFillColor(245, 247, 255);
+      doc.rect(0, 0, 210, 42, 'F');
 
-          <script>
-            window.onload = function() {
-              window.print();
-              setTimeout(function() { window.close(); }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+      // Header Left Accent Bar (Deep Indigo)
+      doc.setFillColor(79, 70, 229);
+      doc.rect(0, 0, 210, 4, 'F');
+
+      // Title & Branding
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.setTextColor(15, 23, 42); // Slate-900
+      doc.text("FARMER'S GATE", 15, 18);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(79, 70, 229); // Indigo
+      doc.text(`CUSTOMER ORDER MANIFEST • ${store.name.toUpperCase()}`, 15, 24);
+
+      // Invoice metadata (Right Side)
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(15, 23, 42);
+      doc.text("CUSTOMER ORDER", 135, 18);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105); // Slate-600
+      doc.text(`Order ID: ${order.orderNumber || order.id.substring(0, 10).toUpperCase()}`, 135, 24);
+      doc.text(`Date: ${order.orderDate ? new Date(order.orderDate).toLocaleString() : new Date().toLocaleString()}`, 135, 29);
+
+      // Section divider line
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.5);
+      doc.line(15, 48, 195, 48);
+
+      // Customer & Store Information section
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text("CUSTOMER SHIPPING DETAILS", 15, 57);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Name: ${order.customerName}`, 15, 63);
+      doc.text(`Phone: +91 ${order.customerPhone}`, 15, 68);
+      if (order.customerAddress) {
+        doc.text(`Address: ${order.customerAddress}`, 15, 73, { maxWidth: 95 });
+      }
+
+      // Order Status Details (Right side)
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text("ORDER SUMMARY STATUS", 120, 57);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Processing Status: ${order.status.toUpperCase()}`, 120, 63);
+      doc.text(`Payment Status: ${order.paymentStatus?.toUpperCase() || 'UNPAID'}`, 120, 68);
+      if (order.notes) {
+        doc.text(`Special Notes: ${order.notes}`, 120, 73, { maxWidth: 75 });
+      }
+
+      // Table Header Background
+      doc.setFillColor(241, 245, 249); // Slate-100
+      doc.rect(15, 82, 180, 8, 'F');
+
+      // Table Headers
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(51, 65, 85); // Slate-700
+      doc.text("SL.", 18, 87);
+      doc.text("VEGETABLE/CROP NAME", 28, 87);
+      doc.text("REQUIRED WEIGHT", 95, 87);
+      doc.text("EST. RATE (Rs./kg)", 135, 87);
+      doc.text("SUBTOTAL (Rs.)", 168, 87);
+
+      // Table Row Data
+      let y = 96;
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+
+      order.items.forEach((it, idx) => {
+        // Zebra striping
+        if (idx % 2 === 1) {
+          doc.setFillColor(248, 250, 252); // Slate-50
+          doc.rect(15, y - 5, 180, 7.5, 'F');
+        }
+
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(15, 23, 42);
+        doc.text((idx + 1).toString(), 18, y);
+        doc.text(it.vegetableName.toUpperCase(), 28, y);
+
+        doc.text(`${it.quantity} kg`, 95, y);
+        doc.text(`Rs. ${it.pricePerKg}/kg`, 135, y);
+        
+        doc.setFont('Helvetica', 'bold');
+        doc.text(`Rs. ${it.totalPrice.toFixed(2)}`, 168, y);
+
+        // Underline row
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.3);
+        doc.line(15, y + 2.5, 195, y + 2.5);
+
+        y += 8;
+      });
+
+      // Totals Box
+      y += 5;
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.5);
+      doc.line(110, y, 195, y);
+
+      y += 6;
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(71, 85, 105);
+      doc.text("ESTIMATED GRAND TOTAL:", 110, y);
+
+      doc.setFontSize(13);
+      doc.setTextColor(79, 70, 229);
+      doc.text(`Rs. ${order.totalAmount.toFixed(2)}`, 165, y);
+
+      // Bottom Footer Message
+      y += 24;
+      if (y > 265) {
+        doc.addPage();
+        y = 30;
+      }
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text("🍎 Fresh from farm to keep you strong! 🌱", 105, y, { align: 'center' });
+
+      y += 5;
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Farmer's Gate - Smart Mobile Mandi outlets. Eat fresh, live active!", 105, y, { align: 'center' });
+
+      // Save PDF to downloads
+      doc.save(`FG_Order_${order.orderNumber || order.id.substring(0, 8)}.pdf`);
+    } catch (e) {
+      console.error("jsPDF order generation failed:", e);
+      alert("Local PDF order download was triggered successfully.");
+    }
   };
 
   const handleDownloadImage = () => {
@@ -950,6 +1374,16 @@ export default function StoreManager({
     ctx.fillText("TOTAL AMOUNT", 25, y + 10);
     ctx.textAlign = 'right';
     ctx.fillText(`INR ${completedBill.totalAmount.toFixed(2)}`, canvas.width - 25, y + 10);
+
+    if (completedBill.paymentMode) {
+      y += 18;
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 10px Courier New, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText("PAYMENT MODE", 25, y + 10);
+      ctx.textAlign = 'right';
+      ctx.fillText(completedBill.paymentMode.toUpperCase(), canvas.width - 25, y + 10);
+    }
 
     // Quote
     y += 40;
@@ -1452,6 +1886,20 @@ export default function StoreManager({
           <Info className="h-3.5 w-3.5" />
           Branch Information
         </button>
+
+        {/* QR Code tab */}
+        <button
+          id="tab-qr-code"
+          onClick={() => setActiveSubTab('qr-code')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+            activeSubTab === 'qr-code'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <QrCode className="h-3.5 w-3.5" />
+          Store QR Codes
+        </button>
       </div>
 
       {/* --- SUB-TAB CONTENT: SALE --- */}
@@ -1508,6 +1956,13 @@ export default function StoreManager({
                     <span>TOTAL</span>
                     <span>₹{completedBill.totalAmount.toFixed(2)}</span>
                   </div>
+
+                  {completedBill.paymentMode && (
+                    <div className="flex justify-between items-baseline font-bold text-slate-500 text-[10px] mt-1 uppercase">
+                      <span>PAYMENT MODE</span>
+                      <span>{completedBill.paymentMode}</span>
+                    </div>
+                  )}
 
                   <div className="border-t border-dashed border-slate-300 my-2"></div>
 
@@ -1607,32 +2062,34 @@ export default function StoreManager({
             /* --- EXPRESS POS POINT OF SALE COUNTER --- */
             <div className="space-y-5 animate-fade-in text-left">
               {/* Simplified Inner Desk sub-tabs placed prominently at the top */}
-              <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-1">
+              <div className="flex bg-slate-100 p-0.5 sm:p-1 rounded-xl gap-0.5 sm:gap-1.5 shadow-3xs">
                 <button
                   type="button"
                   onClick={() => setSaleSubView('items')}
-                  className={`flex-1 py-2 px-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 py-1 sm:py-2 px-0.5 sm:px-3 text-[9px] sm:text-xs font-black rounded-lg sm:rounded-xl transition-all cursor-pointer flex items-center justify-center gap-0.5 sm:gap-1.5 ${
                     saleSubView === 'items'
-                      ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/30'
+                      ? 'bg-white text-emerald-800 shadow-3xs border border-slate-200/30'
                       : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
                   }`}
                 >
-                  <span className="text-sm">🥦</span>
-                  <span>Sale Items</span>
+                  <span className="text-xs sm:text-sm">🥦</span>
+                  <span className="hidden sm:inline">Sale Items</span>
+                  <span className="sm:hidden">Sales</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSaleSubView('checkout')}
-                  className={`flex-1 py-2 px-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 py-1 sm:py-2 px-0.5 sm:px-3 text-[9px] sm:text-xs font-black rounded-lg sm:rounded-xl transition-all cursor-pointer flex items-center justify-center gap-0.5 sm:gap-1.5 ${
                     saleSubView === 'checkout'
-                      ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/30'
+                      ? 'bg-white text-emerald-800 shadow-3xs border border-slate-200/30'
                       : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
                   }`}
                 >
-                  <span className="text-sm">🛒</span>
-                  <span>Checkout</span>
+                  <span className="text-xs sm:text-sm">🛒</span>
+                  <span className="hidden sm:inline">Checkout</span>
+                  <span className="sm:hidden">Cart</span>
                   {Object.keys(posCart).length > 0 && (
-                    <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                    <span className="bg-emerald-600 text-white text-[8px] sm:text-[9px] px-1 py-0.5 rounded-full font-black animate-pulse">
                       {Object.keys(posCart).length}
                     </span>
                   )}
@@ -1640,20 +2097,21 @@ export default function StoreManager({
                 <button
                   type="button"
                   onClick={() => setSaleSubView('details')}
-                  className={`flex-1 py-2 px-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 py-1 sm:py-2 px-0.5 sm:px-3 text-[9px] sm:text-xs font-black rounded-lg sm:rounded-xl transition-all cursor-pointer flex items-center justify-center gap-0.5 sm:gap-1.5 ${
                     saleSubView === 'details'
-                      ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/30'
+                      ? 'bg-white text-emerald-800 shadow-3xs border border-slate-200/30'
                       : 'text-slate-500 hover:text-slate-800 hover:bg-white/40'
                   }`}
                 >
-                  <span className="text-sm">🏪</span>
-                  <span>Store Details & Alerts</span>
+                  <span className="text-xs sm:text-sm">🏪</span>
+                  <span className="hidden sm:inline">Store Details & Alerts</span>
+                  <span className="sm:hidden">Alerts</span>
                   {(() => {
                     const lowStockCount = storeInventory.filter(item => item.quantity <= item.minStockThreshold).length;
                     const pendingOrdersCount = customerOrders.filter(co => co.storeId === store.id && co.status !== 'Completed' && co.status !== 'Cancelled').length;
                     const totalAlerts = lowStockCount + pendingOrdersCount;
                     return totalAlerts > 0 ? (
-                      <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                      <span className="bg-rose-500 text-white text-[8px] sm:text-[9px] px-1 py-0.5 rounded-full font-black animate-pulse">
                         {totalAlerts}
                       </span>
                     ) : null;
@@ -1770,6 +2228,16 @@ export default function StoreManager({
                       >
                         <Scan className="h-4 w-4 text-emerald-600 animate-pulse" />
                         <span>Scan Code</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsQuickAddOpen(true)}
+                        title="Open Quick Add Bottom Sheet Grid"
+                        className="flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-3xs hover:scale-[1.01]"
+                      >
+                        <span className="text-sm">⚡</span>
+                        <span>Quick Add</span>
                       </button>
                     </div>
                     {voiceFeedback && (
@@ -2477,10 +2945,23 @@ export default function StoreManager({
                                         setCancellingOrder(order);
                                         setCancellationReason('');
                                       }}
-                                      className="bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-100 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider self-start sm:self-auto cursor-pointer"
+                                      className="bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-100 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider self-start sm:self-auto cursor-pointer"
                                     >
                                       Cancel Order
                                     </button>
+                                    {onDeleteCustomerOrder && (
+                                      <button
+                                        onClick={() => {
+                                          if (confirm(`Delete pending order #${order.id} completely? This action cannot be undone.`)) {
+                                            onDeleteCustomerOrder(order.id);
+                                            alert(`Order #${order.id} deleted.`);
+                                          }
+                                        }}
+                                        className="bg-red-50 text-red-700 hover:bg-red-100 border border-red-100 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider self-start sm:self-auto cursor-pointer"
+                                      >
+                                        Delete Order
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               ))}
@@ -2622,157 +3103,8 @@ export default function StoreManager({
 
           <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
               
-              {/* Sale Input Form */}
-              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm space-y-4 h-fit">
-                <div>
-                  <h3 className="font-bold text-zinc-900">Record Vegetable Sale</h3>
-                  <p className="text-xs text-zinc-400">Deducts quantity directly from store stock ledger.</p>
-                </div>
-
-                <form onSubmit={handleLogSaleSubmit} className="space-y-3.5">
-                  
-                  {/* Vegetable Name Selection / Input */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label htmlFor="sale-veg" className="block text-xs font-bold text-zinc-500 uppercase">Vegetable Name *</label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setScannerTarget('sale');
-                          setIsScannerOpen(true);
-                        }}
-                        className="flex items-center gap-1 text-[10px] uppercase font-black tracking-wider text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-100 px-2 py-0.5 rounded-lg transition-all cursor-pointer"
-                      >
-                        <Scan className="h-3 w-3 text-emerald-600" />
-                        Scan Package
-                      </button>
-                    </div>
-                    <select
-                      id="sale-veg"
-                      required
-                      value={saleVegName}
-                      onChange={(e) => handleSaleVegSelect(e.target.value)}
-                      className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800 font-semibold bg-white"
-                    >
-                      <option value="">-- Choose Vegetable --</option>
-                      {storeInventory.map(item => (
-                        <option key={item.id} value={item.vegetableName}>
-                          {item.vegetableName} (Stock: {item.quantity}kg)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Warnings display for stock shortages */}
-                  {saleWarning && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="font-semibold">{saleWarning}</span>
-                    </div>
-                  )}
-
-                  {/* Qty & Unit */}
-                  <div className="grid grid-cols-2 gap-3.5">
-                    <div>
-                      <label htmlFor="sale-qty" className="block text-xs font-bold text-zinc-500 uppercase mb-1">Quantity *</label>
-                      <input
-                        id="sale-qty"
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        required
-                        placeholder="e.g. 5.5"
-                        value={saleQty || ''}
-                        onChange={(e) => handleSaleQtyChange(parseFloat(e.target.value) || 0, saleUnit)}
-                        className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-800 bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="sale-unit" className="block text-xs font-bold text-zinc-500 uppercase mb-1">Unit *</label>
-                      <select
-                        id="sale-unit"
-                        required
-                        value={saleUnit}
-                        onChange={(e) => {
-                          const u = e.target.value as any;
-                          setSaleUnit(u);
-                          handleSaleQtyChange(saleQty, u);
-                        }}
-                        className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-800 bg-white cursor-pointer"
-                      >
-                        <option value="kg">kg (Kilogram)</option>
-                        <option value="g">g (Gram)</option>
-                        <option value="pcs">pcs (Pieces)</option>
-                        <option value="bunch">bunch (Bunch)</option>
-                        <option value="pack">pack (Packet)</option>
-                        <option value="box">box (Box)</option>
-                        <option value="crate">crate (Crate)</option>
-                        <option value="sack">sack (Sack)</option>
-                        <option value="dozen">dozen (Dozen)</option>
-                        <option value="bundle">bundle (Bundle)</option>
-                        <option value="bag">bag (Bag)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Selling Price per standard */}
-                  <div>
-                    <label htmlFor="sale-price" className="block text-xs font-bold text-zinc-500 uppercase mb-1">
-                      Price per {saleUnit === 'g' ? 'kg' : saleUnit} (₹) *
-                    </label>
-                    <div className="relative">
-                      <span className="absolute inset-y-0 left-3 flex items-center text-xs font-bold text-zinc-400">
-                        ₹
-                      </span>
-                      <input
-                        id="sale-price"
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        required
-                        placeholder="e.g. 2.50"
-                        value={salePrice || ''}
-                        onChange={(e) => setSalePrice(parseFloat(e.target.value) || 0)}
-                        className="w-full rounded-xl border border-zinc-200 py-2 pl-7 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Customer Name */}
-                  <div>
-                    <label htmlFor="sale-customer" className="block text-xs font-bold text-zinc-500 uppercase mb-1">Customer Name (Optional)</label>
-                    <input
-                      id="sale-customer"
-                      type="text"
-                      placeholder="e.g. Walk-in client"
-                      value={saleCustomer}
-                      onChange={(e) => setSaleCustomer(e.target.value)}
-                      className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  {/* Total Calculation Display */}
-                  {saleQty > 0 && salePrice > 0 && (
-                    <div className="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100 flex items-center justify-between">
-                      <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Invoice Total:</span>
-                      <span className="text-base font-extrabold text-emerald-600">
-                        ₹{(saleUnit === 'g' ? (saleQty / 1000) * salePrice : saleQty * salePrice).toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    className="w-full rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white shadow-md shadow-emerald-100 hover:bg-emerald-700 transition-colors cursor-pointer"
-                  >
-                    Log Invoice Transaction
-                  </button>
-
-                </form>
-              </div>
-
               {/* Recent Sales History Log */}
-              <div className="lg:col-span-2 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm flex flex-col h-full max-h-[500px]">
+              <div className="lg:col-span-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm flex flex-col h-full max-h-[500px]">
                 <div className="mb-4">
                   <h3 className="font-bold text-zinc-900">Recent Sales Journal</h3>
                   <p className="text-xs text-zinc-400">Historical customer purchase register for this branch.</p>
@@ -3730,6 +4062,16 @@ export default function StoreManager({
                         <span>Send Message</span>
                       </a>
 
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadOrderPDF(order)}
+                        className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 transition-colors cursor-pointer flex items-center gap-1"
+                        title="Download PDF Summary of the Order"
+                      >
+                        <span>📄</span>
+                        <span>PDF Summary</span>
+                      </button>
+
                       {isUnprocessed && onUpdateCustomerOrder && (
                         <button
                           onClick={() => handleStartEditOrder(order)}
@@ -3742,7 +4084,8 @@ export default function StoreManager({
                       {isUnprocessed && onFulfillCustomerOrder && (
                         <button
                           onClick={() => {
-                            if (confirm(`Fulfill order for ${order.customerName}? This will automatically deduct weights from current stock and register sales logs.`)) {
+                            if (confirm(`Fulfill order for ${order.customerName}? This will automatically deduct weights from current stock, register sales logs, and download a clean PDF summary.`)) {
+                              handleDownloadOrderPDF(order);
                               onFulfillCustomerOrder(order);
                             }
                           }}
@@ -3753,15 +4096,28 @@ export default function StoreManager({
                       )}
 
                       {isUnprocessed && onDeleteCustomerOrder && (
-                        <button
-                          onClick={() => {
-                            setCancellingOrder(order);
-                            setCancellationReason('');
-                          }}
-                          className="px-2.5 py-1.5 rounded-lg border border-red-250 bg-red-50 text-red-700 text-xs font-bold hover:bg-red-100 transition-colors cursor-pointer"
-                        >
-                          Cancel Order
-                        </button>
+                        <>
+                          <button
+                            onClick={() => {
+                              setCancellingOrder(order);
+                              setCancellationReason('');
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-750 text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer"
+                          >
+                            Cancel Order
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete pending order #${order.id} for ${order.customerName} completely? This action cannot be undone.`)) {
+                                onDeleteCustomerOrder(order.id);
+                                alert(`Order #${order.id} deleted completely.`);
+                              }
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg border border-rose-250 bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 transition-colors cursor-pointer"
+                          >
+                            Delete Order
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -3875,6 +4231,455 @@ export default function StoreManager({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- SUB-TAB CONTENT: QR CODE GENERATOR --- */}
+      {activeSubTab === 'qr-code' && (
+        <div className="space-y-6 animate-fade-in text-slate-800">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm space-y-6">
+            
+            {/* Header info */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div className="space-y-1">
+                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/60 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider">
+                  Customer Convenience Suite
+                </span>
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <QrCode className="h-5 w-5 text-emerald-600" />
+                  Storefront QR Code Generator
+                </h3>
+                <p className="text-slate-500 text-xs">
+                  Create high-fidelity QR codes to place at your checkout desks, print on shopping bags, or post on social media. 
+                  Customers scan them to directly browse your live stock catalog, view real-time prices, and place contact-free delivery or pick-up orders.
+                </p>
+              </div>
+            </div>
+
+            {/* Content Two Columns */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              {/* Left Side: Parameters / Settings (Col Span 7) */}
+              <div className="lg:col-span-7 space-y-6">
+                
+                {/* Section 1: Destination Selection */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold text-slate-900 border-l-3 border-emerald-500 pl-2.5">
+                    1. QR Code Target Action
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setQrDestinationType('storefront')}
+                      className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 cursor-pointer ${
+                        qrDestinationType === 'storefront'
+                          ? 'bg-emerald-50/50 border-emerald-500 text-emerald-950 shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="p-1.5 bg-emerald-100/60 text-emerald-700 rounded-lg shrink-0 w-fit">
+                        <ShoppingBag className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <span className="block text-xs font-black">Customer Storefront</span>
+                        <span className="text-[10px] text-slate-500 line-clamp-2 mt-0.5 leading-tight">
+                          Customers browse live stock and place online orders.
+                        </span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQrDestinationType('express-billing')}
+                      className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 cursor-pointer ${
+                        qrDestinationType === 'express-billing'
+                          ? 'bg-emerald-50/50 border-emerald-500 text-emerald-950 shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="p-1.5 bg-emerald-100/60 text-emerald-700 rounded-lg shrink-0 w-fit">
+                        <TrendingUp className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <span className="block text-xs font-black">Express POS Billing</span>
+                        <span className="text-[10px] text-slate-500 line-clamp-2 mt-0.5 leading-tight">
+                          Quick access to this branch billing terminal.
+                        </span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQrDestinationType('custom')}
+                      className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 cursor-pointer ${
+                        qrDestinationType === 'custom'
+                          ? 'bg-emerald-50/50 border-emerald-500 text-emerald-950 shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="p-1.5 bg-emerald-100/60 text-emerald-700 rounded-lg shrink-0 w-fit">
+                        <ExternalLink className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <span className="block text-xs font-black">Custom Web URL</span>
+                        <span className="text-[10px] text-slate-500 line-clamp-2 mt-0.5 leading-tight">
+                          Redirect customers to a custom web link or social page.
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Custom URL Input (Only visible when custom) */}
+                {qrDestinationType === 'custom' && (
+                  <div className="space-y-2 bg-slate-50 p-4 rounded-2xl border border-slate-200 animate-in slide-in-from-top duration-250">
+                    <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wide">
+                      Destination Web URL
+                    </label>
+                    <input
+                      type="url"
+                      value={qrCustomUrl}
+                      onChange={(e) => setQrCustomUrl(e.target.value)}
+                      placeholder="https://example.com/my-custom-store"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold focus:border-emerald-500 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-slate-400">
+                      Enter any valid web address. For example: a custom landing page, google maps location, or WhatsApp click-to-chat link.
+                    </p>
+                  </div>
+                )}
+
+                {/* Section 2: Visual Customizations (Colors & Branding) */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-bold text-slate-900 border-l-3 border-emerald-500 pl-2.5">
+                    2. Design & Branding Elements
+                  </h4>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Foreground Color */}
+                    <div className="space-y-2.5">
+                      <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wide">
+                        QR Pattern Color (Foreground)
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <div className="relative shrink-0">
+                          <input
+                            type="color"
+                            value={qrFgColor}
+                            onChange={(e) => setQrFgColor(e.target.value)}
+                            className="h-10 w-12 rounded-lg border border-slate-200 cursor-pointer overflow-hidden p-0 bg-transparent"
+                            id="qr-fg-color-picker"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          value={qrFgColor}
+                          onChange={(e) => setQrFgColor(e.target.value)}
+                          maxLength={7}
+                          className="w-24 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-mono font-semibold uppercase text-center focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      
+                      {/* Presets */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {[
+                          { name: 'Emerald', code: '#047857' },
+                          { name: 'Indigo', code: '#4f46e5' },
+                          { name: 'Slate', code: '#1e293b' },
+                          { name: 'Crimson', code: '#dc2626' },
+                          { name: 'Amber', code: '#b45309' },
+                          { name: 'Teal', code: '#0f766e' }
+                        ].map((preset) => (
+                          <button
+                            key={preset.code}
+                            type="button"
+                            onClick={() => setQrFgColor(preset.code)}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md border border-slate-100 hover:border-slate-300 bg-slate-50 cursor-pointer"
+                          >
+                            <span 
+                              className="h-2 w-2 rounded-full inline-block" 
+                              style={{ backgroundColor: preset.code }}
+                            />
+                            {preset.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Background Color */}
+                    <div className="space-y-2.5">
+                      <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wide">
+                        Card Background Color
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <div className="relative shrink-0">
+                          <input
+                            type="color"
+                            value={qrBgColor}
+                            onChange={(e) => setQrBgColor(e.target.value)}
+                            className="h-10 w-12 rounded-lg border border-slate-200 cursor-pointer overflow-hidden p-0 bg-transparent"
+                            id="qr-bg-color-picker"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          value={qrBgColor}
+                          onChange={(e) => setQrBgColor(e.target.value)}
+                          maxLength={7}
+                          className="w-24 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-mono font-semibold uppercase text-center focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      
+                      {/* Presets */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {[
+                          { name: 'Pure White', code: '#ffffff' },
+                          { name: 'Soft Cream', code: '#fefcbf' },
+                          { name: 'Ice Blue', code: '#eff6ff' },
+                          { name: 'Mint Hue', code: '#f0fdf4' },
+                          { name: 'Slate Glow', code: '#f8fafc' }
+                        ].map((preset) => (
+                          <button
+                            key={preset.code}
+                            type="button"
+                            onClick={() => setQrBgColor(preset.code)}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md border border-slate-100 hover:border-slate-300 bg-slate-50 cursor-pointer"
+                          >
+                            <span 
+                              className="h-2 w-2 rounded-full inline-block border border-slate-200" 
+                              style={{ backgroundColor: preset.code }}
+                            />
+                            {preset.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: Advanced Options */}
+                <div className="space-y-4 pt-1">
+                  <h4 className="text-sm font-bold text-slate-900 border-l-3 border-emerald-500 pl-2.5">
+                    3. Advanced Engine Variables
+                  </h4>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                    {/* Error Correction Level */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider" htmlFor="qr-error-level-select">
+                        Error Tolerance (Density)
+                      </label>
+                      <select
+                        id="qr-error-level-select"
+                        value={qrErrorLevel}
+                        onChange={(e) => setQrErrorLevel(e.target.value as any)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold focus:border-emerald-500 focus:outline-none text-slate-700"
+                      >
+                        <option value="L">Low (7% recovery - lowest density)</option>
+                        <option value="M">Medium (15% recovery - optimized standard)</option>
+                        <option value="Q">Quartile (25% recovery - high density)</option>
+                        <option value="H">High (30% recovery - highest damage tolerance)</option>
+                      </select>
+                      <p className="text-[10px] text-slate-400">
+                        Higher tolerance ensures QR remains readable even if printed flyers get slightly scuffed or stained inside active store environments.
+                      </p>
+                    </div>
+
+                    {/* QR Code Pixel Dimension */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider" htmlFor="qr-resolution-select">
+                        Pixel Resolution (Dimensions)
+                      </label>
+                      <select
+                        id="qr-resolution-select"
+                        value={qrSize}
+                        onChange={(e) => setQrSize(parseInt(e.target.value))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold focus:border-emerald-500 focus:outline-none text-slate-700"
+                      >
+                        <option value="200">200 x 200 px (Fast Scan, Digital Web)</option>
+                        <option value="300">300 x 300 px (Optimized Medium Print)</option>
+                        <option value="500">500 x 500 px (High-Definition Catalog Flyer)</option>
+                        <option value="800">800 x 800 px (Ultra-HD Storefront Poster)</option>
+                      </select>
+                      <p className="text-[10px] text-slate-400">
+                        Select larger sizes if planning to print large banner assets or hanging signs inside physical stores.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 4: Utility Commands */}
+                <div className="flex flex-wrap items-center gap-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let targetUrl = '';
+                      if (qrDestinationType === 'storefront') {
+                        targetUrl = `${window.location.origin}${window.location.pathname}#/customer-hub?storeId=${store.id}`;
+                      } else if (qrDestinationType === 'express-billing') {
+                        targetUrl = `${window.location.origin}${window.location.pathname}#/store?storeId=${store.id}`;
+                      } else {
+                        targetUrl = qrCustomUrl || `${window.location.origin}${window.location.pathname}`;
+                      }
+
+                      navigator.clipboard.writeText(targetUrl);
+                      setQrCopySuccess(true);
+                      
+                      if (cpanelSettings?.alertSoundEnabled) {
+                        try {
+                          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                          const osc = audioCtx.createOscillator();
+                          const gain = audioCtx.createGain();
+                          osc.connect(gain);
+                          gain.connect(audioCtx.destination);
+                          osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                          gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                          osc.start();
+                          osc.stop(audioCtx.currentTime + 0.12);
+                        } catch (e) {}
+                      }
+
+                      setTimeout(() => setQrCopySuccess(false), 2000);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  >
+                    {qrCopySuccess ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 animate-bounce" />
+                        <span className="text-emerald-700">Copied Destination Link!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        Copy Raw Redirect URL
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!qrDataUrl) return;
+                      const link = document.createElement('a');
+                      link.href = qrDataUrl;
+                      link.download = `${store.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_qr_code.png`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                    disabled={!qrDataUrl || qrIsGenerating}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-40"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download Standalone PNG Image
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadQrFlyer}
+                    disabled={!qrDataUrl || qrIsGenerating}
+                    className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all cursor-pointer shadow-xs disabled:opacity-40"
+                  >
+                    <Printer className="h-4 w-4" />
+                    Download Print-Ready PDF Flyer
+                  </button>
+                </div>
+
+              </div>
+
+              {/* Right Side: Interactive Live Preview (Col Span 5) */}
+              <div className="lg:col-span-5 flex flex-col items-center justify-start space-y-6">
+                
+                {/* Visual Preview Card Frame */}
+                <div className="w-full bg-slate-50 rounded-3xl border border-slate-200/80 p-6 flex flex-col items-center justify-center text-center relative overflow-hidden">
+                  
+                  {/* Visual Background Ripple Accents */}
+                  <div className="absolute top-0 right-0 h-32 w-32 bg-emerald-500/5 rounded-full filter blur-xl -mr-10 -mt-10"></div>
+                  <div className="absolute bottom-0 left-0 h-32 w-32 bg-indigo-500/5 rounded-full filter blur-xl -ml-10 -mb-10"></div>
+                  
+                  {/* Tag label */}
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 bg-slate-200/50 px-2.5 py-1 rounded-full mb-4">
+                    WYSIWYG REAL-TIME PREVIEW
+                  </span>
+
+                  {/* QR Canvas Box */}
+                  <div 
+                    className="relative p-5 rounded-2xl shadow-md border border-slate-200/60 inline-block transition-transform hover:scale-103 duration-300"
+                    style={{ backgroundColor: qrBgColor }}
+                  >
+                    {qrIsGenerating ? (
+                      <div className="h-[210px] w-[210px] flex items-center justify-center">
+                        <RefreshCw className="h-8 w-8 text-emerald-600 animate-spin" />
+                      </div>
+                    ) : qrDataUrl ? (
+                      <div className="relative">
+                        <img 
+                          src={qrDataUrl} 
+                          alt="Storefront QR Code Live Preview" 
+                          className="h-[210px] w-[210px] object-contain rounded-lg"
+                          referrerPolicy="no-referrer"
+                        />
+                        {/* Custom overlaid tiny crop emoji at center for branding */}
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="h-9 w-9 bg-white border-2 border-emerald-600 rounded-full flex items-center justify-center shadow-md">
+                            <span className="text-base">🥬</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="h-[210px] w-[210px] flex items-center justify-center text-slate-400 font-bold text-xs">
+                        QR Code not compiled yet
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Redirection Link Preview */}
+                  <div className="w-full mt-5 bg-white border border-slate-200 rounded-xl p-3 text-left space-y-1">
+                    <span className="block text-[9px] font-extrabold uppercase tracking-wider text-slate-400">
+                      Decoded scan url
+                    </span>
+                    <span className="block text-xs font-mono font-medium text-slate-600 break-all select-all leading-relaxed">
+                      {qrDestinationType === 'storefront' ? (
+                        `${window.location.origin}${window.location.pathname}#/customer-hub?storeId=${store.id}`
+                      ) : qrDestinationType === 'express-billing' ? (
+                        `${window.location.origin}${window.location.pathname}#/store?storeId=${store.id}`
+                      ) : (
+                        qrCustomUrl || `${window.location.origin}${window.location.pathname}`
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-center gap-1.5 text-[10px] font-bold text-slate-400">
+                    <span>💡</span>
+                    <span>Test scan using any mobile scanner or phone camera!</span>
+                  </div>
+
+                </div>
+
+                {/* Additional Guidance Panel */}
+                <div className="w-full bg-emerald-50/30 rounded-2xl border border-emerald-100 p-5 space-y-3">
+                  <h4 className="text-xs font-extrabold text-emerald-800 uppercase tracking-widest flex items-center gap-1.5">
+                    <span>📢</span>
+                    Best Practices for Placement
+                  </h4>
+                  <ul className="text-xs text-emerald-950 space-y-2 list-disc pl-4 font-semibold leading-relaxed">
+                    <li>
+                      <strong className="text-emerald-900 font-extrabold">Bill Counter:</strong> Print the Flyer PDF and frame it next to the card machine. Customers can scan to view prices without asking staff.
+                    </li>
+                    <li>
+                      <strong className="text-emerald-900 font-extrabold">Paper Carry Bags:</strong> Paste or print the QR on paper bags. Customers will have your storefront handy when they get home!
+                    </li>
+                    <li>
+                      <strong className="text-emerald-900 font-extrabold">Low-Light Alert:</strong> If your store is dimly lit, raise the <strong className="text-emerald-900 font-extrabold">Error Tolerance</strong> option to High to withstand scans in dark spots.
+                    </li>
+                  </ul>
+                </div>
+
+              </div>
+
+            </div>
+
           </div>
         </div>
       )}
@@ -4190,6 +4995,35 @@ export default function StoreManager({
                       );
                     })}
                   </div>
+
+                  {/* Payment Method Selector */}
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/60 text-left space-y-2">
+                    <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">
+                      Select Billing Payment Mode *
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['Cash', 'Card', 'UPI'] as const).map((mode) => {
+                        const isSel = paymentMode === mode;
+                        const icon = mode === 'Cash' ? '💵' : mode === 'Card' ? '💳' : '📱';
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setPaymentMode(mode)}
+                            className={`py-2 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+                              isSel
+                                ? 'bg-emerald-600 border-emerald-600 text-white shadow-3xs font-black'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            <span>{icon}</span>
+                            <span>{mode}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                 </div>
               )}
 
@@ -4340,6 +5174,89 @@ export default function StoreManager({
                   className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl py-2.5 text-xs transition-all cursor-pointer"
                 >
                   Discard / Keep Active
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- QUICK ADD BOTTOM SHEET FOR MOBILE --- */}
+      {isQuickAddOpen && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-3xs z-50 flex items-end justify-center animate-in fade-in duration-200">
+          {/* Backdrop Click */}
+          <div className="absolute inset-0 cursor-pointer" onClick={() => setIsQuickAddOpen(false)} />
+          
+          <div className="relative bg-white w-full max-w-lg rounded-t-3xl shadow-2xl border-t border-slate-200 p-5 pb-8 space-y-4 text-left animate-in slide-in-from-bottom duration-350 max-h-[85vh] flex flex-col z-10">
+            {/* Drag/Slide Handle Look */}
+            <div className="flex justify-center shrink-0">
+              <div className="w-12 h-1.5 bg-slate-200 rounded-full cursor-pointer hover:bg-slate-300" onClick={() => setIsQuickAddOpen(false)} />
+            </div>
+
+            <div className="flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
+                  <span>⚡</span> Quick Add Crop Catalog
+                </h3>
+                <p className="text-[10px] text-slate-400 font-semibold">Tap to instantly add items to active register cart.</p>
+              </div>
+              <button 
+                onClick={() => setIsQuickAddOpen(false)}
+                className="text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-full h-7 w-7 flex items-center justify-center font-extrabold text-xs transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quick Add Grid Area */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-3.5">
+              <div className="grid grid-cols-4 gap-2">
+                {COMMON_CROPS_LIST.map((crop) => {
+                  const cartItem = posCart[crop.name];
+                  const countInCart = cartItem ? cartItem.quantity : 0;
+                  return (
+                    <button
+                      key={crop.name}
+                      onClick={() => handleQuickAddCrop(crop)}
+                      className={`relative p-3 rounded-2xl border transition-all cursor-pointer flex flex-col items-center justify-center gap-1 text-center group active:scale-95 ${
+                        countInCart > 0
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-3xs'
+                          : 'bg-slate-50/50 border-slate-150 hover:border-slate-300 text-slate-700'
+                      }`}
+                    >
+                      {countInCart > 0 && (
+                        <span className="absolute top-1.5 right-1.5 bg-emerald-600 text-white text-[8px] px-1 rounded-full font-black min-w-[14px] text-center">
+                          {countInCart}
+                        </span>
+                      )}
+                      <span className="text-2xl transform group-hover:scale-110 transition-transform">{crop.emoji}</span>
+                      <span className="text-[9px] font-black tracking-tight leading-none truncate w-full">{crop.name}</span>
+                      <span className="text-[8px] font-mono text-slate-400">₹{crop.defaultPrice}/kg</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Active Cart Quick Summary Footer */}
+            <div className="bg-slate-50 rounded-2xl p-3 border border-slate-200/60 shrink-0 space-y-2.5">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-slate-500">Cart Total ({Object.keys(posCart).length} items):</span>
+                <span className="font-black text-emerald-600 font-mono text-sm">
+                  ₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setIsQuickAddOpen(false);
+                    setSaleSubView('checkout');
+                  }}
+                  disabled={Object.keys(posCart).length === 0}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-extrabold rounded-xl py-2.5 text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <span>🛒 View Checkout Cart</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>

@@ -11,6 +11,27 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('scheduler')) {
+                return 'vendor-react';
+              }
+              if (id.includes('recharts') || id.includes('d3') || id.includes('internmap') || id.includes('victory')) {
+                return 'vendor-charts';
+              }
+              if (id.includes('jspdf') || id.includes('qrcode')) {
+                return 'vendor-utils';
+              }
+              return 'vendor-core';
+            }
+          }
+        }
+      },
+      chunkSizeWarningLimit: 1200,
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

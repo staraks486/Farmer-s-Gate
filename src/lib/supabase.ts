@@ -176,6 +176,46 @@ const DEFAULT_CUSTOMER_ORDERS: CustomerOrder[] = [
 
 let supabaseInstance: SupabaseClient | null = null;
 
+// --- GLOBAL NETWORK CIRCUIT BREAKER & SERVER RESILIENCE ---
+let isCircuitBroken = false;
+let lastBrokenTime = 0;
+const CIRCUIT_BREAKER_TIMEOUT = 1800; // 1.8 seconds timeout per remote request
+const CIRCUIT_COOLDOWN = 30000; // 30 seconds bypass cooldown
+
+export function checkCircuitState(): boolean {
+  if (isCircuitBroken) {
+    if (Date.now() - lastBrokenTime > CIRCUIT_COOLDOWN) {
+      isCircuitBroken = false;
+      console.log("🔄 Circuit breaker cooldown elapsed. Retrying database connectivity...");
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+export function tripCircuit(): void {
+  if (!isCircuitBroken) {
+    isCircuitBroken = true;
+    lastBrokenTime = Date.now();
+    console.warn("⚠️ Remote third-party server query timed out or failed. Circuit breaker tripped! Falling back 100% to Offline Local Storage Cache.");
+  }
+}
+
+export function resetCircuit(): void {
+  isCircuitBroken = false;
+  lastBrokenTime = 0;
+  console.log("🏥 Circuit breaker manually reset. Remote connectivity restored.");
+}
+
+export function getCircuitBreakerDetails() {
+  return {
+    isBroken: isCircuitBroken,
+    cooldownRemaining: isCircuitBroken ? Math.max(0, Math.ceil((CIRCUIT_COOLDOWN - (Date.now() - lastBrokenTime)) / 1000)) : 0,
+    trippedAt: lastBrokenTime
+  };
+}
+
 // Load Config
 export function getSupabaseConfig(): SupabaseConfig {
   // Check for client-side environment variables first for instant third-party deployment
@@ -189,11 +229,12 @@ export function getSupabaseConfig(): SupabaseConfig {
   // If there are environment variables and no explicit connection status stored, default to connected
   const isConnected = isConnectedStored === 'true' || (isConnectedStored === null && !!envUrl && !!envKey) || (!!url && !!key && isConnectedStored !== 'false');
   const forceOffline = localStorage.getItem('force_offline') === 'true';
+  const circuitBroken = checkCircuitState();
 
   return {
     supabaseUrl: url,
     supabaseAnonKey: key,
-    isConnected: isConnected && !!url && !!key && !forceOffline
+    isConnected: isConnected && !!url && !!key && !forceOffline && !circuitBroken
   };
 }
 
@@ -205,15 +246,80 @@ export function dbSetForceOffline(val: boolean): void {
   localStorage.setItem('force_offline', val ? 'true' : 'false');
 }
 
-// Initialize Supabase Client
+export function handleSupabaseAuthError(e: any): void {
+  if (!e) return;
+  const errMsg = e.message || String(e);
+  const isAuthError = 
+    errMsg.includes('Invalid API key') || 
+    errMsg.includes('invalid api key') || 
+    errMsg.includes('JWT') || 
+    errMsg.includes('PGRST111') ||
+    errMsg.includes('apikey') ||
+    (e.status === 401) ||
+    (e.status === 403);
+
+  if (isAuthError) {
+    console.warn("🚨 Critical Supabase Authentication / API Key Error detected. Forcing Offline Mode to preserve local operations.");
+    localStorage.setItem('supabase_connected', 'false');
+    tripCircuit();
+  }
+}
+
+// Initialize Supabase Client with a high-resiliency custom fetch and strict timeouts
 export function initSupabase(): SupabaseClient | null {
   const config = getSupabaseConfig();
   if (config.supabaseUrl && config.supabaseAnonKey) {
     try {
-      supabaseInstance = createClient(config.supabaseUrl, config.supabaseAnonKey);
+      supabaseInstance = createClient(config.supabaseUrl, config.supabaseAnonKey, {
+        global: {
+          fetch: async (url, options) => {
+            if (checkCircuitState()) {
+              throw new Error("Circuit breaker is currently active. Bypassing fetch.");
+            }
+
+            const controller = new AbortController();
+            const signal = controller.signal;
+            
+            let timeoutId = setTimeout(() => {
+              controller.abort();
+            }, CIRCUIT_BREAKER_TIMEOUT);
+
+            try {
+              const res = await fetch(url, { ...options, signal });
+              clearTimeout(timeoutId);
+
+              if (!res.ok) {
+                if (res.status === 401 || res.status === 403) {
+                  console.warn("🚨 Critical Supabase Authentication / API Key Error detected during fetch. Forcing Offline Mode.");
+                  localStorage.setItem('supabase_connected', 'false');
+                  tripCircuit();
+                } else if (res.status >= 500) {
+                  console.warn(`⚠️ Remote server error response status code: ${res.status}`);
+                  tripCircuit();
+                }
+              }
+
+              return res;
+            } catch (err: any) {
+              clearTimeout(timeoutId);
+              const errMsg = err.message || '';
+              // Trip if aborted (timeout) or has network fetch errors
+              if (
+                err.name === 'AbortError' || 
+                errMsg.includes('failed to fetch') || 
+                errMsg.includes('NetworkError') || 
+                errMsg.includes('FetchError')
+              ) {
+                tripCircuit();
+              }
+              throw err;
+            }
+          }
+        }
+      });
       return supabaseInstance;
     } catch (e) {
-      console.error('Failed to initialize Supabase client:', e);
+      console.warn('Failed to initialize Supabase client:', e);
       supabaseInstance = null;
     }
   }
@@ -237,8 +343,11 @@ export async function saveSupabaseConfig(url: string, key: string): Promise<{ su
     
     // Note: If table does not exist but client successfully contacts Supabase, we might get a "relation does not exist" error, 
     // which still means connection is established but schema is missing.
-    if (error && error.code !== 'PGRST116' && error.message.includes('FetchError')) {
-      throw error;
+    if (error) {
+      const isTableMissing = error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation');
+      if (!isTableMissing && error.code !== 'PGRST116') {
+        throw error;
+      }
     }
 
     localStorage.setItem('supabase_url', url);
@@ -251,7 +360,7 @@ export async function saveSupabaseConfig(url: string, key: string): Promise<{ su
       message: 'Supabase connected successfully! SQL tables can be initialized using the schema copy option.' 
     };
   } catch (error: any) {
-    console.error('Supabase connection test failed:', error);
+    console.warn('Supabase connection test failed:', error);
     return { 
       success: false, 
       message: `Connection failed: ${error.message || 'Please check your URL and Anon Key.'}` 
@@ -356,10 +465,50 @@ export function dbAddUnsyncedOp(table: string, action: 'insert' | 'update' | 'de
   localStorage.setItem('fg_unsynced_ops', JSON.stringify(filteredOps));
 }
 
+async function ensureDependentEntitiesExist(table: string, data: any) {
+  if (!supabaseInstance) return;
+
+  // 1. Check for storeId and proactively upsert matching store from localStorage
+  if (data && typeof data === 'object' && 'storeId' in data && data.storeId) {
+    try {
+      const localStoresStr = localStorage.getItem('fg_stores');
+      if (localStoresStr) {
+        const localStores = JSON.parse(localStoresStr);
+        const matchingStore = localStores.find((s: any) => s.id === data.storeId);
+        if (matchingStore) {
+          await supabaseInstance.from('stores').upsert(matchingStore);
+        }
+      }
+    } catch (e) {
+      console.warn(`Failed to auto-ensure store ${data.storeId} exists:`, e);
+    }
+  }
+
+  // 2. Check for supplierId and proactively upsert matching supplier from localStorage
+  if (data && typeof data === 'object' && 'supplierId' in data && data.supplierId) {
+    try {
+      const localSuppliersStr = localStorage.getItem('fg_suppliers');
+      if (localSuppliersStr) {
+        const localSuppliers = JSON.parse(localSuppliersStr);
+        const matchingSupplier = localSuppliers.find((s: any) => s.id === data.supplierId);
+        if (matchingSupplier) {
+          await supabaseInstance.from('suppliers').upsert(matchingSupplier);
+        }
+      }
+    } catch (e) {
+      console.warn(`Failed to auto-ensure supplier ${data.supplierId} exists:`, e);
+    }
+  }
+}
+
 export async function dbSyncLocalCache(): Promise<{ success: boolean; syncedCount: number; message: string }> {
   const config = getSupabaseConfig();
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
     return { success: false, syncedCount: 0, message: "Supabase not configured in settings." };
+  }
+  
+  if (!config.isConnected) {
+    return { success: false, syncedCount: 0, message: "Supabase is offline or connection is suspended." };
   }
   
   if (!supabaseInstance) {
@@ -383,6 +532,7 @@ export async function dbSyncLocalCache(): Promise<{ success: boolean; syncedCoun
       const { table, action, data } = op;
       
       if (action === 'insert' || action === 'update') {
+        await ensureDependentEntitiesExist(table, data);
         const { error } = await supabaseInstance.from(table).upsert(data);
         if (error) throw error;
       } else if (action === 'delete') {
@@ -392,7 +542,8 @@ export async function dbSyncLocalCache(): Promise<{ success: boolean; syncedCoun
       
       syncedCount++;
     } catch (e: any) {
-      console.error(`Sync failed for operation on ${op.table}:`, e);
+      console.warn(`Sync failed for operation on ${op.table}: ${e?.message || JSON.stringify(e) || e}`, e);
+      handleSupabaseAuthError(e);
       failedOps.push(op);
     }
   }
@@ -804,6 +955,7 @@ export async function dbAddRequirement(req: Requirement): Promise<Requirement> {
   const config = getSupabaseConfig();
   if (config.isConnected && supabaseInstance) {
     try {
+      await ensureDependentEntitiesExist('requirements', req);
       const { data, error } = await supabaseInstance
         .from('requirements')
         .insert([req])
@@ -829,6 +981,7 @@ export async function dbUpdateRequirement(req: Requirement): Promise<Requirement
   const config = getSupabaseConfig();
   if (config.isConnected && supabaseInstance) {
     try {
+      await ensureDependentEntitiesExist('requirements', req);
       const { data, error } = await supabaseInstance
         .from('requirements')
         .update(req)
@@ -1370,3 +1523,98 @@ ALTER TABLE master_crops DISABLE ROW LEVEL SECURITY;
 
 `;
 }
+
+export interface SupabaseDiagnostics {
+  connected: boolean;
+  url: string;
+  urlReachable: boolean;
+  authValid: boolean;
+  tables: {
+    name: string;
+    exists: boolean;
+    rowCount: number;
+    error?: string;
+  }[];
+  errorMessage?: string;
+}
+
+export async function dbRunDiagnostics(): Promise<SupabaseDiagnostics> {
+  const config = getSupabaseConfig();
+  const result: SupabaseDiagnostics = {
+    connected: false,
+    url: config.supabaseUrl,
+    urlReachable: false,
+    authValid: false,
+    tables: []
+  };
+
+  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+    result.errorMessage = "Supabase URL and Anon Key are not configured.";
+    return result;
+  }
+
+  // 1. Test URL Reachability via a direct REST health call
+  try {
+    const pingRes = await fetch(`${config.supabaseUrl}/rest/v1/`, {
+      method: 'GET',
+      headers: {
+        'apikey': config.supabaseAnonKey
+      }
+    });
+    result.urlReachable = true;
+  } catch (e: any) {
+    result.urlReachable = false;
+    result.errorMessage = `Unable to reach Supabase server. Network error: ${e.message || e}`;
+    return result;
+  }
+
+  // 2. Test tables
+  const tempClient = createClient(config.supabaseUrl, config.supabaseAnonKey);
+  result.authValid = true; // Assume valid unless we get a specific authentication error
+  
+  const tablesToTest = [
+    'stores',
+    'sales',
+    'purchases',
+    'inventory',
+    'requirements',
+    'suppliers',
+    'purchase_orders',
+    'customer_orders',
+    'master_crops'
+  ];
+
+  let hasErrors = false;
+
+  for (const tableName of tablesToTest) {
+    try {
+      const { error, count } = await tempClient
+        .from(tableName)
+        .select('*', { count: 'exact', head: true })
+        .limit(1);
+
+      if (error) {
+        if (error.code === 'PGRST111' || error.message.includes('JWT') || error.message.includes('Invalid API key') || error.message.includes('invalid api key')) {
+          result.authValid = false;
+          result.tables.push({ name: tableName, exists: false, rowCount: 0, error: error.message });
+          hasErrors = true;
+        } else if (error.code === '42P01' || error.message.includes('does not exist') || error.message.includes('relation')) {
+          result.tables.push({ name: tableName, exists: false, rowCount: 0, error: 'Table does not exist. Please run the SQL schema setup script.' });
+          hasErrors = true;
+        } else {
+          result.tables.push({ name: tableName, exists: false, rowCount: 0, error: error.message });
+          hasErrors = true;
+        }
+      } else {
+        result.tables.push({ name: tableName, exists: true, rowCount: count || 0 });
+      }
+    } catch (e: any) {
+      result.tables.push({ name: tableName, exists: false, rowCount: 0, error: e.message || String(e) });
+      hasErrors = true;
+    }
+  }
+
+  result.connected = result.urlReachable && result.authValid && !hasErrors;
+  return result;
+}
+
