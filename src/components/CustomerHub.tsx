@@ -1,1856 +1,1228 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
-import { Store, InventoryItem, CustomerOrder, CustomerOrderItem, StorefrontAd } from '../types';
 import { 
   ShoppingCart, 
-  Phone, 
   MapPin, 
   Search, 
-  ClipboardList, 
   CheckCircle2, 
-  Clock, 
-  Hourglass, 
   Trash2, 
   ArrowRight, 
   User, 
   ShoppingBag, 
   Plus, 
   Minus, 
-  Megaphone, 
   ChevronRight, 
   LogOut, 
-  UserCheck, 
-  Map,
-  FileText,
-  Share2
+  FileText, 
+  Ticket, 
+  Sparkles, 
+  Gift,
+  Clock,
+  MessageSquare,
+  Send,
+  Navigation,
+  Phone,
+  Lock,
+  Mail,
+  UserPlus,
+  RefreshCw,
+  Wallet
 } from 'lucide-react';
+import { 
+  auth, 
+  getProductsFromFirestore, 
+  placeOrderInFirestore, 
+  subscribeToCustomerOrders, 
+  updateProductStockInFirestore,
+  updateOrderStatusInFirestore,
+  seedProductsIfNeeded,
+  FirebaseOrder
+} from '../lib/firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { getVegEmoji, availableCoupons } from './customer/customerData';
 
-interface CustomerHubProps {
-  stores: Store[];
-  inventory: InventoryItem[];
-  customerOrders: CustomerOrder[];
-  onPlaceOrder: (newOrder: CustomerOrder) => Promise<void>;
-  onUpdateOrder?: (updatedOrder: CustomerOrder) => Promise<void>;
-  storefrontAds?: StorefrontAd[];
-}
-
-export default function CustomerHub({
-  stores,
-  inventory,
-  customerOrders,
-  onPlaceOrder,
-  onUpdateOrder,
-  storefrontAds = []
-}: CustomerHubProps) {
+export default function CustomerHub() {
   const [activeTab, setActiveTab] = useState<'shop' | 'track' | 'profile'>('shop');
-  
-  // Store selector
-  const [selectedStoreId, setSelectedStoreId] = useState<string>(() => {
-    try {
-      const parts = window.location.hash.split('?');
-      if (parts.length > 1) {
-        const params = new URLSearchParams(parts[1]);
-        const queryStoreId = params.get('storeId');
-        if (queryStoreId && stores.some(s => s.id === queryStoreId)) {
-          return queryStoreId;
-        }
-      }
-    } catch (e) {
-      console.error('Error parsing storeId from URL query', e);
-    }
-    return stores[0]?.id || '';
-  });
-
-  // Search & Filters
+  const [products, setProducts] = useState<any[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [selectedCategory, setSelectedCategory] = useState('All');
 
-  // Cart State: maps vegetableName to quantity and item
-  const [cart, setCart] = useState<{ [vegName: string]: { quantity: number; item: InventoryItem } }>({});
-
-  // Mobile User Profile & Registration State
-  const [currentUser, setCurrentUser] = useState<{ name: string; phone: string; email?: string; verificationMethod?: 'whatsapp' | 'email'; address?: string } | null>(() => {
-    const stored = localStorage.getItem('fg_customer_profile');
-    return stored ? JSON.parse(stored) : null;
-  });
-
-  // Verification Modal State
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authPhone, setAuthPhone] = useState('');
+  // Firebase user states
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
-  const [verificationMethod, setVerificationMethod] = useState<'whatsapp' | 'email'>('whatsapp');
+  const [authPassword, setAuthPassword] = useState('');
   const [authName, setAuthName] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
   const [authAddress, setAuthAddress] = useState('');
-  const [authOtp, setAuthOtp] = useState('');
-  const [isOtpSent, setIsOtpSent] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // Checkout modal
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [checkoutNotes, setCheckoutNotes] = useState('');
-
-  // Profile edit states & success indicator
-  const [editName, setEditName] = useState(currentUser?.name || '');
-  const [editPhone, setEditPhone] = useState(currentUser?.phone || '');
-  const [editEmail, setEditEmail] = useState(currentUser?.email || '');
-  const [editMethod, setEditMethod] = useState<'whatsapp' | 'email'>(currentUser?.verificationMethod || 'whatsapp');
-  const [editAddress, setEditAddress] = useState(currentUser?.address || '');
-  const [profileSuccessMsg, setProfileSuccessMsg] = useState('');
-
-  // Keep edit profile form states in sync with logged-in user
-  React.useEffect(() => {
-    if (currentUser) {
-      setEditName(currentUser.name);
-      setEditPhone(currentUser.phone);
-      setEditEmail(currentUser.email || '');
-      setEditMethod(currentUser.verificationMethod || 'whatsapp');
-      setEditAddress(currentUser.address || '');
-    }
-  }, [currentUser]);
-
-  // Track tab state
-  const [trackPhoneInput, setTrackPhoneInput] = useState(currentUser?.phone || '');
-  const [searchPhoneQuery, setSearchPhoneQuery] = useState(currentUser?.phone || '');
+  // Cart State: productId -> quantity
+  const [cart, setCart] = useState<{ [id: string]: number }>({});
   
-  // Selected orders for PDF billing
-  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  // Checkout details
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [customAddress, setCustomAddress] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [couponError, setCouponError] = useState('');
+  const [useWallet, setUseWallet] = useState(false);
+  
+  // Pre-seed static wallet balance for simulation/gamification
+  const [walletBalance, setWalletBalance] = useState(150.00);
 
-  const handleToggleSelectOrder = (orderId: string) => {
-    setSelectedOrderIds(prev => 
-      prev.includes(orderId) 
-        ? prev.filter(id => id !== orderId) 
-        : [...prev, orderId]
-    );
+  // Customer's order history state (synced via Firestore)
+  const [customerOrders, setCustomerOrders] = useState<FirebaseOrder[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<FirebaseOrder | null>(null);
+  const [customerChatMessage, setCustomerChatMessage] = useState('');
+
+  // Auto-seed and load products
+  useEffect(() => {
+    const initData = async () => {
+      setLoadingProducts(true);
+      await seedProductsIfNeeded();
+      const items = await getProductsFromFirestore();
+      setProducts(items);
+      setLoadingProducts(false);
+    };
+    initData();
+  }, []);
+
+  // Listen to Firebase Auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
+      setUser(fbUser);
+      setLoadingAuth(false);
+      
+      // Load or create default profile details
+      if (fbUser) {
+        const emailPrefix = fbUser.email?.split('@')[0] || 'Premium Guest';
+        setAuthName(localStorage.getItem(`fg_name_${fbUser.uid}`) || emailPrefix);
+        setAuthPhone(localStorage.getItem(`fg_phone_${fbUser.uid}`) || '+91 95000 12345');
+        setCustomAddress(localStorage.getItem(`fg_address_${fbUser.uid}`) || '402, Green Meadows, Sector 4, Bangalore');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to real-time customer orders from Firestore
+  useEffect(() => {
+    if (!user) {
+      setCustomerOrders([]);
+      return;
+    }
+    // Use user's email or registered phone as unique tracker identifier
+    const trackerPhone = authPhone || user.email || 'guest';
+    const unsubscribeOrders = subscribeToCustomerOrders(trackerPhone, (orders) => {
+      setCustomerOrders(orders);
+      
+      // Keep selected order updated in real-time
+      if (selectedOrder) {
+        const updated = orders.find(o => o.id === selectedOrder.id);
+        if (updated) setSelectedOrder(updated);
+      }
+    });
+
+    return () => {
+      unsubscribeOrders();
+    };
+  }, [user, authPhone, selectedOrder?.id]);
+
+  // Handle Firebase Auth Submit
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!authEmail || !authPassword) {
+      setAuthError('Please enter email and password.');
+      return;
+    }
+
+    try {
+      if (authMode === 'login') {
+        await signInWithEmailAndPassword(auth, authEmail, authPassword);
+      } else {
+        const credential = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+        if (credential.user) {
+          // Save profile fields in local storage tied to user UID
+          localStorage.setItem(`fg_name_${credential.user.uid}`, authName || 'Premium Farmer');
+          localStorage.setItem(`fg_phone_${credential.user.uid}`, authPhone || '+91 95000 12345');
+          localStorage.setItem(`fg_address_${credential.user.uid}`, authAddress || '402, Green Meadows, Bangalore');
+        }
+      }
+      setAuthError('');
+    } catch (err: any) {
+      setAuthError(err.message || 'Authentication failed. Please verify credentials.');
+    }
   };
 
-  const generateBillPDF = (ordersToBill: CustomerOrder[]) => {
-    if (ordersToBill.length === 0) return;
-    
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    });
-
-    doc.setFont('Helvetica', 'normal');
-
-    // Branding colors (Emerald Theme)
-    const primaryColor = [16, 185, 129]; 
-    const secondaryColor = [71, 85, 105]; 
-    const darkGray = [30, 41, 59];
-    const lightGray = [241, 245, 249];
-
-    // Main Header Band
-    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.rect(0, 0, 210, 38, 'F');
-
-    // Header Content
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
-    doc.setFont('Helvetica', 'bold');
-    doc.text("FARMER'S GATE ONLINE", 15, 16);
-
-    doc.setFontSize(9);
-    doc.setFont('Helvetica', 'normal');
-    doc.text("10-Minute Farm-Fresh Instant Grocery Dispatch", 15, 22);
-    doc.text("Email: orders@farmersgate.com | Web: farmersgate.online", 15, 27);
-    doc.text("Tel: +91 99999 88888", 15, 32);
-
-    doc.setFontSize(14);
-    doc.setFont('Helvetica', 'bold');
-    doc.text("TAX INVOICE / RECEIPT", 145, 16);
-    
-    doc.setFontSize(8);
-    doc.setFont('Helvetica', 'normal');
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 145, 22);
-
-    let y = 48;
-    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
-
-    // Customer Information
-    doc.setFontSize(10);
-    doc.setFont('Helvetica', 'bold');
-    doc.text("BILL TO (CUSTOMER DETAILS):", 15, y);
-    doc.setFont('Helvetica', 'normal');
-    doc.text(`Customer Name : ${ordersToBill[0]?.customerName || 'Fresh Customer'}`, 15, y + 6);
-    doc.text(`Contact Phone : +91 ${ordersToBill[0]?.customerPhone || ''}`, 15, y + 12);
-    if (ordersToBill[0]?.customerAddress) {
-      const splitAddr = doc.splitTextToSize(`Delivery Addr : ${ordersToBill[0].customerAddress}`, 95);
-      doc.text(splitAddr, 15, y + 18);
-    }
-
-    // Invoice Meta Information
-    doc.setFont('Helvetica', 'bold');
-    doc.text("METADATA & DETAILS:", 130, y);
-    doc.setFont('Helvetica', 'normal');
-    
-    const storeId = ordersToBill[0]?.storeId || '';
-    const store = stores.find(s => s.id === storeId);
-    const outletName = store ? store.name.replace("Farmer's Gate - ", "") : 'Local Branch';
-    
-    doc.text(`Invoices Linked : ${ordersToBill.length === 1 ? ordersToBill[0].orderNumber : `${ordersToBill.length} Orders`}`, 130, y + 6);
-    doc.text(`Fulfillment Outlet : ${outletName}`, 130, y + 12);
-    doc.text(`Payment Status : PAID (UPI / Wallet)`, 130, y + 18);
-    doc.text(`Fulfillment Mode : Instant Delivery`, 130, y + 24);
-
-    // Order item rows table
-    y = 86;
-    doc.setFillColor(lightGray[0], lightGray[1], lightGray[2]);
-    doc.rect(15, y, 180, 8, 'F');
-    
-    doc.setFont('Helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
-    doc.text("SL.", 18, y + 5.5);
-    doc.text("FARM PRODUCE ITEM DESCRIPTION", 30, y + 5.5);
-    doc.text("RATE / KG", 110, y + 5.5);
-    doc.text("DELIVERED QTY", 140, y + 5.5);
-    doc.text("TOTAL (INR)", 170, y + 5.5);
-
-    y += 8;
-    doc.setFont('Helvetica', 'normal');
-    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
-
-    // Consolidate items
-    const consolidatedItems: { [name: string]: { quantity: number; pricePerKg: number; totalPrice: number } } = {};
-    ordersToBill.forEach(order => {
-      order.items.forEach(item => {
-        if (consolidatedItems[item.vegetableName]) {
-          consolidatedItems[item.vegetableName].quantity += item.quantity;
-          consolidatedItems[item.vegetableName].totalPrice += item.totalPrice;
-        } else {
-          consolidatedItems[item.vegetableName] = {
-            quantity: item.quantity,
-            pricePerKg: item.pricePerKg,
-            totalPrice: item.totalPrice
-          };
+  // Instant Guest Login for testing/demo
+  const handleInstantGuestLogin = async (role: 'customer' | 'partner') => {
+    setAuthError('');
+    try {
+      // Use standard preconfigured accounts for seamless evaluation
+      const email = role === 'partner' ? 'partner@farmersgate.com' : 'demo_shopper@farmersgate.com';
+      const pass = 'farmersgate123';
+      
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (err) {
+      // If doesn't exist, register it automatically
+      try {
+        const email = role === 'partner' ? 'partner@farmersgate.com' : 'demo_shopper@farmersgate.com';
+        const pass = 'farmersgate123';
+        const credential = await createUserWithEmailAndPassword(auth, email, pass);
+        if (credential.user) {
+          localStorage.setItem(`fg_name_${credential.user.uid}`, role === 'partner' ? 'Live Partner Rider' : 'Gold Shopper');
+          localStorage.setItem(`fg_phone_${credential.user.uid}`, role === 'partner' ? '+91 90000 00000' : '+91 95000 12345');
+          localStorage.setItem(`fg_address_${credential.user.uid}`, 'FarmersGate HQ Dispatch Hub, Block C, Bengaluru');
         }
-      });
+      } catch (innerErr: any) {
+        setAuthError(innerErr.message);
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut(auth);
+    setCart({});
+    setSelectedOrder(null);
+  };
+
+  // Cart Management
+  const handleAddToCart = (id: string, step = 1) => {
+    const p = products.find(prod => prod.id === id);
+    if (!p || p.stock <= 0) return;
+    
+    setCart(prev => {
+      const cur = prev[id] || 0;
+      const next = cur + step;
+      if (next > p.stock) return prev; // check stock limits
+      return { ...prev, [id]: next };
     });
+  };
 
-    let index = 1;
-    let subtotal = 0;
+  const handleDecreaseCart = (id: string, step = 1) => {
+    setCart(prev => {
+      const cur = prev[id] || 0;
+      const next = cur - step;
+      if (next <= 0) {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      }
+      return { ...prev, [id]: next };
+    });
+  };
 
-    Object.entries(consolidatedItems).forEach(([vegName, details]) => {
-      if (index % 2 === 0) {
-        doc.setFillColor(248, 250, 252);
-        doc.rect(15, y, 180, 8, 'F');
+  // Calculations
+  const cartItemsList = Object.entries(cart).map(([id, qty]) => {
+    const p = products.find(item => item.id === id);
+    return { item: p, quantity: qty };
+  }).filter((c): c is { item: any; quantity: number } => c.item !== undefined);
+
+  const cartSubtotal = cartItemsList.reduce((acc, c) => acc + (Number(c.item.sellingPrice) * Number(c.quantity)), 0);
+  const currentDiscount = appliedCoupon ? (cartSubtotal * (Number(appliedCoupon.percent) / 100)) : 0;
+  const deliveryFee = cartSubtotal > 200 ? 0 : 25;
+  const finalPaidAmount = Math.max(0, cartSubtotal - currentDiscount + deliveryFee - (useWallet ? Math.min(walletBalance, cartSubtotal - currentDiscount) : 0));
+
+  // Apply Coupon
+  const handleApplyPromoCode = (code: string) => {
+    setCouponError('');
+    const coupon = availableCoupons.find(c => c.code.toUpperCase() === code.trim().toUpperCase());
+    if (!coupon) {
+      setCouponError('Invalid. Try FG50 (50% off) or FRESHFAST!');
+      return;
+    }
+    setAppliedCoupon(coupon);
+  };
+
+  // Place Order Action
+  const handlePlaceOrder = async () => {
+    if (!user) {
+      setActiveTab('profile');
+      return;
+    }
+    if (cartItemsList.length === 0) return;
+
+    try {
+      const orderNum = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      const orderData: FirebaseOrder = {
+        orderNumber: orderNum,
+        customerName: authName || 'Premium Farmer',
+        customerPhone: authPhone || user.email || '+91 95000 12345',
+        customerAddress: customAddress || '402, Green Meadows, Sector 4, Bangalore',
+        items: cartItemsList.map(c => ({
+          id: String(c.item.id),
+          vegetableName: String(c.item.vegetableName),
+          quantity: Number(c.quantity),
+          pricePerKg: Number(c.item.sellingPrice),
+          totalPrice: Number(c.item.sellingPrice) * Number(c.quantity),
+          emoji: String(c.item.emoji || '🥦')
+        })),
+        totalAmount: cartSubtotal,
+        discount: currentDiscount,
+        walletDebited: useWallet ? Math.min(walletBalance, cartSubtotal - currentDiscount) : 0,
+        finalPaid: finalPaidAmount,
+        status: 'Pending',
+        paymentStatus: 'Paid',
+        orderDate: new Date().toISOString(),
+        latitude: 12.9716 + (Math.random() - 0.5) * 0.015,
+        longitude: 77.5946 + (Math.random() - 0.5) * 0.015
+      };
+
+      // 1. Save order to Firestore
+      const orderId = await placeOrderInFirestore(orderData);
+      
+      // 2. Subtract product stocks in Firestore
+      for (const cartItem of cartItemsList) {
+        const remainingStock = Math.max(0, cartItem.item.stock - cartItem.quantity);
+        await updateProductStockInFirestore(cartItem.item.id, remainingStock);
       }
 
-      doc.text(String(index).padStart(2, '0'), 18, y + 5.5);
-      doc.text(vegName.toUpperCase(), 30, y + 5.5);
-      doc.text(`Rs. ${details.pricePerKg.toFixed(2)}`, 110, y + 5.5);
-      doc.text(`${details.quantity.toFixed(2)} kg`, 140, y + 5.5);
-      doc.text(`Rs. ${details.totalPrice.toFixed(2)}`, 170, y + 5.5);
+      // 3. Subtract from wallet balance if used
+      if (useWallet) {
+        const debited = Math.min(walletBalance, cartSubtotal - currentDiscount);
+        setWalletBalance(prev => Math.max(0, prev - debited));
+      }
 
-      subtotal += details.totalPrice;
-      y += 8;
-      index++;
-    });
+      // Clear Cart & Close Modal
+      setCart({});
+      setIsCheckoutOpen(false);
+      
+      // Navigate to Track view and select the newly placed order
+      setActiveTab('track');
+      setSelectedOrder({ ...orderData, id: orderId });
 
-    // Totals line
-    y += 3;
-    doc.setDrawColor(226, 232, 240);
-    doc.line(15, y, 195, y);
-
-    y += 5;
-    doc.setFont('Helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text("SUBTOTAL:", 120, y);
-    doc.setFont('Helvetica', 'normal');
-    doc.text(`Rs. ${subtotal.toFixed(2)}`, 170, y);
-
-    y += 6;
-    doc.setFont('Helvetica', 'bold');
-    doc.text("DELIVERY CHARGES:", 120, y);
-    doc.setTextColor(16, 185, 129);
-    doc.text("FREE (INSTANT)", 170, y);
-
-    y += 6;
-    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
-    doc.text("GRAND TOTAL AMOUNT:", 120, y);
-    doc.setFontSize(12);
-    doc.setTextColor(16, 185, 129);
-    doc.text(`Rs. ${subtotal.toFixed(2)}`, 170, y);
-
-    // Footer lines
-    y = Math.max(y + 22, 238);
-    doc.setDrawColor(16, 185, 129);
-    doc.setLineWidth(0.5);
-    doc.line(15, y, 195, y);
-
-    doc.setFont('Helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Terms: High-speed delivery from branch storage is finalized immediately upon grading.", 15, y + 5);
-    doc.text("For any weight or grading issues, contact direct support inside your Customer Profile tab.", 15, y + 9);
-    doc.setFont('Helvetica', 'bold');
-    doc.setTextColor(16, 185, 129);
-    doc.text("Thank you for shopping local & supporting sustainable Indian farm-to-table logistics!", 15, y + 14);
-
-    // Signature/Bottom Brand Banner
-    doc.setFillColor(16, 185, 129);
-    doc.rect(0, 287, 210, 10, 'F');
-
-    // Save PDF
-    const filename = ordersToBill.length === 1 
-      ? `FarmersGate_Invoice_${ordersToBill[0].orderNumber}.pdf` 
-      : `FarmersGate_Consolidated_Bill_${Date.now()}.pdf`;
-    
-    doc.save(filename);
-  };
-
-  const handleShareWhatsAppForOrders = (ordersToShare: CustomerOrder[]) => {
-    if (ordersToShare.length === 0) return;
-    const orderNumbers = ordersToShare.map(o => o.orderNumber).join(', ');
-    const total = ordersToShare.reduce((sum, o) => sum + o.totalAmount, 0);
-    
-    let message = `🌱 *FARMER'S GATE ONLINE - INSTANT BILL INVOICE* 🌱\n\n`;
-    message += `👤 *Customer Name:* ${ordersToShare[0].customerName}\n`;
-    message += `📞 *Registered Phone:* +91 ${ordersToShare[0].customerPhone}\n`;
-    message += `🧾 *Invoice Number(s):* ${orderNumbers}\n`;
-    message += `📅 *Billing Date:* ${new Date().toLocaleDateString(undefined, { dateStyle: 'long' })}\n\n`;
-    message += `🛒 *Consolidated Items:*\n`;
-
-    const consolidated: { [name: string]: number } = {};
-    ordersToShare.forEach(o => {
-      o.items.forEach(item => {
-        consolidated[item.vegetableName] = (consolidated[item.vegetableName] || 0) + item.quantity;
-      });
-    });
-
-    Object.entries(consolidated).forEach(([name, qty]) => {
-      message += `• ${name.toUpperCase()}: *${qty.toFixed(2)} kg*\n`;
-    });
-
-    message += `\n💵 *Grand Total:* ₹${total.toFixed(2)} (Delivery: *FREE*)\n`;
-    if (ordersToShare[0].customerAddress) {
-      message += `📍 *Delivery Address:* ${ordersToShare[0].customerAddress}\n`;
+      // Highlight Success
+      alert(`🎉 Receipt Generated! Your order #${orderNum} has been registered successfully. Our dispatch rider will deliver it in 9 Minutes!`);
+    } catch (err) {
+      console.error(err);
+      alert('Error registering FarmersGate dispatch ticket.');
     }
-    message += `\n⚡ _Your 10-minute farm-fresh vegetable delivery has been completed successfully! Thank you for ordering from Farmer's Gate Online._`;
-
-    const encoded = encodeURIComponent(message);
-    const url = `https://api.whatsapp.com/send?text=${encoded}`;
-    window.open(url, '_blank');
   };
 
-  // Get active inventory for the selected store
-  const storeInventory = inventory.filter(item => item.storeId === selectedStoreId && item.quantity > 0);
-
-  // Derive categories dynamically from inventory
-  const categories = ['All', 'Leafy Greens', 'Root Crops', 'Kitchen Staples', 'Chili & Spices', 'Daily Vegetables'];
-  
-  const getCategoryOfCrop = (name: string): string => {
-    const n = name.toLowerCase();
-    if (n.includes('spinach') || n.includes('lettuce') || n.includes('cabbage') || n.includes('leaf') || n.includes('coriander') || n.includes('mint')) return 'Leafy Greens';
-    if (n.includes('potato') || n.includes('carrot') || n.includes('ginger') || n.includes('beetroot')) return 'Root Crops';
-    if (n.includes('onion') || n.includes('garlic') || n.includes('potato') || n.includes('tomato')) return 'Kitchen Staples';
-    if (n.includes('chili') || n.includes('pepper') || n.includes('ginger') || n.includes('turmeric')) return 'Chili & Spices';
-    return 'Daily Vegetables';
+  // Save profile updates
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (user) {
+      localStorage.setItem(`fg_name_${user.uid}`, authName);
+      localStorage.setItem(`fg_phone_${user.uid}`, authPhone);
+      localStorage.setItem(`fg_address_${user.uid}`, customAddress);
+      alert('Profile Delivery Details Saved Successfully!');
+    }
   };
 
-  // Filter crops based on category and search query
-  const filteredCrops = storeInventory.filter(crop => {
-    const matchesSearch = crop.vegetableName.toLowerCase().includes(searchQuery.toLowerCase());
-    if (selectedCategory === 'All') return matchesSearch;
-    return getCategoryOfCrop(crop.vegetableName) === selectedCategory && matchesSearch;
+  // Live Chat send message as Customer
+  const handleSendCustomerChat = async () => {
+    if (!selectedOrder?.id || !customerChatMessage.trim()) return;
+
+    const currentMessages = (selectedOrder as any).messages || [];
+    const newMessage = {
+      sender: 'customer',
+      text: customerChatMessage.trim(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    try {
+      await updateOrderStatusInFirestore(selectedOrder.id, selectedOrder.status, {
+        messages: [...currentMessages, newMessage]
+      } as any);
+      setCustomerChatMessage('');
+    } catch (err) {
+      console.error('Error sending chat message', err);
+    }
+  };
+
+  // PDF Bill Receipt Generation
+  const handleDownloadInvoice = (order: FirebaseOrder) => {
+    try {
+      const docPdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // Colors
+      docPdf.setFillColor(16, 185, 129); // emerald green
+      docPdf.rect(0, 0, 210, 45, 'F');
+
+      // Title
+      docPdf.setTextColor(255, 255, 255);
+      docPdf.setFont('helvetica', 'bold');
+      docPdf.setFontSize(24);
+      docPdf.text("FARMERSGATE RECEIPT", 14, 20);
+
+      docPdf.setFont('helvetica', 'normal');
+      docPdf.setFontSize(10);
+      docPdf.text("9-Min Instant Farm Direct Grocery Delivery", 14, 28);
+      docPdf.text(`Ticket ID: #${order.orderNumber}`, 14, 35);
+
+      // Metadata box
+      docPdf.setTextColor(30, 41, 59);
+      docPdf.setFont('helvetica', 'bold');
+      docPdf.setFontSize(12);
+      docPdf.text("CUSTOMER INVOICE DETAILS", 14, 55);
+
+      docPdf.setFont('helvetica', 'normal');
+      docPdf.setFontSize(10);
+      docPdf.text(`Recipient Name: ${order.customerName}`, 14, 63);
+      docPdf.text(`Phone: ${order.customerPhone}`, 14, 69);
+      docPdf.text(`Address: ${order.customerAddress}`, 14, 75);
+      docPdf.text(`Order Date: ${order.orderDate ? new Date(order.orderDate).toLocaleString() : 'Just Now'}`, 14, 81);
+
+      // Line items Table
+      docPdf.setFont('helvetica', 'bold');
+      docPdf.text("Item Sourced", 14, 95);
+      docPdf.text("Qty Sourced", 90, 95);
+      docPdf.text("Price/Unit", 130, 95);
+      docPdf.text("Line Total", 170, 95);
+      
+      docPdf.line(14, 97, 196, 97);
+
+      let currentY = 104;
+      docPdf.setFont('helvetica', 'normal');
+      order.items.forEach((it) => {
+        docPdf.text(`${it.vegetableName}`, 14, currentY);
+        docPdf.text(`${it.quantity} units`, 90, currentY);
+        docPdf.text(`₹${it.pricePerKg}`, 130, currentY);
+        docPdf.text(`₹${it.totalPrice}`, 170, currentY);
+        currentY += 8;
+      });
+
+      docPdf.line(14, currentY, 196, currentY);
+      currentY += 8;
+
+      // Summary
+      docPdf.setFont('helvetica', 'bold');
+      docPdf.text(`Basket Subtotal:`, 110, currentY);
+      docPdf.setFont('helvetica', 'normal');
+      docPdf.text(`₹${order.totalAmount}`, 170, currentY);
+      currentY += 6;
+
+      if (order.discount > 0) {
+        docPdf.setFont('helvetica', 'bold');
+        docPdf.setTextColor(220, 38, 38);
+        docPdf.text(`Discount Slashed:`, 110, currentY);
+        docPdf.setFont('helvetica', 'normal');
+        docPdf.text(`-₹${order.discount}`, 170, currentY);
+        currentY += 6;
+      }
+
+      if (order.walletDebited > 0) {
+        docPdf.setFont('helvetica', 'bold');
+        docPdf.setTextColor(16, 185, 129);
+        docPdf.text(`FG Wallet Debit:`, 110, currentY);
+        docPdf.setFont('helvetica', 'normal');
+        docPdf.text(`-₹${order.walletDebited}`, 170, currentY);
+        currentY += 6;
+      }
+
+      docPdf.setTextColor(16, 185, 129);
+      docPdf.setFont('helvetica', 'bold');
+      docPdf.setFontSize(12);
+      docPdf.text(`Final Amount Settled:`, 110, currentY);
+      docPdf.text(`₹${order.finalPaid.toFixed(2)}`, 170, currentY);
+
+      // Footer
+      docPdf.setFontSize(8);
+      docPdf.setTextColor(148, 163, 184);
+      docPdf.text("Thank you for buying farm direct! Sourced organically & delivered in 9 mins.", 14, 280);
+
+      docPdf.save(`FarmersGate_Invoice_${order.orderNumber}.pdf`);
+    } catch (e) {
+      console.error(e);
+      alert('Failed generating PDF receipt.');
+    }
+  };
+
+  // Filter fresh produce
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.vegetableName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
+    return matchesSearch && matchesCategory;
   });
 
-  // Cart Actions
-  const handleAddToCart = (item: InventoryItem, qty: number = 0.5) => {
-    setCart(prev => {
-      const existing = prev[item.vegetableName];
-      const maxAvailable = item.quantity;
-      let newQty = qty;
-
-      if (existing) {
-        newQty = Math.min(maxAvailable, existing.quantity + qty);
-      } else {
-        newQty = Math.min(maxAvailable, qty);
-      }
-
-      return {
-        ...prev,
-        [item.vegetableName]: {
-          quantity: parseFloat(newQty.toFixed(2)),
-          item
-        }
-      };
-    });
-  };
-
-  const handleDecreaseCartQty = (item: InventoryItem, step: number = 0.5) => {
-    setCart(prev => {
-      const existing = prev[item.vegetableName];
-      if (!existing) return prev;
-
-      const newQty = existing.quantity - step;
-      if (newQty <= 0) {
-        const copy = { ...prev };
-        delete copy[item.vegetableName];
-        return copy;
-      }
-
-      return {
-        ...prev,
-        [item.vegetableName]: {
-          quantity: parseFloat(newQty.toFixed(2)),
-          item
-        }
-      };
-    });
-  };
-
-  const handleUpdateCartQtyDirect = (vegName: string, qty: number, maxAvailable: number) => {
-    if (qty <= 0) {
-      setCart(prev => {
-        const copy = { ...prev };
-        delete copy[vegName];
-        return copy;
-      });
-      return;
-    }
-
-    setCart(prev => {
-      const target = prev[vegName];
-      if (!target) return prev;
-
-      return {
-        ...prev,
-        [vegName]: {
-          ...target,
-          quantity: parseFloat(Math.min(maxAvailable, qty).toFixed(2))
-        }
-      };
-    });
-  };
-
-  const handleRemoveFromCart = (vegName: string) => {
-    setCart(prev => {
-      const copy = { ...prev };
-      delete copy[vegName];
-      return copy;
-    });
-  };
-
-  // Phone / Email Verification / Login Submit
-  const handleSendOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-
-    if (!authName.trim()) {
-      setAuthError('Please enter your full name.');
-      return;
-    }
-
-    if (verificationMethod === 'whatsapp') {
-      if (!authPhone || authPhone.replace(/\D/g, '').length < 10) {
-        setAuthError('Please enter a valid 10-digit mobile number.');
-        return;
-      }
-    } else {
-      if (!authEmail || !authEmail.includes('@') || !authEmail.includes('.')) {
-        setAuthError('Please enter a valid email address.');
-        return;
-      }
-    }
-    
-    setIsOtpSent(true);
-  };
-
-  const handleVerifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-    if (!authOtp || authOtp.length < 4) {
-      setAuthError('Please enter the 4-digit verification code.');
-      return;
-    }
-
-    // Success Simulation
-    const profile = {
-      name: authName.trim(),
-      phone: authPhone ? authPhone.replace(/[^\d+]/g, '') : '',
-      email: authEmail.trim() || undefined,
-      verificationMethod,
-      address: authAddress.trim() || undefined
-    };
-
-    localStorage.setItem('fg_customer_profile', JSON.stringify(profile));
-    setCurrentUser(profile);
-    if (profile.phone) {
-      setTrackPhoneInput(profile.phone);
-      setSearchPhoneQuery(profile.phone);
-    }
-    
-    setIsAuthModalOpen(false);
-    setIsOtpSent(false);
-    setAuthOtp('');
-    setAuthError('');
-  };
-
-  const handleLogout = () => {
-    if (confirm('Are you sure you want to log out of Farmer\'s Gate Online?')) {
-      localStorage.removeItem('fg_customer_profile');
-      setCurrentUser(null);
-      setCart({});
-    }
-  };
-
-  // Submit Order Checkout
-  const handlePlaceOrderSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (Object.keys(cart).length === 0) {
-      alert('Your cart is empty.');
-      return;
-    }
-    if (!currentUser) {
-      // Prompt login first
-      setIsCheckoutOpen(false);
-      setIsAuthModalOpen(true);
-      return;
-    }
-
-    const orderItems: CustomerOrderItem[] = (Object.entries(cart) as [string, { quantity: number; item: InventoryItem }][]).map(([vegName, cartItem]) => ({
-      vegetableName: vegName,
-      quantity: cartItem.quantity,
-      pricePerKg: cartItem.item.sellingPrice,
-      totalPrice: parseFloat((cartItem.quantity * cartItem.item.sellingPrice).toFixed(2))
-    }));
-
-    const totalAmount = orderItems.reduce((acc, curr) => acc + curr.totalPrice, 0);
-
-    const newOrder: CustomerOrder = {
-      id: `co-${Date.now()}`,
-      orderNumber: `FG-ONLINE-${Math.floor(10000 + Math.random() * 90000)}`,
-      storeId: selectedStoreId,
-      customerName: currentUser.name,
-      customerPhone: currentUser.phone,
-      customerAddress: currentUser.address,
-      items: orderItems,
-      totalAmount,
-      status: 'Pending',
-      paymentStatus: 'Unpaid',
-      orderDate: new Date().toISOString(),
-      notes: checkoutNotes || undefined
-    };
-
-    await onPlaceOrder(newOrder);
-
-    // Clean up
-    setCart({});
-    setCheckoutNotes('');
-    setIsCheckoutOpen(false);
-    
-    // Auto-fill tracking
-    setTrackPhoneInput(currentUser.phone);
-    setSearchPhoneQuery(currentUser.phone);
-    setActiveTab('track');
-    
-    alert(`🎉 Order Placed Successfully!\n\nOrder ID: ${newOrder.orderNumber}\nWe are dispatching your items directly from the outlet in 10 Minutes! Track your status on the tracker page.`);
-  };
-
-  const cartSubtotal = (Object.values(cart) as { quantity: number; item: InventoryItem }[]).reduce((acc, curr) => acc + (curr.quantity * curr.item.sellingPrice), 0);
-  const cartItemsCount = (Object.values(cart) as { quantity: number; item: InventoryItem }[]).reduce((acc, curr) => acc + curr.quantity, 0);
-
-  // Emojis mapping helper
-  const getVegEmoji = (name: string): string => {
-    const n = name.toLowerCase();
-    if (n.includes('tomato')) return '🍅';
-    if (n.includes('potato')) return '🥔';
-    if (n.includes('onion')) return '🧅';
-    if (n.includes('spinach') || n.includes('lettuce') || n.includes('cabbage') || n.includes('greens') || n.includes('methi')) return '🥬';
-    if (n.includes('carrot')) return '🥕';
-    if (n.includes('garlic')) return '🧄';
-    if (n.includes('ginger') || n.includes('adrak')) return '𫊪';
-    if (n.includes('chili') || n.includes('pepper') || n.includes('mirch')) return '🌶️';
-    if (n.includes('cucumber') || n.includes('kheera')) return '🥒';
-    if (n.includes('corn') || n.includes('bhutta')) return '🌽';
-    if (n.includes('broccoli')) return '🥦';
-    if (n.includes('mushroom')) return '🍄';
-    if (n.includes('lemon') || n.includes('nimbu')) return '🍋';
-    if (n.includes('apple')) return '🍎';
-    if (n.includes('banana')) return '🍌';
-    if (n.includes('gourd') || n.includes('lauki')) return '🥒';
-    return '🌱';
-  };
-
-  const getVegColorClass = (name: string): string => {
-    const n = name.toLowerCase();
-    if (n.includes('spinach') || n.includes('coriander') || n.includes('cabbage') || n.includes('methi')) return 'from-green-50 to-emerald-50 text-emerald-600 border-emerald-100';
-    if (n.includes('tomato') || n.includes('chili') || n.includes('apple')) return 'from-red-50 to-orange-50 text-red-600 border-red-100';
-    if (n.includes('potato') || n.includes('ginger')) return 'from-yellow-50 to-amber-100 text-amber-700 border-amber-100';
-    if (n.includes('onion') || n.includes('garlic')) return 'from-purple-50 to-pink-50 text-purple-600 border-purple-100';
-    return 'from-slate-50 to-zinc-50 text-zinc-600 border-zinc-100';
-  };
-
-  // Find user orders
-  const trackedOrders = searchPhoneQuery.trim()
-    ? customerOrders.filter(co => co.customerPhone.replace(/\D/g, '') === searchPhoneQuery.replace(/\D/g, ''))
-    : [];
-
-  // Filter active campaign ads to display
-  const activeAds = storefrontAds.filter(ad => ad.isActive);
-
-  if (!currentUser) {
-    return (
-      <div className="space-y-6 max-w-lg mx-auto font-sans pb-12 animate-fade-in mt-6">
-        {/* Brand Banner */}
-        <div className="bg-emerald-600 text-white rounded-3xl p-6 shadow-lg shadow-emerald-950/10 border border-emerald-500 relative overflow-hidden text-center">
-          <div className="absolute top-[-50px] right-[-50px] w-48 h-48 rounded-full bg-emerald-400 opacity-20 blur-3xl pointer-events-none" />
-          <span className="bg-yellow-400 text-slate-900 text-[10px] uppercase font-black tracking-widest px-2.5 py-0.5 rounded-full shadow-xs border border-yellow-300">
-            🔒 SECURE GATEWAY
-          </span>
-          <h2 className="text-3xl font-extrabold tracking-tight text-white mt-3 uppercase">
-            Farmer's Gate Online
-          </h2>
-          <p className="text-xs text-emerald-100 mt-2 max-w-md mx-auto leading-relaxed">
-            Register your profile with name, contact, and delivery address to unlock our dynamic 10-minute farm-fresh vegetable delivery.
-          </p>
-        </div>
-
-        {/* Secure Form */}
-        <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-6 text-left">
-          {authError && (
-            <div className="bg-red-50 border border-red-200 text-red-800 p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2">
-              ⚠️ {authError}
-            </div>
-          )}
-
-          {!isOtpSent ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setAuthError('');
-                
-                if (!authName.trim()) {
-                  setAuthError('Please enter your full name.');
-                  return;
-                }
-                
-                if (!authPhone || authPhone.replace(/\D/g, '').length < 10) {
-                  setAuthError('Please enter a valid 10-digit mobile number.');
-                  return;
-                }
-
-                if (!authEmail || !authEmail.includes('@') || !authEmail.includes('.')) {
-                  setAuthError('Please enter a valid email address.');
-                  return;
-                }
-
-                if (!authAddress.trim() || authAddress.trim().length < 8) {
-                  setAuthError('Please enter a complete delivery address (minimum 8 characters).');
-                  return;
-                }
-
-                setIsOtpSent(true);
-              }}
-              className="space-y-4"
-            >
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. John Doe"
-                  value={authName}
-                  onChange={e => setAuthName(e.target.value)}
-                  className="w-full text-xs font-bold px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Indian Mobile/WhatsApp Number *</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-3.5 text-xs font-black text-slate-400">🇮🇳 +91</span>
-                  <input
-                    type="tel"
-                    required
-                    maxLength={10}
-                    placeholder="Enter 10-digit number..."
-                    value={authPhone}
-                    onChange={e => setAuthPhone(e.target.value.replace(/\D/g, ''))}
-                    className="w-full text-xs font-bold pl-12.5 pr-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Email Address *</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. john@example.com"
-                  value={authEmail}
-                  onChange={e => setAuthEmail(e.target.value)}
-                  className="w-full text-xs font-bold px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Delivery Address *</label>
-                <textarea
-                  required
-                  rows={2}
-                  placeholder="Enter complete building name, apartment number, street & landmark..."
-                  value={authAddress}
-                  onChange={e => setAuthAddress(e.target.value)}
-                  className="w-full text-xs font-semibold px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Simulate OTP Verification Channel *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setVerificationMethod('whatsapp')}
-                    className={`py-3 text-xs font-black rounded-xl border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      verificationMethod === 'whatsapp'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                    }`}
-                  >
-                    📲 WhatsApp Message
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVerificationMethod('email')}
-                    className={`py-3 text-xs font-black rounded-xl border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      verificationMethod === 'email'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                    }`}
-                  >
-                    📧 Email Address
-                  </button>
-                </div>
-              </div>
-
-              <div className="text-[10px] text-slate-400 leading-normal bg-slate-50 p-3 rounded-xl border border-slate-100 flex items-start gap-1.5">
-                <span className="text-xs shrink-0">🛡️</span>
-                <span>
-                  By registering, you authorize Farmer's Gate Online to simulate secure 4-digit passcode verification to register your device session.
-                </span>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3.5 rounded-xl text-xs shadow-md shadow-emerald-200 cursor-pointer uppercase tracking-wider transition-all"
-              >
-                Send Secure Code
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOtp} className="space-y-4 animate-fade-in">
-              <div className="bg-emerald-50 text-emerald-800 p-3.5 rounded-xl text-xs font-bold border border-emerald-200">
-                {verificationMethod === 'whatsapp' ? (
-                  <>📲 Verification passcode sent to WhatsApp: <span className="font-black">+91 {authPhone}</span></>
-                ) : (
-                  <>📧 Verification passcode sent to Email: <span className="font-bold">{authEmail}</span></>
-                )}
-              </div>
-
-              <div className="space-y-1 text-center">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Enter 4-Digit Security Code *</label>
-                <input
-                  type="text"
-                  required
-                  maxLength={4}
-                  placeholder="Type simulated code (e.g. 1234)..."
-                  value={authOtp}
-                  onChange={e => setAuthOtp(e.target.value.replace(/\D/g, ''))}
-                  className="w-full text-center text-sm font-black tracking-widest px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 font-mono"
-                />
-              </div>
-
-              <p className="text-[10px] text-slate-400 text-center leading-normal">
-                Any 4-digit code (such as <code className="bg-slate-100 px-1 py-0.5 rounded text-emerald-600 font-bold">1234</code>) will pass this simulated security check.
-              </p>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsOtpSent(false)}
-                  className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 font-bold py-3 rounded-xl text-xs uppercase cursor-pointer"
-                >
-                  Back
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider cursor-pointer shadow-md"
-                >
-                  Verify & Log In
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6 max-w-7xl mx-auto font-sans pb-12 animate-fade-in">
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       
-      {/* BRAND INSTANT DELIVERY TOP-BAR */}
-      <div className="bg-emerald-600 text-white rounded-3xl p-5 md:p-6 shadow-lg shadow-emerald-950/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border border-emerald-500 relative overflow-hidden">
-        {/* Glow graphic */}
-        <div className="absolute top-[-50px] right-[-50px] w-48 h-48 rounded-full bg-emerald-400 opacity-20 blur-3xl pointer-events-none" />
-        
-        <div className="space-y-2 z-10">
-          <div className="flex items-center gap-2">
-            <span className="bg-yellow-400 text-slate-900 text-[10px] uppercase font-black tracking-widest px-2.5 py-0.5 rounded-full shadow-xs border border-yellow-300">
-              ⚡ INSTANT DELIVERY
-            </span>
-            <span className="text-emerald-100 text-xs">• Direct from Local Indian Farms</span>
-          </div>
-          
-          <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white flex items-center gap-1.5">
-            FARMER'S GATE ONLINE
-          </h2>
-          <p className="text-xs text-emerald-100 max-w-xl font-medium leading-relaxed">
-            Experience Zepto-speed instant grocery fulfillment. Cleaned, graded, 100% farm-fresh vegetables delivered to your home in 10 Minutes!
-          </p>
-        </div>
+      {/* ⚡ Announcement Promise Bar */}
+      <div className="bg-emerald-600 text-white text-[10px] font-black text-center py-1.5 uppercase tracking-widest flex items-center justify-center gap-1.5">
+        <span>⚡ FarmersGate Golden Promise: 100% Organically Sourced & Dispatched in 9 Minutes!</span>
+      </div>
 
-        {/* User Login state & actions */}
-        <div className="z-10 bg-emerald-700/60 backdrop-blur-xs border border-emerald-500 p-3.5 rounded-2xl flex items-center gap-3 w-full md:w-auto">
-          <div className="flex items-center justify-between gap-4 w-full md:w-auto text-left">
-            <div className="space-y-0.5">
-              <span className="text-[9px] font-black text-emerald-300 uppercase tracking-wide block">SECURELY LOGGED IN</span>
-              <span className="text-xs font-bold text-white block">👋 {currentUser.name}</span>
-              <span className="text-[10px] text-emerald-100/80 font-mono block">+{currentUser.phone} | {currentUser.email}</span>
+      {/* Main navigation header */}
+      <header className="bg-emerald-950 text-white shadow-md sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row justify-between items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="text-3xl">🥦</span>
+            <div>
+              <h1 className="font-black text-lg uppercase tracking-tight text-white flex items-center gap-1">
+                Farmers<span className="text-emerald-400">Gate</span>
+                <span className="bg-emerald-500 text-slate-900 text-[8.5px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider ml-1">
+                  Fresh
+                </span>
+              </h1>
+              <p className="text-[10px] text-slate-300 font-medium">Instant Harvest to Doorstep Delivery App</p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="p-2.5 bg-emerald-800/80 hover:bg-red-600 rounded-xl transition-all text-white cursor-pointer hover:shadow-md shrink-0"
-              title="Logout"
+          </div>
+
+          <nav className="flex items-center gap-1">
+            <button 
+              onClick={() => setActiveTab('shop')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                activeTab === 'shop' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-emerald-900/60'
+              }`}
             >
-              <LogOut className="h-4 w-4" />
+              🛍️ Shop Now
             </button>
-          </div>
-        </div>
-      </div>
-
-      {/* HEADER CONTROLS AND TABS */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-3">
-        {/* Navigation Tabs */}
-        <div className="flex gap-2.5 bg-slate-100 p-1 rounded-2xl max-w-max self-start shadow-xs">
-          <button
-            onClick={() => setActiveTab('shop')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-              activeTab === 'shop'
-                ? 'bg-white text-emerald-600 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <ShoppingBag className="h-4 w-4" />
-            Browse Farm Fresh Shop
-          </button>
-
-          <button
-            onClick={() => setActiveTab('track')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-              activeTab === 'track'
-                ? 'bg-white text-emerald-600 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <ClipboardList className="h-4 w-4" />
-            Track Live Orders
-          </button>
-
-          <button
-            onClick={() => setActiveTab('profile')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-              activeTab === 'profile'
-                ? 'bg-white text-emerald-600 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <User className="h-4 w-4" />
-            My Account & Profile
-          </button>
-        </div>
-
-        {/* Selected Store / Location Dropdown */}
-        {activeTab === 'shop' && stores.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
-              <MapPin className="h-4 w-4 text-slate-400" /> Deliver from Outlet:
-            </span>
-            <select
-              value={selectedStoreId}
-              onChange={e => {
-                setSelectedStoreId(e.target.value);
-                setCart({}); // clear cart to prevent mixing stocks
-              }}
-              className="text-xs font-extrabold py-2 px-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-700 shadow-sm"
+            <button 
+              onClick={() => setActiveTab('track')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer relative ${
+                activeTab === 'track' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-emerald-900/60'
+              }`}
             >
-              {stores.map(store => (
-                <option key={store.id} value={store.id}>
-                  📍 {store.name.replace("Farmer's Gate - ", "")} ({store.location})
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-
-      {/* --- SHOP TAB --- */}
-      {activeTab === 'shop' && (
-        <div className="space-y-6">
-          
-          {/* CAMPAIGN ADVERTISING BANNERS HERO SECTION */}
-          {activeAds.length > 0 && (
-            <div className="space-y-2 text-left">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Today's Hot Deals & Campaigns</span>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {activeAds.map(ad => (
-                  <div 
-                    key={ad.id}
-                    className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 text-white p-4.5 border border-amber-400 shadow-md flex flex-col justify-between min-h-[140px] transition-all hover:scale-[1.01]"
-                  >
-                    {/* Background badge icon */}
-                    <div className="absolute right-[-15px] bottom-[-15px] p-6 text-7xl opacity-15 pointer-events-none">
-                      📢
-                    </div>
-                    
-                    <div className="space-y-1.5 z-10">
-                      <div className="flex items-center gap-2">
-                        {ad.tagline && (
-                          <span className="bg-white/25 text-white font-extrabold text-[9px] px-2 py-0.5 rounded uppercase tracking-wider">
-                            {ad.tagline}
-                          </span>
-                        )}
-                        {ad.discountBadge && (
-                          <span className="bg-slate-900 text-yellow-400 font-black text-[9px] px-2 py-0.5 rounded uppercase tracking-wider shadow-sm border border-slate-800">
-                            ⚡ {ad.discountBadge}
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="text-base font-black tracking-tight text-white leading-snug">{ad.title}</h4>
-                      <p className="text-[11px] text-amber-50/90 font-medium leading-normal max-w-[90%]">{ad.subtitle}</p>
-                    </div>
-
-                    {ad.actionText && (
-                      <button
-                        onClick={() => {
-                          // Scroll to search or focus on matching crops
-                          if (ad.title.toLowerCase().includes('leafy') || ad.tagline?.toLowerCase().includes('leafy')) {
-                            setSelectedCategory('Leafy Greens');
-                          } else if (ad.title.toLowerCase().includes('potato') || ad.tagline?.toLowerCase().includes('combo')) {
-                            setSelectedCategory('Kitchen Staples');
-                          } else {
-                            setSelectedCategory('All');
-                          }
-                          const searchBox = document.getElementById('storefront-search');
-                          if (searchBox) searchBox.focus();
-                        }}
-                        className="mt-3 bg-slate-950 hover:bg-slate-900 text-white font-bold py-1.5 px-3 rounded-lg text-[10px] w-max z-10 shadow-sm flex items-center gap-1 uppercase transition-all cursor-pointer"
-                      >
-                        <span>{ad.actionText}</span>
-                        <ChevronRight className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* SEARCH & QUICK PILL CATEGORIES */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 space-y-3">
-            {/* Search Box */}
-            <div className="relative">
-              <Search className="absolute left-3.5 top-3 h-4.5 w-4.5 text-slate-400" />
-              <input
-                id="storefront-search"
-                type="text"
-                placeholder="Search fresh potato, organic onions, chili, ginger..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-10.5 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 font-semibold text-slate-800 text-sm shadow-xs"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded-md"
-                >
-                  Clear
-                </button>
+              🚚 Track Orders
+              {customerOrders.length > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-emerald-500 border-2 border-slate-950 text-[8px] font-black flex items-center justify-center text-slate-950">
+                  {customerOrders.length}
+                </span>
               )}
-            </div>
+            </button>
+            <button 
+              onClick={() => setActiveTab('profile')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                activeTab === 'profile' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-emerald-900/60'
+              }`}
+            >
+              👤 {user ? 'My Profile' : 'Sign In'}
+            </button>
+          </nav>
+        </div>
+      </header>
 
-            {/* Category horizontal scroll */}
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-              {categories.map(cat => {
-                const isSelected = selectedCategory === cat;
-                return (
+      {/* Main Grid View */}
+      <div className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-4 gap-6">
+        
+        {activeTab === 'shop' && (
+          <>
+            {/* Catalog list section (Left 3 cols) */}
+            <div className="lg:col-span-3 space-y-4">
+              
+              {/* Category selector row */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                {['All', 'Vegetable', 'Fruit', 'Herbs', 'Grocery'].map((cat) => (
                   <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 border ${
-                      isSelected
-                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm font-black'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                    className={`px-4 py-2 rounded-full text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap border ${
+                      selectedCategory === cat
+                        ? 'bg-emerald-950 border-emerald-950 text-white shadow-md font-black'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    {cat === 'All' && '📋 All Crops'}
-                    {cat === 'Leafy Greens' && '🥬 Leafy Greens'}
-                    {cat === 'Root Crops' && '🥕 Root Crops'}
-                    {cat === 'Kitchen Staples' && '🧅 Staples Combo'}
-                    {cat === 'Chili & Spices' && '🌶️ Spices'}
-                    {cat === 'Daily Vegetables' && '🥦 Daily Veggies'}
+                    {cat === 'All' ? '📂 All Sourced' : cat}
                   </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* MAIN PRODUCT GRID & CART SPLIT */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            {/* Left Column: Product Cards Grid */}
-            <div className="lg:col-span-8 space-y-4 text-left">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">
-                  {selectedCategory} Crops ({filteredCrops.length} items found)
-                </h3>
-                <span className="text-[10px] text-slate-400 font-bold bg-slate-100 px-2 py-0.5 rounded-full">⏱️ Dispatch in 10 mins</span>
+                ))}
               </div>
 
-              {filteredCrops.length === 0 ? (
-                <div className="py-20 text-center bg-white border border-slate-200 rounded-3xl p-8">
-                  <span className="text-4xl block mb-2">🧑‍🌾</span>
-                  <p className="text-sm font-bold text-slate-800">Crops Currently Restocking</p>
-                  <p className="text-xs text-slate-500 mt-1">This outlet doesn't have matched stock active. Select another branch or adjust filters.</p>
+              {/* Live search input */}
+              <div className="relative">
+                <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Sift through premium organic onions, gala apples, fresh mint bunch..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 text-xs font-semibold shadow-3xs"
+                />
+              </div>
+
+              {/* Sourced items grid list */}
+              {loadingProducts ? (
+                <div className="bg-white rounded-3xl p-16 text-center border border-slate-200 shadow-3xs flex flex-col items-center justify-center gap-3">
+                  <RefreshCw className="h-6 w-6 text-emerald-600 animate-spin" />
+                  <p className="text-xs font-bold text-slate-500">Harvesting fresh catalog information from FarmersGate...</p>
+                </div>
+              ) : filteredProducts.length === 0 ? (
+                <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-3xs">
+                  <p className="text-slate-400 font-bold text-xs uppercase">No produce matches search</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {filteredCrops.map(item => {
-                    const itemInCart = cart[item.vegetableName];
-                    const remainingStock = item.quantity - (itemInCart?.quantity || 0);
-                    const isSelected = !!itemInCart;
-                    const colorClass = getVegColorClass(item.vegetableName);
-                    
+                  {filteredProducts.map((item) => {
+                    const qtyInCart = cart[item.id] || 0;
                     return (
-                      <div 
-                        key={item.id} 
-                        className={`bg-white border rounded-2xl p-3.5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between relative group ${
-                          remainingStock <= 0 ? 'opacity-60 bg-slate-50 border-slate-100' : 'border-slate-200/90 hover:border-emerald-500/40'
+                      <motion.div 
+                        key={item.id}
+                        whileHover={{ y: -2 }}
+                        className={`bg-white border rounded-2xl p-4.5 shadow-3xs hover:shadow-md transition-all flex flex-col justify-between relative ${
+                          item.stock <= 0 ? 'opacity-60 bg-slate-50 border-slate-200' : 'border-slate-200/90 hover:border-emerald-500/30'
                         }`}
                       >
-                        {/* Direct from Farm Badge */}
-                        <div className="absolute top-2.5 left-2.5 z-10 bg-white/90 backdrop-blur-xs text-[8px] font-black tracking-wide text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded">
-                          Direct Farm
+                        {/* Farm Direct indicator */}
+                        <div className="absolute top-2.5 right-2.5 bg-emerald-50 border border-emerald-100 text-emerald-700 font-black text-[7.5px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                          ORGANIC DIRECT
                         </div>
 
-                        {/* Visual Card Image Box */}
-                        <div className="space-y-3">
-                          <div className={`h-28 w-full rounded-2xl bg-gradient-to-br ${colorClass} flex items-center justify-center relative shadow-inner overflow-hidden border`}>
-                            {/* Giant floating visual background */}
-                            <div className="absolute right-[-10px] bottom-[-10px] text-5xl opacity-10 pointer-events-none select-none">
-                              {getVegEmoji(item.vegetableName)}
-                            </div>
-                            <span className="text-5xl drop-shadow-md select-none transform group-hover:scale-110 transition-transform">
-                              {getVegEmoji(item.vegetableName)}
-                            </span>
-                            
-                            {remainingStock > 0 && remainingStock < 10 && (
-                              <span className="absolute bottom-1.5 right-1.5 bg-amber-500 text-white font-black text-[7px] px-1.5 py-0.5 rounded tracking-wide uppercase">
-                                Low Stock
-                              </span>
-                            )}
-                          </div>
+                        <div>
+                          <span className="text-4xl block mb-2">{item.emoji || '🥦'}</span>
+                          <h3 className="font-extrabold text-slate-800 text-xs tracking-tight line-clamp-1">{item.vegetableName}</h3>
+                          <span className="inline-block text-[8px] font-black uppercase text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded mt-1">
+                            {item.category}
+                          </span>
 
-                          {/* Crop Metadata */}
-                          <div className="space-y-0.5">
-                            <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 leading-tight truncate" title={item.vegetableName}>
-                              {item.vegetableName}
-                            </h4>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] text-slate-400 font-bold">Standard 500g Pack</span>
-                              <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-1 rounded">Freshly Graded</span>
+                          <div className="flex justify-between items-baseline mt-3 border-t border-slate-100 pt-3">
+                            <div>
+                              <p className="text-[7.5px] font-black uppercase tracking-wider text-slate-400">ORGANIC RATE</p>
+                              <span className="text-sm font-black text-slate-900 font-mono">₹{item.sellingPrice}</span>
+                              <span className="text-[10px] text-slate-400 font-semibold">/{item.unit}</span>
                             </div>
-                          </div>
-
-                          {/* Price Area */}
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-sm font-extrabold text-slate-900">₹{item.sellingPrice.toFixed(0)}</span>
-                            <span className="text-[10px] text-slate-400 font-bold">/ 500g</span>
-                            <span className="text-[9px] text-slate-400 line-through font-bold">₹{(item.sellingPrice * 1.3).toFixed(0)}</span>
+                            <div className="text-right">
+                              <p className="text-[7.5px] font-black uppercase tracking-wider text-slate-400">STOCK LEFT</p>
+                              <span className="text-[10px] font-bold text-slate-500">{item.stock} {item.unit}</span>
+                            </div>
                           </div>
                         </div>
 
-                        {/* INSTANT ZEPTO-STYLE ADD BUTTON WITH QUANTITY TOGGLE */}
-                        <div className="mt-4 pt-1 border-t border-slate-100">
-                          {remainingStock <= 0 && !isSelected ? (
-                            <div className="bg-slate-100 rounded-xl py-2 text-center text-slate-400 text-[10px] font-extrabold uppercase tracking-wide">
+                        <div className="mt-4 pt-1">
+                          {item.stock <= 0 ? (
+                            <div className="w-full bg-slate-100 text-slate-400 font-black py-1.5 rounded-xl text-[10px] text-center uppercase tracking-wider">
                               Sold Out
                             </div>
-                          ) : isSelected ? (
-                            /* Transform ADD button into direct compact modifier */
-                            <div className="flex items-center justify-between bg-emerald-600 text-white rounded-xl p-1.5 shadow-sm">
+                          ) : qtyInCart > 0 ? (
+                            <div className="flex items-center justify-between bg-emerald-950 text-white rounded-xl p-1 shadow-sm">
                               <button
                                 type="button"
-                                onClick={() => handleDecreaseCartQty(item, 0.5)}
-                                className="h-6 w-6 rounded-lg bg-emerald-700 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer"
+                                onClick={() => handleDecreaseCart(item.id)}
+                                className="h-6 w-6 rounded-lg bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer"
                               >
-                                <Minus className="h-3.5 w-3.5" />
+                                <Minus className="h-3 w-3" />
                               </button>
-                              
-                              <span className="text-xs font-black px-1.5">
-                                {itemInCart.quantity} kg
-                              </span>
-
+                              <span className="text-xs font-black font-mono px-2">{qtyInCart}</span>
                               <button
                                 type="button"
-                                onClick={() => handleAddToCart(item, 0.5)}
-                                className="h-6 w-6 rounded-lg bg-emerald-700 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer"
-                                disabled={remainingStock <= 0}
+                                onClick={() => handleAddToCart(item.id)}
+                                className="h-6 w-6 rounded-lg bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer"
                               >
-                                <Plus className="h-3.5 w-3.5" />
+                                <Plus className="h-3 w-3" />
                               </button>
                             </div>
                           ) : (
-                            /* Clear instant action ADD button */
                             <button
                               type="button"
-                              onClick={() => handleAddToCart(item, 0.5)}
-                              className="w-full bg-white hover:bg-emerald-50 text-emerald-600 border border-emerald-600/60 hover:border-emerald-600 font-extrabold py-1.5 rounded-xl text-xs flex items-center justify-center gap-1 shadow-xs transition-all cursor-pointer uppercase"
+                              onClick={() => handleAddToCart(item.id)}
+                              className="w-full bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-600/50 hover:border-emerald-600 font-black py-1.5 rounded-xl text-[10px] flex items-center justify-center gap-0.5 transition-all cursor-pointer uppercase"
                             >
                               <Plus className="h-3.5 w-3.5 stroke-[3px]" />
-                              ADD <span className="text-[9px] font-medium tracking-wide font-sans pl-0.5">500g</span>
+                              ADD <span className="text-[9px] font-semibold pl-0.5">({item.unit})</span>
                             </button>
                           )}
                         </div>
-                      </div>
+                      </motion.div>
                     );
                   })}
                 </div>
               )}
             </div>
 
-            {/* Right Column: Sticky Basket Drawer Summary */}
-            <div className="lg:col-span-4 text-left">
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sticky top-4 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <h3 className="font-extrabold text-xs uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
-                    <ShoppingCart className="h-4.5 w-4.5 text-emerald-600" /> Instant Shopping Basket
+            {/* Instant Basket sidecard (Right 1 col) */}
+            <div className="lg:col-span-1 space-y-4">
+              <div className="bg-white border border-slate-200 rounded-3xl p-4 sticky top-4 shadow-sm space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                  <h3 className="font-black text-xs uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+                    <ShoppingCart className="h-4 w-4 text-emerald-600" /> Instant Basket
                   </h3>
-                  {cartItemsCount > 0 && (
+                  {cartItemsList.length > 0 && (
                     <button 
                       onClick={() => setCart({})}
-                      className="text-[10px] font-bold text-rose-500 hover:text-rose-700 hover:underline cursor-pointer"
+                      className="text-[9px] font-extrabold text-red-500 hover:text-red-700 cursor-pointer uppercase"
                     >
-                      Clear All
+                      Clear
                     </button>
                   )}
                 </div>
 
-                {Object.keys(cart).length === 0 ? (
-                  <div className="py-12 text-center text-slate-400 space-y-3">
-                    <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mx-auto border border-slate-100">
-                      <ShoppingBag className="h-6 w-6 text-slate-300 stroke-1" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-tight text-slate-400">Basket is empty</p>
-                      <p className="text-[10px] text-slate-400 mt-1 max-w-[180px] mx-auto leading-normal">
-                        Click "+ ADD" on crops on the left to start building your instant basket.
-                      </p>
-                    </div>
+                {cartItemsList.length === 0 ? (
+                  <div className="text-center py-10 space-y-2">
+                    <ShoppingBag className="h-8 w-8 text-slate-200 mx-auto" />
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Your basket is empty</p>
+                    <p className="text-[9px] text-slate-400">Add fresh organic produce to trigger instant 9-minute dispatch!</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* Cart Items list */}
-                    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                      {(Object.values(cart) as { quantity: number; item: InventoryItem }[]).map(cartItem => (
-                        <div 
-                          key={cartItem.item.id} 
-                          className="flex items-center justify-between gap-3 border-b border-slate-50 pb-2.5 last:border-0 last:pb-0"
-                        >
-                          <div className="flex items-center gap-2 max-w-[55%]">
-                            <span className="text-2xl shrink-0">{getVegEmoji(cartItem.item.vegetableName)}</span>
-                            <div className="truncate">
-                              <p className="text-xs font-bold text-slate-800 truncate">{cartItem.item.vegetableName}</p>
-                              <p className="text-[9px] text-slate-400">₹{(cartItem.item.sellingPrice * 2).toFixed(0)}/kg</p>
-                            </div>
+                    {/* Basket list */}
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                      {cartItemsList.map(({ item, quantity }) => (
+                        <div key={item.id} className="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-xl border border-slate-150">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span>{item.emoji || '🥦'}</span>
+                            <span className="font-extrabold text-slate-800 truncate max-w-[100px]">{item.vegetableName}</span>
                           </div>
-
-                          {/* Quick modifier inside the basket summary */}
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleDecreaseCartQty(cartItem.item, 0.5)}
-                              className="h-5 w-5 bg-slate-100 rounded flex items-center justify-center hover:bg-slate-200 text-slate-700 cursor-pointer font-black text-[10px]"
-                            >
-                              -
-                            </button>
-                            
-                            <span className="text-xs font-bold w-12 text-center font-mono">
-                              {cartItem.quantity} kg
+                          <div className="flex items-center gap-2">
+                            <span className="font-black font-mono text-emerald-700 text-[11px]">
+                              {quantity}x • ₹{item.sellingPrice * quantity}
                             </span>
-
-                            <button
-                              type="button"
-                              onClick={() => handleAddToCart(cartItem.item, 0.5)}
-                              className="h-5 w-5 bg-slate-100 rounded flex items-center justify-center hover:bg-slate-200 text-slate-700 cursor-pointer font-black text-[10px]"
-                              disabled={cartItem.item.quantity - cartItem.quantity <= 0}
+                            <button 
+                              onClick={() => handleDecreaseCart(item.id)}
+                              className="p-1 hover:bg-slate-200 rounded text-red-500 cursor-pointer"
                             >
-                              +
-                            </button>
-
-                            <button
-                              onClick={() => handleRemoveFromCart(cartItem.item.vegetableName)}
-                              className="text-slate-300 hover:text-rose-600 p-1 cursor-pointer ml-1"
-                              title="Delete Item"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-3 w-3" />
                             </button>
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    {/* Checkout Details / Cost summary */}
-                    <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 space-y-2 text-xs">
-                      <div className="flex justify-between text-slate-500">
-                        <span>Total Quantity order:</span>
-                        <span className="font-mono font-bold text-slate-700">{cartItemsCount.toFixed(2)} kg</span>
+                    {/* Coupons input panel */}
+                    <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl space-y-2">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">🎟️ PROMO TICKET CODES</span>
+                      
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          placeholder="Code (e.g. FG50)"
+                          value={couponCode}
+                          onChange={e => setCouponCode(e.target.value)}
+                          className="flex-1 text-[10px] font-black uppercase px-2 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none"
+                        />
+                        <button
+                          onClick={() => handleApplyPromoCode(couponCode)}
+                          className="bg-emerald-950 text-white text-[10px] font-black px-3 py-1 rounded-lg cursor-pointer"
+                        >
+                          Apply
+                        </button>
                       </div>
-                      <div className="flex justify-between text-slate-500">
-                        <span>Delivery Charge:</span>
-                        <span className="text-emerald-600 font-extrabold uppercase text-[10px]">⚡ FREE Delivery</span>
+
+                      {appliedCoupon ? (
+                        <p className="text-[9px] font-bold text-emerald-600">✓ Slashed: {appliedCoupon.code} ({appliedCoupon.badge})</p>
+                      ) : couponError ? (
+                        <p className="text-[9px] font-bold text-red-500">{couponError}</p>
+                      ) : (
+                        <div className="flex gap-1 overflow-x-auto pt-1 scrollbar-none">
+                          {availableCoupons.map((coupon) => (
+                            <button
+                              key={coupon.code}
+                              onClick={() => handleApplyPromoCode(coupon.code)}
+                              className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 text-[8px] font-black cursor-pointer whitespace-nowrap shrink-0"
+                            >
+                              🏷️ {coupon.code} ({coupon.badge})
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Digital Wallet Rewards Redemption */}
+                    <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl text-[10.5px] font-bold">
+                      <label className="flex items-center gap-2 text-emerald-900 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={useWallet} 
+                          onChange={e => setUseWallet(e.target.checked)}
+                          className="h-3.5 w-3.5 text-emerald-700 focus:ring-emerald-500 rounded cursor-pointer"
+                        />
+                        <span>Redeem ₹{Math.min(walletBalance, cartSubtotal - currentDiscount).toFixed(2)} from FG Wallet (Balance: ₹{walletBalance.toFixed(2)})</span>
+                      </label>
+                    </div>
+
+                    {/* Receipts details */}
+                    <div className="p-3 bg-slate-50 border border-slate-150 rounded-2xl text-[10.5px] space-y-1 text-slate-500 font-semibold">
+                      <div className="flex justify-between">
+                        <span>Cart Subtotal:</span>
+                        <span className="font-bold text-slate-800">₹{cartSubtotal}</span>
                       </div>
-                      <div className="flex justify-between font-black text-slate-900 text-sm border-t border-slate-200/60 pt-2 mt-2">
-                        <span>Total Amount due:</span>
-                        <span className="text-emerald-600">₹{cartSubtotal.toFixed(2)}</span>
+                      {currentDiscount > 0 && (
+                        <div className="flex justify-between text-red-500 font-bold">
+                          <span>Coupon Discount:</span>
+                          <span>-₹{currentDiscount}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>Delivery Fee (9-Min Promise):</span>
+                        <span className="font-bold text-slate-800">{deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}</span>
+                      </div>
+                      
+                      <div className="flex justify-between font-black text-slate-900 text-xs border-t border-slate-200/60 pt-2 mt-1">
+                        <span>Total Payable Due:</span>
+                        <span className="text-emerald-700 text-sm">₹{finalPaidAmount.toFixed(2)}</span>
                       </div>
                     </div>
 
-                    {/* Submit Checkout flow trigger button */}
-                    <div className="pt-1">
+                    {/* Place Order dispatch CTA */}
+                    {user ? (
                       <button
-                        type="button"
-                        onClick={() => {
-                          if (!currentUser) {
-                            setIsAuthModalOpen(true);
-                          } else {
-                            setIsCheckoutOpen(true);
-                          }
-                        }}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3 rounded-xl text-xs shadow-md shadow-emerald-200 cursor-pointer transition-all flex items-center justify-center gap-1.5 uppercase"
+                        onClick={handlePlaceOrder}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
                       >
-                        {currentUser ? 'PROCEED TO CHECKOUT' : 'LOGIN TO PLACE ORDER'}
-                        <ArrowRight className="h-4 w-4" />
+                        ⚡ PROCEED TO DISPATCH <ArrowRight className="h-4.5 w-4.5" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setActiveTab('profile')}
+                        className="w-full bg-emerald-950 hover:bg-slate-900 text-emerald-400 font-black py-3 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                      >
+                        🔐 SIGN IN TO PLACE ORDER <ArrowRight className="h-4.5 w-4.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Real-time Order Tracking tab */}
+        {activeTab === 'track' && (
+          <div className="lg:col-span-4 space-y-4 text-left">
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-black text-slate-800 text-sm uppercase flex items-center gap-1.5">
+                    🚚 Live farmersgate dispatch radar
+                  </h3>
+                  <p className="text-[10.5px] text-slate-400 font-bold uppercase mt-0.5">Real-time status synced directly on Firestore</p>
+                </div>
+                
+                {customerOrders.length > 0 && (
+                  <div className="flex gap-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase self-center">Active Tickets:</span>
+                    <select 
+                      onChange={(e) => {
+                        const ord = customerOrders.find(o => o.id === e.target.value);
+                        if (ord) setSelectedOrder(ord);
+                      }}
+                      value={selectedOrder?.id || ''}
+                      className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg p-1.5 focus:outline-none"
+                    >
+                      <option value="">Select ticket...</option>
+                      {customerOrders.map(o => (
+                        <option key={o.id} value={o.id}>Order #{o.orderNumber} ({o.status})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {customerOrders.length === 0 ? (
+                <div className="text-center py-16 space-y-3">
+                  <Navigation className="h-10 w-10 text-emerald-600 mx-auto animate-bounce" />
+                  <h4 className="text-sm font-black text-slate-700 uppercase">No registered dispatch tickets yet</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">Once you place an order in the storefront, your 9-minute instant delivery tracking dashboard will wake up here!</p>
+                  <button 
+                    onClick={() => setActiveTab('shop')}
+                    className="bg-emerald-600 text-white font-black text-[10.5px] px-4 py-2 rounded-xl cursor-pointer uppercase tracking-wider"
+                  >
+                    Go Shop Fresh Produce
+                  </button>
+                </div>
+              ) : selectedOrder ? (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Left: Progress details */}
+                  <div className="lg:col-span-1 space-y-4">
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4.5 space-y-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">DISPATCH TICKET ID</span>
+                          <h4 className="font-black text-slate-800 text-sm font-mono">#{selectedOrder.orderNumber}</h4>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                          selectedOrder.status === 'Pending' ? 'bg-amber-100 text-amber-800 border border-amber-200 animate-pulse' :
+                          selectedOrder.status === 'Packing' ? 'bg-blue-100 text-blue-800 border border-blue-200 animate-pulse' :
+                          selectedOrder.status === 'On The Way' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                          'bg-slate-100 text-slate-700'
+                        }`}>
+                          {selectedOrder.status}
+                        </span>
+                      </div>
+
+                      {/* Status timeline text with clock */}
+                      <div className="border-t border-slate-200/60 pt-3 space-y-3">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Estimated Delivery</p>
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-5 w-5 text-emerald-600 animate-spin" />
+                          <div>
+                            <span className="text-sm font-black text-slate-900">9 Minutes Sourced Promise</span>
+                            <p className="text-[10px] text-slate-400 font-medium">Harvested farm fresh produce is in dispatch</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* PDF Invoice Download */}
+                      <button 
+                        onClick={() => handleDownloadInvoice(selectedOrder)}
+                        className="w-full py-2 bg-emerald-950 hover:bg-slate-900 text-emerald-400 font-black text-[10.5px] rounded-xl uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer mt-2"
+                      >
+                        <FileText className="h-4 w-4" /> Download Digital Invoice
+                      </button>
+                    </div>
+
+                    {/* Delivery Partner Details */}
+                    {selectedOrder.riderName && (
+                      <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl space-y-2">
+                        <span className="text-[9px] font-black text-emerald-800 uppercase tracking-widest block">FarmersGate Assigned Rider</span>
+                        <p className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                          🏍️ {selectedOrder.riderName}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-bold">📞 {selectedOrder.riderPhone || '+91 90000 12345'}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Middle: Map simulation */}
+                  <div className="lg:col-span-1 h-80 bg-slate-100 border border-slate-200 rounded-3xl overflow-hidden relative">
+                    <div className="absolute top-3 left-3 bg-white/95 border border-slate-200 shadow-sm px-3 py-1.5 rounded-xl z-10 text-[9px] font-black uppercase text-slate-700 flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" /> Real-time tracking
+                    </div>
+
+                    {/* Simulated visual radar (SVG map coordinate) */}
+                    <svg className="w-full h-full bg-slate-50" viewBox="0 0 100 100">
+                      {/* Grid Roads */}
+                      <line x1="10" y1="0" x2="10" y2="100" stroke="#e2e8f0" strokeWidth="2" />
+                      <line x1="50" y1="0" x2="50" y2="100" stroke="#e2e8f0" strokeWidth="3" />
+                      <line x1="90" y1="0" x2="90" y2="100" stroke="#e2e8f0" strokeWidth="2" />
+                      <line x1="0" y1="20" x2="100" y2="20" stroke="#e2e8f0" strokeWidth="2" />
+                      <line x1="0" y1="60" x2="100" y2="60" stroke="#e2e8f0" strokeWidth="3" />
+
+                      {/* Sourced HQ Pin */}
+                      <circle cx="20" cy="30" r="4" fill="#047857" />
+                      <text x="26" y="32" fontSize="3.5" fontWeight="bold" fill="#047857">FARMERSGATE DISPATCH</text>
+
+                      {/* Customer Destination Pin */}
+                      <circle cx="80" cy="70" r="4" fill="#ef4444" />
+                      <text x="80" y="66" fontSize="3.5" fontWeight="bold" fill="#ef4444" textAnchor="middle">YOUR HOME</text>
+
+                      {/* Moving Rider animation */}
+                      {selectedOrder.status === 'On The Way' ? (
+                        <g>
+                          <circle cx="50" cy="50" r="5" fill="#10b981" opacity="0.4" className="animate-ping" />
+                          <circle cx="50" cy="50" r="3" fill="#10b981" />
+                          <text x="50" y="44" fontSize="3" fontWeight="bold" fill="#065f46" textAnchor="middle">🏍️ Ramesh Sourced</text>
+                        </g>
+                      ) : selectedOrder.status === 'Delivered' ? (
+                        <g>
+                          <circle cx="80" cy="70" r="6" fill="#10b981" opacity="0.3" />
+                          <text x="80" y="79" fontSize="3" fontWeight="bold" fill="#047857" textAnchor="middle">✓ Delivered!</text>
+                        </g>
+                      ) : (
+                        <g>
+                          <circle cx="20" cy="30" r="5" fill="#d97706" opacity="0.4" className="animate-pulse" />
+                          <text x="20" y="40" fontSize="3" fontWeight="bold" fill="#92400e" textAnchor="middle">⏳ Sourcing Sacks</text>
+                        </g>
+                      )}
+                    </svg>
+                  </div>
+
+                  {/* Right: Real-time Live Chat */}
+                  <div className="lg:col-span-1 bg-slate-50 border border-slate-200 rounded-3xl p-4 flex flex-col justify-between h-80">
+                    <div>
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                        💬 Rider Live Messaging Box
+                      </span>
+                      <p className="text-[8.5px] text-slate-400 font-semibold mt-0.5">Need delivery adjustments? Inform Ramesh here.</p>
+                    </div>
+
+                    {/* Chat logs */}
+                    <div className="flex-1 overflow-y-auto my-3 space-y-2 text-[10.5px]">
+                      {((selectedOrder as any).messages || []).length === 0 ? (
+                        <p className="text-slate-400 italic text-center pt-16">No messages exchanged. Sourced rider will notify you during dispatch.</p>
+                      ) : (
+                        ((selectedOrder as any).messages || []).map((msg: any, mIdx: number) => (
+                          <div key={mIdx} className={`flex flex-col ${msg.sender === 'customer' ? 'items-end' : 'items-start'}`}>
+                            <span className="text-[7.5px] font-bold text-slate-400 uppercase px-1">{msg.sender === 'customer' ? 'You' : 'Rider Ramesh'}</span>
+                            <div className={`p-2 rounded-2xl max-w-[85%] mt-0.5 ${
+                              msg.sender === 'customer' ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-800'
+                            }`}>
+                              <p className="font-semibold leading-normal">{msg.text}</p>
+                              <span className="text-[7px] text-right block opacity-70 mt-0.5">{msg.time}</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="flex gap-1.5 shrink-0">
+                      <input 
+                        type="text"
+                        placeholder="e.g. Please leave at door, thank you!"
+                        value={customerChatMessage}
+                        onChange={e => setCustomerChatMessage(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleSendCustomerChat()}
+                        className="flex-1 text-xs font-bold px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none"
+                      />
+                      <button 
+                        onClick={handleSendCustomerChat}
+                        className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer shadow-3xs"
+                      >
+                        <Send className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* --- TRACK TAB --- */}
-      {activeTab === 'track' && (
-        <div className="space-y-5 max-w-xl mx-auto text-left">
-          
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm text-center space-y-4">
-            <span className="text-4xl block">📦</span>
-            <h3 className="font-black text-base text-slate-800 uppercase tracking-tight">Track Your Harvest Orders</h3>
-            <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
-              Check the live packaging, grading, and instant home dispatch milestones of your crops in real-time.
-            </p>
-
-            <div className="flex gap-2 justify-center pt-2 max-w-md mx-auto">
-              <div className="relative w-full">
-                <span className="absolute left-3 top-2.5 text-slate-400 text-xs">🇮🇳 +91</span>
-                <input
-                  type="tel"
-                  placeholder="Enter registered mobile number..."
-                  value={trackPhoneInput}
-                  onChange={e => setTrackPhoneInput(e.target.value)}
-                  className="text-xs pl-12 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-850 w-full font-semibold"
-                />
-              </div>
-              <button
-                onClick={() => setSearchPhoneQuery(trackPhoneInput)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-5 py-2 rounded-xl shrink-0 cursor-pointer uppercase tracking-wider shadow-md shadow-emerald-100"
-              >
-                TRACK
-              </button>
-            </div>
-          </div>
-
-          {searchPhoneQuery && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <span className="text-xs font-black uppercase text-slate-400 tracking-wider">
-                  Orders Linked to Phone: <span className="text-slate-800">+{searchPhoneQuery}</span>
-                </span>
-                <span className="text-xs font-black text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
-                  {trackedOrders.length} orders
-                </span>
-              </div>
-
-              {trackedOrders.length === 0 ? (
-                <div className="py-12 text-center bg-white border border-slate-200 rounded-3xl p-6 space-y-2">
-                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">No active orders found</p>
-                  <p className="text-[11px] text-slate-400 max-w-sm mx-auto leading-normal">
-                    We couldn't locate any purchases linked to this number. Please double check the 10-digit mobile number used at registration.
-                  </p>
                 </div>
               ) : (
-                <div className="space-y-5">
-                  {trackedOrders.map(order => {
-                    const statusSteps = ['Pending', 'Processing', 'Ready', 'Completed'];
-                    const currentStepIdx = statusSteps.indexOf(order.status);
-                    const isSelected = selectedOrderIds.includes(order.id);
-                    
-                    return (
-                      <div key={order.id} className={`bg-white border rounded-2xl shadow-sm p-5 space-y-5 transition-all ${
-                        isSelected ? 'border-emerald-600 ring-2 ring-emerald-600/10' : 'border-slate-200'
-                      }`}>
-                        
-                        {/* Order Header */}
-                        <div className="flex items-start justify-between border-b border-slate-150 pb-3">
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleToggleSelectOrder(order.id)}
-                              className="h-4.5 w-4.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                            />
-                            <div>
-                              <span className="font-mono text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-lg">
-                                {order.orderNumber}
-                              </span>
-                              <span className="text-[10px] text-slate-400 block mt-2 font-semibold uppercase tracking-wide">
-                                Placed: {new Date(order.orderDate).toLocaleDateString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <span className="text-[9px] text-slate-400 block uppercase tracking-wider font-extrabold">Instant Total Due</span>
-                            <span className="text-base font-black text-slate-900 font-mono">₹{order.totalAmount.toFixed(2)}</span>
-                          </div>
-                        </div>
-
-                        {/* Live Step Progress pipeline */}
-                        <div className="space-y-2">
-                          <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">Live Fulfillment Pipeline</span>
-                          
-                          {/* Progress bar */}
-                          <div className="grid grid-cols-4 gap-1.5 pt-1">
-                            {statusSteps.map((step, stepIdx) => {
-                              const isActive = stepIdx <= currentStepIdx;
-                              const isCurrent = stepIdx === currentStepIdx;
-                              
-                              return (
-                                <div key={step} className="space-y-2">
-                                  <div className={`h-1.5 rounded-full transition-colors ${
-                                    isActive ? 'bg-emerald-600' : 'bg-slate-100'
-                                  }`} />
-                                  <div className="flex items-center gap-1 justify-center sm:justify-start">
-                                    {isActive ? (
-                                      <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
-                                    ) : (
-                                      <Hourglass className="h-3 w-3 text-slate-300 shrink-0" />
-                                    )}
-                                    <span className={`text-[9px] sm:text-[10px] font-bold ${
-                                      isCurrent ? 'text-emerald-700 font-extrabold' : 
-                                      isActive ? 'text-slate-700' : 
-                                      'text-slate-300'
-                                    }`}>
-                                      {step === 'Pending' && 'Placed'}
-                                      {step === 'Processing' && 'Graded'}
-                                      {step === 'Ready' && 'Dispatched'}
-                                      {step === 'Completed' && 'Delivered'}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Vegetable list summary */}
-                        <div className="bg-slate-50 p-4 rounded-xl space-y-2 border border-slate-100 text-xs">
-                          <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider pb-1 border-b border-slate-150">
-                            Farmed Items Packaged
-                          </span>
-                          {order.items.map((item, idx) => (
-                            <div key={idx} className="flex justify-between text-slate-700">
-                              <span className="font-bold flex items-center gap-1.5">
-                                <span className="text-sm">{getVegEmoji(item.vegetableName)}</span>
-                                {item.vegetableName}
-                              </span>
-                              <span className="font-mono text-slate-500 font-semibold">{item.quantity} kg @ ₹{item.pricePerKg}/kg</span>
-                            </div>
-                          ))}
-                          
-                          {order.notes && (
-                            <div className="border-t border-slate-150 pt-2 mt-2 text-[10px] text-slate-400 italic">
-                              "Delivery Note: {order.notes}"
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Order Action Buttons Footer */}
-                        <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2 justify-between items-center">
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => generateBillPDF([order])}
-                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all"
-                            >
-                              <FileText className="h-3.5 w-3.5" /> PDF Bill
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleShareWhatsAppForOrders([order])}
-                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all"
-                            >
-                              <Share2 className="h-3.5 w-3.5" /> Share Bill
-                            </button>
-                          </div>
-                          
-                          {(order.status === 'Pending' || order.status === 'Processing') && onUpdateOrder && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const cancelReasonPrompt = prompt('Please enter a cancellation reason / message (optional):');
-                                if (cancelReasonPrompt === null) return; // User clicked Cancel
-                                
-                                const reasonStr = cancelReasonPrompt.trim() 
-                                  ? `Cancelled by Customer: "${cancelReasonPrompt.trim()}"` 
-                                  : 'Cancelled by Customer';
-                                  
-                                const cancelledOrder: CustomerOrder = {
-                                  ...order,
-                                  status: 'Cancelled',
-                                  notes: order.notes ? `${reasonStr} | ${order.notes}` : reasonStr
-                                };
-                                
-                                try {
-                                  await onUpdateOrder(cancelledOrder);
-                                  alert('Your order has been successfully cancelled.');
-                                } catch (err) {
-                                  console.error(err);
-                                  alert('Failed to cancel order. Please try again.');
-                                }
-                              }}
-                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer transition-all flex items-center gap-1 shadow-3xs"
-                            >
-                              🚫 Cancel Order
-                            </button>
-                          )}
-                        </div>
-
-                      </div>
-                    );
-                  })}
-
-                  {/* Sticky Selected Orders Summary Billing Panel */}
-                  {selectedOrderIds.length > 0 && (
-                    <div className="sticky bottom-4 z-50 bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-850 flex flex-col sm:flex-row items-center justify-between gap-4 animate-scale-in">
-                      <div className="flex items-center gap-3 text-left w-full sm:w-auto">
-                        <span className="text-2xl">🧾</span>
-                        <div>
-                          <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Bulk Invoice Generator</h4>
-                          <p className="text-xs font-bold text-white mt-0.5">
-                            {selectedOrderIds.length} {selectedOrderIds.length === 1 ? 'Order' : 'Orders'} Selected
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 w-full sm:w-auto">
-                        <button
-                          onClick={() => setSelectedOrderIds([])}
-                          className="flex-1 sm:flex-none px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer uppercase tracking-wider"
-                        >
-                          Clear
-                        </button>
-                        <button
-                          onClick={() => {
-                            const selectedOrdersList = trackedOrders.filter(o => selectedOrderIds.includes(o.id));
-                            generateBillPDF(selectedOrdersList);
-                          }}
-                          className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl transition-all cursor-pointer uppercase tracking-wider shadow-md flex items-center justify-center gap-1.5"
-                        >
-                          <FileText className="h-3.5 w-3.5" /> Download PDF
-                        </button>
-                        <button
-                          onClick={() => {
-                            const selectedOrdersList = trackedOrders.filter(o => selectedOrderIds.includes(o.id));
-                            handleShareWhatsAppForOrders(selectedOrdersList);
-                          }}
-                          className="flex-1 sm:flex-none px-4 py-2 bg-[#25D366] hover:bg-[#20BA5A] text-white text-xs font-black rounded-xl transition-all cursor-pointer uppercase tracking-wider shadow-md flex items-center justify-center gap-1.5"
-                        >
-                          <Share2 className="h-3.5 w-3.5" /> WhatsApp Share
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                <div className="text-center py-12 text-slate-400">
+                  <p className="text-xs font-bold uppercase">Select a ticket from the selector dropdown to track live status.</p>
                 </div>
               )}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* --- PROFILE / ACCOUNT TAB --- */}
-      {activeTab === 'profile' && (
-        <div className="space-y-6 max-w-4xl mx-auto text-left animate-fade-in">
-          {!currentUser ? (
-            <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm text-center space-y-5 max-w-md mx-auto">
-              <div className="mx-auto w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600">
-                <User className="h-8 w-8" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="font-black text-lg text-slate-800 uppercase tracking-tight">Access Your Profile</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Verify your account via WhatsApp or Email to view your active profile, edit your delivery address, and instantly track your direct farm-fresh orders.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsAuthModalOpen(true)}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black py-3 rounded-xl cursor-pointer uppercase tracking-wider shadow-md shadow-emerald-100 transition-all flex items-center justify-center gap-2"
-              >
-                <UserCheck className="h-4 w-4" />
-                Verify / Log In Now
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              
-              {/* Profile Card Side Panel */}
-              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col justify-between space-y-6">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-emerald-600 text-white font-black flex items-center justify-center text-lg shadow-sm">
-                      {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-                    </div>
-                    <div>
-                      <h4 className="font-black text-sm text-slate-800">{currentUser.name}</h4>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-wider">
-                        Verified Member
-                      </span>
-                    </div>
+        {/* Profile and Authentication Tab */}
+        {activeTab === 'profile' && (
+          <div className="lg:col-span-4 space-y-4 text-left max-w-xl mx-auto w-full">
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
+              {loadingAuth ? (
+                <div className="text-center py-12">
+                  <RefreshCw className="h-6 w-6 text-emerald-600 animate-spin mx-auto mb-2" />
+                  <p className="text-xs font-bold text-slate-500">Checking session logs...</p>
+                </div>
+              ) : !user ? (
+                /* Beautiful Auth Screen */
+                <div className="space-y-6">
+                  <div className="text-center space-y-1.5">
+                    <span className="text-4xl block">🔐</span>
+                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-tight">FarmersGate Security Desk</h3>
+                    <p className="text-[10.5px] text-slate-400 font-bold uppercase">Secure your digital wallet and delivery logs via Firebase Auth</p>
                   </div>
 
-                  <hr className="border-slate-150" />
-
-                  <div className="space-y-3.5 text-xs">
-                    <div>
-                      <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">Verification Channel</span>
-                      <span className="font-extrabold text-slate-700 flex items-center gap-1.5 mt-0.5">
-                        {currentUser.verificationMethod === 'email' ? '📧 Email Address' : '📲 WhatsApp Mobile'}
-                      </span>
+                  {authError && (
+                    <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-xs font-bold flex items-center gap-1.5">
+                      ⚠ {authError}
                     </div>
+                  )}
 
-                    {currentUser.phone && (
-                      <div>
-                        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">WhatsApp Number</span>
-                        <span className="font-mono font-extrabold text-slate-700 mt-0.5 block">
-                          +91 {currentUser.phone}
-                        </span>
-                      </div>
-                    )}
-
-                    {currentUser.email && (
-                      <div>
-                        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">Email Address</span>
-                        <span className="font-bold text-slate-700 mt-0.5 block break-all">
-                          {currentUser.email}
-                        </span>
+                  <form onSubmit={handleAuthSubmit} className="space-y-4">
+                    {authMode === 'register' && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 block uppercase">Your Name</label>
+                          <input 
+                            type="text"
+                            required
+                            placeholder="e.g. Ramesh Sourced"
+                            value={authName}
+                            onChange={e => setAuthName(e.target.value)}
+                            className="w-full text-xs font-bold px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-slate-400 block uppercase">Mobile Number</label>
+                          <input 
+                            type="text"
+                            required
+                            placeholder="e.g. +91 95000 12345"
+                            value={authPhone}
+                            onChange={e => setAuthPhone(e.target.value)}
+                            className="w-full text-xs font-bold px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
                       </div>
                     )}
 
                     <div>
-                      <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">Saved Delivery Address</span>
-                      <span className="font-semibold text-slate-500 mt-0.5 block leading-normal">
-                        {currentUser.address || 'No address configured.'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="w-full py-2.5 bg-slate-50 border border-slate-200 hover:bg-red-50 hover:border-red-200 hover:text-red-700 rounded-xl transition-all text-slate-500 text-xs font-black uppercase flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Logout Account
-                </button>
-              </div>
-
-              {/* Edit Details Form Panel */}
-              <div className="md:col-span-2 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
-                <div>
-                  <h3 className="font-black text-base text-slate-800 uppercase tracking-tight">Edit Profile Details</h3>
-                  <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
-                    Modify your contact options and physical delivery coordinates to ensure lightning-fast doorstep dispatch.
-                  </p>
-                </div>
-
-                {profileSuccessMsg && (
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-xl text-xs font-bold animate-fade-in flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                    {profileSuccessMsg}
-                  </div>
-                )}
-
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!editName.trim()) {
-                      alert('Full Name is required.');
-                      return;
-                    }
-                    if (editMethod === 'whatsapp' && (!editPhone || editPhone.replace(/\D/g, '').length < 10)) {
-                      alert('Please enter a valid 10-digit mobile number for WhatsApp updates.');
-                      return;
-                    }
-                    if (editMethod === 'email' && (!editEmail || !editEmail.includes('@') || !editEmail.includes('.'))) {
-                      alert('Please enter a valid email address.');
-                      return;
-                    }
-
-                    const updatedProfile = {
-                      name: editName.trim(),
-                      phone: editPhone ? editPhone.replace(/[^\d+]/g, '') : '',
-                      email: editEmail.trim() || undefined,
-                      verificationMethod: editMethod,
-                      address: editAddress.trim() || undefined
-                    };
-
-                    localStorage.setItem('fg_customer_profile', JSON.stringify(updatedProfile));
-                    setCurrentUser(updatedProfile);
-                    setProfileSuccessMsg('🎉 Profile details saved successfully!');
-                    setTimeout(() => setProfileSuccessMsg(''), 4000);
-                  }}
-                  className="space-y-4"
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Full Name *</label>
-                      <input
-                        type="text"
-                        required
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        className="w-full text-xs font-bold px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
-                        placeholder="e.g. John Doe"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Verification Option *</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditMethod('whatsapp')}
-                          className={`py-3 text-xs font-black rounded-xl border flex items-center justify-center gap-1.5 transition-all ${
-                            editMethod === 'whatsapp'
-                              ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
-                              : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                          }`}
-                        >
-                          📲 WhatsApp
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditMethod('email')}
-                          className={`py-3 text-xs font-black rounded-xl border flex items-center justify-center gap-1.5 transition-all ${
-                            editMethod === 'email'
-                              ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
-                              : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                          }`}
-                        >
-                          📧 Email
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400 font-bold">
-                        WhatsApp Mobile {editMethod === 'whatsapp' && '*'}
-                      </label>
+                      <label className="text-[9px] font-bold text-slate-400 block uppercase">Email Address</label>
                       <div className="relative">
-                        <span className="absolute left-3.5 top-3 text-xs font-black text-slate-400">🇮🇳 +91</span>
-                        <input
-                          type="tel"
-                          required={editMethod === 'whatsapp'}
-                          maxLength={10}
-                          value={editPhone}
-                          onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, ''))}
-                          className="w-full text-xs font-bold pl-12.5 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-mono"
-                          placeholder="WhatsApp number..."
+                        <Mail className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+                        <input 
+                          type="email"
+                          required
+                          placeholder="shopper@farmersgate.com"
+                          value={authEmail}
+                          onChange={e => setAuthEmail(e.target.value)}
+                          className="w-full text-xs font-bold pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
                         />
                       </div>
                     </div>
 
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-400 block uppercase">Account Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+                        <input 
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={authPassword}
+                          onChange={e => setAuthPassword(e.target.value)}
+                          className="w-full text-xs font-bold pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    {authMode === 'register' && (
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-400 block uppercase">Delivery Location Address</label>
+                        <input 
+                          type="text"
+                          required
+                          placeholder="e.g. 402, Green Meadows, Sector 4, Bangalore"
+                          value={authAddress}
+                          onChange={e => setAuthAddress(e.target.value)}
+                          className="w-full text-xs font-bold px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl uppercase tracking-wider cursor-pointer shadow-md transition-all"
+                    >
+                      {authMode === 'login' ? '🔐 Sign In Account' : '📝 Create Shopper Account'}
+                    </button>
+                  </form>
+
+                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 border-t border-slate-100 pt-3">
+                    <button 
+                      onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                      className="text-emerald-600 hover:underline cursor-pointer"
+                    >
+                      {authMode === 'login' ? 'Create new account instead?' : 'Already have account? Sign In'}
+                    </button>
+                  </div>
+
+                  {/* Preloaded Demo Buttons to skip login typing */}
+                  <div className="border-t border-slate-100 pt-4 space-y-2">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block text-center">⚡ INSTANT DEMO BYPASS</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button 
+                        onClick={() => handleInstantGuestLogin('customer')}
+                        className="py-2.5 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-xl cursor-pointer uppercase"
+                      >
+                        🛍️ Shopper Access
+                      </button>
+                      <button 
+                        onClick={() => handleInstantGuestLogin('partner')}
+                        className="py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-emerald-400 text-[10px] font-black rounded-xl cursor-pointer uppercase"
+                      >
+                        🏍️ Partner Rider Access
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Authenticated Profile view */
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-emerald-950 text-emerald-400 font-black flex items-center justify-center text-lg shadow-sm border border-emerald-800">
+                        {authName.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-sm leading-none">{authName}</h4>
+                        <span className="inline-block text-[8px] font-black uppercase text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded mt-1">
+                          Verified Sourced Shopper
+                        </span>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={handleSignOut}
+                      className="p-2 bg-slate-50 border border-slate-200 hover:bg-red-50 hover:text-red-600 rounded-xl text-slate-400 cursor-pointer"
+                    >
+                      <LogOut className="h-4.5 w-4.5" />
+                    </button>
+                  </div>
+
+                  {/* Digital Wallet Box */}
+                  <div className="p-4 bg-emerald-950 text-white rounded-2xl flex justify-between items-center shadow-md">
                     <div className="space-y-1">
-                      <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400 font-bold">
-                        Email Address {editMethod === 'email' && '*'}
-                      </label>
-                      <input
-                        type="email"
-                        required={editMethod === 'email'}
-                        value={editEmail}
-                        onChange={(e) => setEditEmail(e.target.value)}
-                        className="w-full text-xs font-bold px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
-                        placeholder="e.g. name@domain.com"
-                      />
+                      <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest block">FarmersGate Wallet Balance</span>
+                      <p className="text-xl font-black font-mono">₹{walletBalance.toFixed(2)}</p>
+                    </div>
+                    <div className="p-3 bg-emerald-900/60 rounded-xl">
+                      <Wallet className="h-6 w-6 text-emerald-400 animate-pulse" />
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Delivery Location Address</label>
-                    <textarea
-                      value={editAddress}
-                      onChange={(e) => setEditAddress(e.target.value)}
-                      rows={2.5}
-                      className="w-full text-xs font-semibold px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
-                      placeholder="e.g. Flat 302, Royal Gardens, Sector 45..."
-                    />
-                  </div>
+                  {/* Update Delivery Address Form */}
+                  <form onSubmit={handleSaveProfile} className="space-y-4 text-left">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Default Dispatch Profile</span>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 block uppercase">Name</label>
+                        <input 
+                          type="text"
+                          required
+                          value={authName}
+                          onChange={e => setAuthName(e.target.value)}
+                          className="w-full text-xs font-bold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 block uppercase">Phone Number</label>
+                        <input 
+                          type="text"
+                          required
+                          value={authPhone}
+                          onChange={e => setAuthPhone(e.target.value)}
+                          className="w-full text-xs font-bold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
+                        />
+                      </div>
+                    </div>
 
-                  <button
-                    type="submit"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3.5 rounded-xl text-xs shadow-md shadow-emerald-200 transition-all uppercase tracking-wider cursor-pointer"
-                  >
-                    Save Profile Changes
-                  </button>
-                </form>
-              </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 block uppercase">GPS Delivery Street Address</label>
+                      <input 
+                        type="text"
+                        required
+                        value={customAddress}
+                        onChange={e => setCustomAddress(e.target.value)}
+                        className="w-full text-xs font-bold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
+                      />
+                    </div>
 
-            </div>
-          )}
-        </div>
-      )}
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl uppercase tracking-wider cursor-pointer shadow-3xs"
+                    >
+                      Save Dispatch Details
+                    </button>
+                  </form>
 
-      {/* --- CHECKOUT MODAL --- */}
-      {isCheckoutOpen && currentUser && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">
-            
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-900 text-white">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🛍️</span>
-                <div>
-                  <h3 className="font-extrabold text-sm tracking-tight">Checkout Harvest Bill</h3>
-                  <p className="text-[10px] text-slate-300">Farmer's Gate Online Instant Checkout</p>
-                </div>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setIsCheckoutOpen(false)}
-                className="text-slate-400 hover:text-white text-sm font-black p-1 bg-slate-800 rounded-lg h-7 w-7 flex items-center justify-center cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Space-Saving Compact List */}
-            <div className="p-4 bg-slate-50 border-b border-slate-200/60 space-y-3 shrink-0">
-              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">
-                Farmed Produce Selected (Liner Format)
-              </span>
-              
-              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-white rounded-xl border border-slate-200/50 text-left">
-                {(Object.values(cart) as { quantity: number; item: InventoryItem }[]).map((c, i) => (
-                  <span 
-                    key={i} 
-                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-extrabold text-slate-800"
-                  >
-                    <span>{getVegEmoji(c.item.vegetableName)}</span>
-                    <span className="truncate max-w-[120px]">{c.item.vegetableName}</span>
-                    <span className="text-emerald-700 font-mono">({c.quantity} kg)</span>
-                  </span>
-                ))}
-              </div>
-
-              <div className="flex items-center justify-between pt-1 font-black text-slate-900">
-                <span className="text-xs">Subtotal Amount:</span>
-                <span className="text-base text-emerald-600">₹{cartSubtotal.toFixed(2)}</span>
-              </div>
-            </div>
-
-            {/* Profile Confirmation & Custom notes Form */}
-            <form onSubmit={handlePlaceOrderSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-left">
-              
-              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl space-y-2">
-                <span className="text-[9px] font-black text-emerald-800 uppercase tracking-widest block">DELIVERING TO ACCOUNT</span>
-                
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-slate-400 block text-[9px] font-bold uppercase">NAME</span>
-                    <span className="font-extrabold text-slate-800">{currentUser.name}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[9px] font-bold uppercase">MOBILE</span>
-                    <span className="font-mono font-extrabold text-slate-800">+{currentUser.phone}</span>
+                  {/* Past orders receipts history */}
+                  <div className="space-y-2 border-t border-slate-100 pt-4">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Past Dispatch Receipts</span>
+                    {customerOrders.length === 0 ? (
+                      <p className="text-slate-400 italic text-xs">No registered receipts under this account yet.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {customerOrders.map(order => (
+                          <div 
+                            key={order.id} 
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setActiveTab('track');
+                            }}
+                            className="p-3 bg-slate-50 border border-slate-200 hover:border-emerald-500/30 rounded-xl flex justify-between items-center cursor-pointer transition-all text-xs"
+                          >
+                            <div>
+                              <span className="font-bold text-slate-700 block">Ticket #{order.orderNumber}</span>
+                              <span className="text-[9px] text-slate-400 font-medium">{order.items.length} Sourced items • ₹{order.finalPaid}</span>
+                            </div>
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 uppercase">
+                              {order.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                <div className="pt-2 border-t border-emerald-100/70">
-                  <span className="text-slate-400 block text-[9px] font-bold uppercase">DELIVERY ADDRESS</span>
-                  <span className="font-semibold text-slate-700 text-xs block">
-                    {currentUser.address || 'No default address configured. Update profile to add address.'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Driver Instructions / Delivery Note (Optional)</label>
-                <textarea
-                  placeholder="e.g. Leave with security guard, knock on door, call on delivery..."
-                  value={checkoutNotes}
-                  onChange={e => setCheckoutNotes(e.target.value)}
-                  rows={2.5}
-                  className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
-                />
-              </div>
-
-              <p className="text-[10px] text-slate-400 leading-normal">
-                By clicking "CONFIRM & DISPATCH", your order is assigned to a nearby courier immediately. We guarantee lightning-fast arrival!
-              </p>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCheckoutOpen(false)}
-                  className="flex-1 bg-white border border-slate-250 hover:bg-slate-50 text-slate-500 font-extrabold py-2.5 rounded-xl text-xs uppercase"
-                >
-                  Go Back
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2.5 rounded-xl text-xs shadow-md shadow-emerald-200 transition-all flex items-center justify-center gap-1.5 uppercase cursor-pointer"
-                >
-                  CONFIRM & DISPATCH <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-
-            </form>
-
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
+      </div>
     </div>
   );
 }
