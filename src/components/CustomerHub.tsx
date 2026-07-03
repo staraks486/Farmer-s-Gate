@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { jsPDF } from 'jspdf';
 import { Store, InventoryItem, CustomerOrder, CustomerOrderItem, StorefrontAd } from '../types';
 import { 
   ShoppingCart, 
@@ -19,7 +20,9 @@ import {
   ChevronRight, 
   LogOut, 
   UserCheck, 
-  Map 
+  Map,
+  FileText,
+  Share2
 } from 'lucide-react';
 
 interface CustomerHubProps {
@@ -108,6 +111,228 @@ export default function CustomerHub({
   // Track tab state
   const [trackPhoneInput, setTrackPhoneInput] = useState(currentUser?.phone || '');
   const [searchPhoneQuery, setSearchPhoneQuery] = useState(currentUser?.phone || '');
+  
+  // Selected orders for PDF billing
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+
+  const handleToggleSelectOrder = (orderId: string) => {
+    setSelectedOrderIds(prev => 
+      prev.includes(orderId) 
+        ? prev.filter(id => id !== orderId) 
+        : [...prev, orderId]
+    );
+  };
+
+  const generateBillPDF = (ordersToBill: CustomerOrder[]) => {
+    if (ordersToBill.length === 0) return;
+    
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    doc.setFont('Helvetica', 'normal');
+
+    // Branding colors (Emerald Theme)
+    const primaryColor = [16, 185, 129]; 
+    const secondaryColor = [71, 85, 105]; 
+    const darkGray = [30, 41, 59];
+    const lightGray = [241, 245, 249];
+
+    // Main Header Band
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.rect(0, 0, 210, 38, 'F');
+
+    // Header Content
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.setFont('Helvetica', 'bold');
+    doc.text("FARMER'S GATE ONLINE", 15, 16);
+
+    doc.setFontSize(9);
+    doc.setFont('Helvetica', 'normal');
+    doc.text("10-Minute Farm-Fresh Instant Grocery Dispatch", 15, 22);
+    doc.text("Email: orders@farmersgate.com | Web: farmersgate.online", 15, 27);
+    doc.text("Tel: +91 99999 88888", 15, 32);
+
+    doc.setFontSize(14);
+    doc.setFont('Helvetica', 'bold');
+    doc.text("TAX INVOICE / RECEIPT", 145, 16);
+    
+    doc.setFontSize(8);
+    doc.setFont('Helvetica', 'normal');
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 145, 22);
+
+    let y = 48;
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+
+    // Customer Information
+    doc.setFontSize(10);
+    doc.setFont('Helvetica', 'bold');
+    doc.text("BILL TO (CUSTOMER DETAILS):", 15, y);
+    doc.setFont('Helvetica', 'normal');
+    doc.text(`Customer Name : ${ordersToBill[0]?.customerName || 'Fresh Customer'}`, 15, y + 6);
+    doc.text(`Contact Phone : +91 ${ordersToBill[0]?.customerPhone || ''}`, 15, y + 12);
+    if (ordersToBill[0]?.customerAddress) {
+      const splitAddr = doc.splitTextToSize(`Delivery Addr : ${ordersToBill[0].customerAddress}`, 95);
+      doc.text(splitAddr, 15, y + 18);
+    }
+
+    // Invoice Meta Information
+    doc.setFont('Helvetica', 'bold');
+    doc.text("METADATA & DETAILS:", 130, y);
+    doc.setFont('Helvetica', 'normal');
+    
+    const storeId = ordersToBill[0]?.storeId || '';
+    const store = stores.find(s => s.id === storeId);
+    const outletName = store ? store.name.replace("Farmer's Gate - ", "") : 'Local Branch';
+    
+    doc.text(`Invoices Linked : ${ordersToBill.length === 1 ? ordersToBill[0].orderNumber : `${ordersToBill.length} Orders`}`, 130, y + 6);
+    doc.text(`Fulfillment Outlet : ${outletName}`, 130, y + 12);
+    doc.text(`Payment Status : PAID (UPI / Wallet)`, 130, y + 18);
+    doc.text(`Fulfillment Mode : Instant Delivery`, 130, y + 24);
+
+    // Order item rows table
+    y = 86;
+    doc.setFillColor(lightGray[0], lightGray[1], lightGray[2]);
+    doc.rect(15, y, 180, 8, 'F');
+    
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+    doc.text("SL.", 18, y + 5.5);
+    doc.text("FARM PRODUCE ITEM DESCRIPTION", 30, y + 5.5);
+    doc.text("RATE / KG", 110, y + 5.5);
+    doc.text("DELIVERED QTY", 140, y + 5.5);
+    doc.text("TOTAL (INR)", 170, y + 5.5);
+
+    y += 8;
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+
+    // Consolidate items
+    const consolidatedItems: { [name: string]: { quantity: number; pricePerKg: number; totalPrice: number } } = {};
+    ordersToBill.forEach(order => {
+      order.items.forEach(item => {
+        if (consolidatedItems[item.vegetableName]) {
+          consolidatedItems[item.vegetableName].quantity += item.quantity;
+          consolidatedItems[item.vegetableName].totalPrice += item.totalPrice;
+        } else {
+          consolidatedItems[item.vegetableName] = {
+            quantity: item.quantity,
+            pricePerKg: item.pricePerKg,
+            totalPrice: item.totalPrice
+          };
+        }
+      });
+    });
+
+    let index = 1;
+    let subtotal = 0;
+
+    Object.entries(consolidatedItems).forEach(([vegName, details]) => {
+      if (index % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(15, y, 180, 8, 'F');
+      }
+
+      doc.text(String(index).padStart(2, '0'), 18, y + 5.5);
+      doc.text(vegName.toUpperCase(), 30, y + 5.5);
+      doc.text(`Rs. ${details.pricePerKg.toFixed(2)}`, 110, y + 5.5);
+      doc.text(`${details.quantity.toFixed(2)} kg`, 140, y + 5.5);
+      doc.text(`Rs. ${details.totalPrice.toFixed(2)}`, 170, y + 5.5);
+
+      subtotal += details.totalPrice;
+      y += 8;
+      index++;
+    });
+
+    // Totals line
+    y += 3;
+    doc.setDrawColor(226, 232, 240);
+    doc.line(15, y, 195, y);
+
+    y += 5;
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text("SUBTOTAL:", 120, y);
+    doc.setFont('Helvetica', 'normal');
+    doc.text(`Rs. ${subtotal.toFixed(2)}`, 170, y);
+
+    y += 6;
+    doc.setFont('Helvetica', 'bold');
+    doc.text("DELIVERY CHARGES:", 120, y);
+    doc.setTextColor(16, 185, 129);
+    doc.text("FREE (INSTANT)", 170, y);
+
+    y += 6;
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    doc.text("GRAND TOTAL AMOUNT:", 120, y);
+    doc.setFontSize(12);
+    doc.setTextColor(16, 185, 129);
+    doc.text(`Rs. ${subtotal.toFixed(2)}`, 170, y);
+
+    // Footer lines
+    y = Math.max(y + 22, 238);
+    doc.setDrawColor(16, 185, 129);
+    doc.setLineWidth(0.5);
+    doc.line(15, y, 195, y);
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text("Terms: High-speed delivery from branch storage is finalized immediately upon grading.", 15, y + 5);
+    doc.text("For any weight or grading issues, contact direct support inside your Customer Profile tab.", 15, y + 9);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(16, 185, 129);
+    doc.text("Thank you for shopping local & supporting sustainable Indian farm-to-table logistics!", 15, y + 14);
+
+    // Signature/Bottom Brand Banner
+    doc.setFillColor(16, 185, 129);
+    doc.rect(0, 287, 210, 10, 'F');
+
+    // Save PDF
+    const filename = ordersToBill.length === 1 
+      ? `FarmersGate_Invoice_${ordersToBill[0].orderNumber}.pdf` 
+      : `FarmersGate_Consolidated_Bill_${Date.now()}.pdf`;
+    
+    doc.save(filename);
+  };
+
+  const handleShareWhatsAppForOrders = (ordersToShare: CustomerOrder[]) => {
+    if (ordersToShare.length === 0) return;
+    const orderNumbers = ordersToShare.map(o => o.orderNumber).join(', ');
+    const total = ordersToShare.reduce((sum, o) => sum + o.totalAmount, 0);
+    
+    let message = `🌱 *FARMER'S GATE ONLINE - INSTANT BILL INVOICE* 🌱\n\n`;
+    message += `👤 *Customer Name:* ${ordersToShare[0].customerName}\n`;
+    message += `📞 *Registered Phone:* +91 ${ordersToShare[0].customerPhone}\n`;
+    message += `🧾 *Invoice Number(s):* ${orderNumbers}\n`;
+    message += `📅 *Billing Date:* ${new Date().toLocaleDateString(undefined, { dateStyle: 'long' })}\n\n`;
+    message += `🛒 *Consolidated Items:*\n`;
+
+    const consolidated: { [name: string]: number } = {};
+    ordersToShare.forEach(o => {
+      o.items.forEach(item => {
+        consolidated[item.vegetableName] = (consolidated[item.vegetableName] || 0) + item.quantity;
+      });
+    });
+
+    Object.entries(consolidated).forEach(([name, qty]) => {
+      message += `• ${name.toUpperCase()}: *${qty.toFixed(2)} kg*\n`;
+    });
+
+    message += `\n💵 *Grand Total:* ₹${total.toFixed(2)} (Delivery: *FREE*)\n`;
+    if (ordersToShare[0].customerAddress) {
+      message += `📍 *Delivery Address:* ${ordersToShare[0].customerAddress}\n`;
+    }
+    message += `\n⚡ _Your 10-minute farm-fresh vegetable delivery has been completed successfully! Thank you for ordering from Farmer's Gate Online._`;
+
+    const encoded = encodeURIComponent(message);
+    const url = `https://api.whatsapp.com/send?text=${encoded}`;
+    window.open(url, '_blank');
+  };
 
   // Get active inventory for the selected store
   const storeInventory = inventory.filter(item => item.storeId === selectedStoreId && item.quantity > 0);
@@ -1084,24 +1309,35 @@ export default function CustomerHub({
                   {trackedOrders.map(order => {
                     const statusSteps = ['Pending', 'Processing', 'Ready', 'Completed'];
                     const currentStepIdx = statusSteps.indexOf(order.status);
+                    const isSelected = selectedOrderIds.includes(order.id);
                     
                     return (
-                      <div key={order.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-5">
+                      <div key={order.id} className={`bg-white border rounded-2xl shadow-sm p-5 space-y-5 transition-all ${
+                        isSelected ? 'border-emerald-600 ring-2 ring-emerald-600/10' : 'border-slate-200'
+                      }`}>
                         
                         {/* Order Header */}
-                        <div className="flex items-center justify-between border-b border-slate-150 pb-3">
-                          <div>
-                            <span className="font-mono text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-lg">
-                              {order.orderNumber}
-                            </span>
-                            <span className="text-[10px] text-slate-400 block mt-2 font-semibold uppercase tracking-wide">
-                              Placed: {new Date(order.orderDate).toLocaleDateString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                            </span>
+                        <div className="flex items-start justify-between border-b border-slate-150 pb-3">
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectOrder(order.id)}
+                              className="h-4.5 w-4.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <div>
+                              <span className="font-mono text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-lg">
+                                {order.orderNumber}
+                              </span>
+                              <span className="text-[10px] text-slate-400 block mt-2 font-semibold uppercase tracking-wide">
+                                Placed: {new Date(order.orderDate).toLocaleDateString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="text-right">
                             <span className="text-[9px] text-slate-400 block uppercase tracking-wider font-extrabold">Instant Total Due</span>
-                            <span className="text-base font-black text-slate-900">₹{order.totalAmount.toFixed(2)}</span>
+                            <span className="text-base font-black text-slate-900 font-mono">₹{order.totalAmount.toFixed(2)}</span>
                           </div>
                         </div>
 
@@ -1165,8 +1401,26 @@ export default function CustomerHub({
                           )}
                         </div>
 
-                        {(order.status === 'Pending' || order.status === 'Processing') && onUpdateOrder && (
-                          <div className="pt-2 flex justify-end">
+                        {/* Order Action Buttons Footer */}
+                        <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2 justify-between items-center">
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => generateBillPDF([order])}
+                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all"
+                            >
+                              <FileText className="h-3.5 w-3.5" /> PDF Bill
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleShareWhatsAppForOrders([order])}
+                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all"
+                            >
+                              <Share2 className="h-3.5 w-3.5" /> Share Bill
+                            </button>
+                          </div>
+                          
+                          {(order.status === 'Pending' || order.status === 'Processing') && onUpdateOrder && (
                             <button
                               type="button"
                               onClick={async () => {
@@ -1191,16 +1445,57 @@ export default function CustomerHub({
                                   alert('Failed to cancel order. Please try again.');
                                 }
                               }}
-                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer transition-all flex items-center gap-1 shadow-3xs"
+                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer transition-all flex items-center gap-1 shadow-3xs"
                             >
-                              <span>🚫</span> Cancel Order
+                              🚫 Cancel Order
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
 
                       </div>
                     );
                   })}
+
+                  {/* Sticky Selected Orders Summary Billing Panel */}
+                  {selectedOrderIds.length > 0 && (
+                    <div className="sticky bottom-4 z-50 bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-850 flex flex-col sm:flex-row items-center justify-between gap-4 animate-scale-in">
+                      <div className="flex items-center gap-3 text-left w-full sm:w-auto">
+                        <span className="text-2xl">🧾</span>
+                        <div>
+                          <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Bulk Invoice Generator</h4>
+                          <p className="text-xs font-bold text-white mt-0.5">
+                            {selectedOrderIds.length} {selectedOrderIds.length === 1 ? 'Order' : 'Orders'} Selected
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 w-full sm:w-auto">
+                        <button
+                          onClick={() => setSelectedOrderIds([])}
+                          className="flex-1 sm:flex-none px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer uppercase tracking-wider"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          onClick={() => {
+                            const selectedOrdersList = trackedOrders.filter(o => selectedOrderIds.includes(o.id));
+                            generateBillPDF(selectedOrdersList);
+                          }}
+                          className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl transition-all cursor-pointer uppercase tracking-wider shadow-md flex items-center justify-center gap-1.5"
+                        >
+                          <FileText className="h-3.5 w-3.5" /> Download PDF
+                        </button>
+                        <button
+                          onClick={() => {
+                            const selectedOrdersList = trackedOrders.filter(o => selectedOrderIds.includes(o.id));
+                            handleShareWhatsAppForOrders(selectedOrdersList);
+                          }}
+                          className="flex-1 sm:flex-none px-4 py-2 bg-[#25D366] hover:bg-[#20BA5A] text-white text-xs font-black rounded-xl transition-all cursor-pointer uppercase tracking-wider shadow-md flex items-center justify-center gap-1.5"
+                        >
+                          <Share2 className="h-3.5 w-3.5" /> WhatsApp Share
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
