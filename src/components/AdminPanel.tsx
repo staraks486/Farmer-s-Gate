@@ -1545,6 +1545,51 @@ export default function AdminPanel({
                 </button>
               </div>
 
+              {/* Toggle Ecosystem Intro */}
+              <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-100/70">
+                <div className="space-y-0.5 text-left">
+                  <span className="block text-xs font-bold text-zinc-800">Skip Ecosystem Intro</span>
+                  <span className="block text-[9px] text-zinc-400">Bypass the visual intro screen on application boot.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUpdateCpanelSettings({ 
+                    ...cpanelSettings, 
+                    disableLoadingIntro: !cpanelSettings.disableLoadingIntro 
+                  })}
+                  className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+                    cpanelSettings.disableLoadingIntro ? 'bg-emerald-600' : 'bg-zinc-300'
+                  }`}
+                >
+                  <span className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${
+                    cpanelSettings.disableLoadingIntro ? 'left-6' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+
+              {/* Intro Duration Slider */}
+              {!cpanelSettings.disableLoadingIntro && (
+                <div className="space-y-2 p-2.5 bg-zinc-50 rounded-xl border border-zinc-100/70 text-left animate-fade-in">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="block text-xs font-bold text-zinc-850">Intro Loader Duration</span>
+                    <span className="font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">{(cpanelSettings.introSpeedSeconds || 4)}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value={cpanelSettings.introSpeedSeconds || 4}
+                    onChange={(e) => onUpdateCpanelSettings({ 
+                      ...cpanelSettings, 
+                      introSpeedSeconds: parseInt(e.target.value) || 4
+                    })}
+                    className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                  />
+                  <span className="block text-[9px] text-zinc-400 leading-tight">Controls the organic synchronization loading speed on app start.</span>
+                </div>
+              )}
+
               {/* Auto reorder threshold slider */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-xs">

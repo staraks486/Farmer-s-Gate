@@ -80,7 +80,9 @@ const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   whatsappMessageTemplate: 'Dear {customer_name}, Your order of {order_summary} is ready!',
   enableCustomerOrderReview: true,
   enableMultipleRegisters: true,
-  quickDemoDataEnabled: true
+  quickDemoDataEnabled: true,
+  disableLoadingIntro: false,
+  introSpeedSeconds: 4
 };
 
 export default function ManagementSuite() {

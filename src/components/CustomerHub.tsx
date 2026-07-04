@@ -47,6 +47,7 @@ import {
   User as FirebaseUser
 } from 'firebase/auth';
 import { getVegEmoji, availableCoupons } from './customer/customerData';
+import RecipeGuide from './customer/RecipeGuide';
 
 export default function CustomerHub() {
   const [activeTab, setActiveTab] = useState<'shop' | 'track' | 'profile'>('shop');
@@ -197,22 +198,32 @@ export default function CustomerHub() {
   };
 
   // Cart Management
-  const handleAddToCart = (id: string, step = 1) => {
+  const getUnitStep = (unit: string): number => {
+    if (unit === 'kg') return 0.25;
+    if (unit === 'g') return 50;
+    return 1;
+  };
+
+  const handleAddToCart = (id: string, step?: number) => {
     const p = products.find(prod => prod.id === id);
     if (!p || p.stock <= 0) return;
     
+    const actualStep = step !== undefined ? step : getUnitStep(p.unit);
     setCart(prev => {
       const cur = prev[id] || 0;
-      const next = cur + step;
+      const next = parseFloat((cur + actualStep).toFixed(2));
       if (next > p.stock) return prev; // check stock limits
       return { ...prev, [id]: next };
     });
   };
 
-  const handleDecreaseCart = (id: string, step = 1) => {
+  const handleDecreaseCart = (id: string, step?: number) => {
+    const p = products.find(prod => prod.id === id);
+    if (!p) return;
+    const actualStep = step !== undefined ? step : getUnitStep(p.unit);
     setCart(prev => {
       const cur = prev[id] || 0;
-      const next = cur - step;
+      const next = parseFloat((cur - actualStep).toFixed(2));
       if (next <= 0) {
         const copy = { ...prev };
         delete copy[id];
@@ -519,7 +530,7 @@ export default function CustomerHub() {
               
               {/* Category selector row */}
               <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-                {['All', 'Vegetable', 'Fruit', 'Herbs', 'Grocery'].map((cat) => (
+                {['All', 'Vegetable', 'Fruit', 'Herbs', 'Grocery', 'Recipes'].map((cat) => (
                   <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
@@ -529,25 +540,33 @@ export default function CustomerHub() {
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    {cat === 'All' ? '📂 All Sourced' : cat}
+                    {cat === 'All' ? '📂 All Sourced' : cat === 'Recipes' ? '🍳 Fresh Recipes' : cat}
                   </button>
                 ))}
               </div>
 
               {/* Live search input */}
-              <div className="relative">
-                <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Sift through premium organic onions, gala apples, fresh mint bunch..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 text-xs font-semibold shadow-3xs"
-                />
-              </div>
+              {selectedCategory !== 'Recipes' && (
+                <div className="relative animate-fade-in">
+                  <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Sift through premium organic onions, gala apples, fresh mint bunch..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 text-xs font-semibold shadow-3xs"
+                  />
+                </div>
+              )}
 
-              {/* Sourced items grid list */}
-              {loadingProducts ? (
+              {/* Recipes or Sourced items grid list */}
+              {selectedCategory === 'Recipes' ? (
+                <RecipeGuide
+                  products={products}
+                  cart={cart}
+                  onAddToCart={handleAddToCart}
+                />
+              ) : loadingProducts ? (
                 <div className="bg-white rounded-3xl p-16 text-center border border-slate-200 shadow-3xs flex flex-col items-center justify-center gap-3">
                   <RefreshCw className="h-6 w-6 text-emerald-600 animate-spin" />
                   <p className="text-xs font-bold text-slate-500">Harvesting fresh catalog information from FarmersGate...</p>
@@ -586,10 +605,6 @@ export default function CustomerHub() {
                               <span className="text-sm font-black text-slate-900 font-mono">₹{item.sellingPrice}</span>
                               <span className="text-[10px] text-slate-400 font-semibold">/{item.unit}</span>
                             </div>
-                            <div className="text-right">
-                              <p className="text-[7.5px] font-black uppercase tracking-wider text-slate-400">STOCK LEFT</p>
-                              <span className="text-[10px] font-bold text-slate-500">{item.stock} {item.unit}</span>
-                            </div>
                           </div>
                         </div>
 
@@ -603,15 +618,39 @@ export default function CustomerHub() {
                               <button
                                 type="button"
                                 onClick={() => handleDecreaseCart(item.id)}
-                                className="h-6 w-6 rounded-lg bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer"
+                                className="h-6 w-6 rounded-lg bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer animate-fade-in"
                               >
                                 <Minus className="h-3 w-3" />
                               </button>
-                              <span className="text-xs font-black font-mono px-2">{qtyInCart}</span>
+                              
+                              <div className="flex items-center justify-center gap-0.5">
+                                <input
+                                  type="number"
+                                  step={getUnitStep(item.unit)}
+                                  min="0.01"
+                                  value={qtyInCart}
+                                  onChange={(e) => {
+                                    const val = parseFloat(parseFloat(e.target.value).toFixed(2)) || 0;
+                                    if (val <= 0) {
+                                      setCart(prev => {
+                                        const copy = { ...prev };
+                                        delete copy[item.id];
+                                        return copy;
+                                      });
+                                    } else {
+                                      const limitedVal = Math.min(val, item.stock);
+                                      setCart(prev => ({ ...prev, [item.id]: limitedVal }));
+                                    }
+                                  }}
+                                  className="w-11 bg-emerald-900 text-white text-[11px] font-black font-mono text-center rounded focus:outline-none focus:ring-1 focus:ring-emerald-400 py-0.5 border-none"
+                                />
+                                <span className="text-[8px] font-bold text-emerald-300 select-none lowercase">{item.unit}</span>
+                              </div>
+
                               <button
                                 type="button"
                                 onClick={() => handleAddToCart(item.id)}
-                                className="h-6 w-6 rounded-lg bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer"
+                                className="h-6 w-6 rounded-lg bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer animate-fade-in"
                               >
                                 <Plus className="h-3 w-3" />
                               </button>
@@ -669,7 +708,7 @@ export default function CustomerHub() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="font-black font-mono text-emerald-700 text-[11px]">
-                              {quantity}x • ₹{item.sellingPrice * quantity}
+                              {quantity} {item.unit} • ₹{(item.sellingPrice * quantity).toFixed(2)}
                             </span>
                             <button 
                               onClick={() => handleDecreaseCart(item.id)}

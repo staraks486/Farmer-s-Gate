@@ -21,7 +21,20 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 export default function App() {
   const [activePortal, setActivePortal] = useState<'customer' | 'partner' | 'management'>('customer');
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [showIntro, setShowIntro] = useState(true);
+  const [showIntro, setShowIntro] = useState(() => {
+    try {
+      const localSettings = localStorage.getItem('farmersgate_cpanel_settings');
+      if (localSettings) {
+        const parsed = JSON.parse(localSettings);
+        if (parsed && parsed.disableLoadingIntro) {
+          return false;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return true;
+  });
   const [progress, setProgress] = useState(0);
   const [statusIndex, setStatusIndex] = useState(0);
 
@@ -36,15 +49,32 @@ export default function App() {
   useEffect(() => {
     if (!showIntro) return;
 
-    // Slow, premium, organic loading bar progress
+    let seconds = 4;
+    try {
+      const localSettings = localStorage.getItem('farmersgate_cpanel_settings');
+      if (localSettings) {
+        const parsed = JSON.parse(localSettings);
+        if (parsed && typeof parsed.introSpeedSeconds === 'number') {
+          seconds = parsed.introSpeedSeconds;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    const intervalMs = 50;
+    const totalTicks = (seconds * 1000) / intervalMs;
+    const stepPerTick = 100 / totalTicks;
+
     const timer = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) {
           clearInterval(timer);
           return 100;
         }
-        const step = Math.floor(Math.random() * 3) + 2; // slow, luxurious pacing
-        const nextProgress = Math.min(prev + step, 100);
+        const variation = (Math.random() * 0.4 + 0.8); // slight organic variation
+        const actualStep = stepPerTick * variation;
+        const nextProgress = Math.min(prev + actualStep, 100);
         
         const calculatedIndex = Math.min(
           Math.floor((nextProgress / 100) * statuses.length),
@@ -56,17 +86,17 @@ export default function App() {
 
         return nextProgress;
       });
-    }, 120);
+    }, intervalMs);
 
     return () => clearInterval(timer);
   }, [showIntro, statusIndex]);
 
   // Clean, seamless auto-transition when loading completes
   useEffect(() => {
-    if (progress === 100) {
+    if (progress >= 100) {
       const delay = setTimeout(() => {
         setShowIntro(false);
-      }, 900); // Elegant 900ms pause to show fully-loaded operational state
+      }, 700); // Sleek 700ms pause to show completed operational status
       return () => clearTimeout(delay);
     }
   }, [progress]);
@@ -98,7 +128,7 @@ export default function App() {
           transition={{ duration: 0.5, ease: "easeInOut" }}
         >
           {/* Animated decorative grid background */}
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#022c22_1px,transparent_1px),linear-gradient(to_bottom,#022c22_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-35" />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#022c22_1px,transparent_1px),linear-gradient(to_bottom,#022c22_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-[0.12]" />
 
           <div className="relative z-10 max-w-sm w-full flex flex-col items-center text-center">
             {/* Pulsing Animated Emblem Container */}
@@ -117,18 +147,18 @@ export default function App() {
               
               {/* Spinning dotted ring */}
               <motion.div 
-                className="absolute -inset-2 rounded-full border border-dashed border-emerald-500/20"
+                className="absolute -inset-2 rounded-full border border-dashed border-emerald-500/10"
                 animate={{ rotate: 360 }}
-                transition={{ repeat: Infinity, duration: 16, ease: "linear" }}
+                transition={{ repeat: Infinity, duration: 20, ease: "linear" }}
               />
 
               {/* Inner solid ring */}
-              <div className="h-20 w-20 rounded-full bg-emerald-950/90 border border-emerald-500/40 flex items-center justify-center shadow-[0_0_25px_rgba(16,185,129,0.15)]">
+              <div className="h-20 w-20 rounded-full bg-emerald-950/90 border border-emerald-500/30 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.1)]">
                 <motion.div
-                  animate={progress >= 100 ? { scale: [1, 1.1, 1], rotate: 360 } : { y: [0, -2, 0] }}
-                  transition={progress >= 100 ? { duration: 0.4 } : { repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                  animate={Math.round(progress) >= 100 ? { scale: [1, 1.1, 1], rotate: 360 } : { y: [0, -2, 0] }}
+                  transition={Math.round(progress) >= 100 ? { duration: 0.4 } : { repeat: Infinity, duration: 2, ease: "easeInOut" }}
                 >
-                  {progress >= 100 ? (
+                  {Math.round(progress) >= 100 ? (
                     <Check className="h-10 w-10 text-emerald-400 stroke-[3.5]" />
                   ) : (
                     <Sprout className="h-10 w-10 text-emerald-400" />
@@ -160,13 +190,13 @@ export default function App() {
             <div className="w-full px-2 mb-6">
               <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
                 <span className="text-left max-w-[220px] truncate transition-all duration-200">{statuses[statusIndex]}</span>
-                <span className="text-emerald-400 font-mono text-[10px]">{progress}%</span>
+                <span className="text-emerald-400 font-mono text-[10px]">{Math.round(progress)}%</span>
               </div>
               
               <div className="h-1 w-full bg-slate-900/80 rounded-full overflow-hidden border border-slate-800/60 p-[0.5px]">
                 <motion.div 
                   className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 rounded-full"
-                  style={{ width: `${progress}%` }}
+                  style={{ width: `${Math.round(progress)}%` }}
                   transition={{ ease: "easeInOut" }}
                 />
               </div>

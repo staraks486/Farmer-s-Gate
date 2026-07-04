@@ -182,6 +182,8 @@ export interface CpanelSettings {
   enableCustomerOrderReview: boolean;
   enableMultipleRegisters: boolean;
   quickDemoDataEnabled: boolean;
+  disableLoadingIntro?: boolean;
+  introSpeedSeconds?: number;
 }
 
 export interface StorefrontAd {
