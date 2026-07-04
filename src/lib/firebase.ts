@@ -127,6 +127,8 @@ export interface FirebaseOrder {
   longitude: number;
   riderName?: string;
   riderPhone?: string;
+  rating?: number;
+  ratingComment?: string;
 }
 
 export async function placeOrderInFirestore(order: FirebaseOrder) {
@@ -153,6 +155,20 @@ export async function updateOrderStatusInFirestore(orderId: string, status: Fire
     });
   } catch (err) {
     console.error('Error updating order status in Firestore:', err);
+    throw err;
+  }
+}
+
+// Rate order in Firestore
+export async function rateOrderInFirestore(orderId: string, rating: number, ratingComment: string = '') {
+  try {
+    const docRef = doc(db, 'orders', orderId);
+    await updateDoc(docRef, {
+      rating,
+      ratingComment
+    });
+  } catch (err) {
+    console.error('Error rating order in Firestore:', err);
     throw err;
   }
 }

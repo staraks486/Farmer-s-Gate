@@ -27,7 +27,8 @@ import {
   Mail,
   UserPlus,
   RefreshCw,
-  Wallet
+  Wallet,
+  Star
 } from 'lucide-react';
 import { 
   auth, 
@@ -37,6 +38,7 @@ import {
   updateProductStockInFirestore,
   updateOrderStatusInFirestore,
   seedProductsIfNeeded,
+  rateOrderInFirestore,
   FirebaseOrder
 } from '../lib/firebase';
 import { 
@@ -69,6 +71,9 @@ export default function CustomerHub() {
 
   // Cart State: productId -> quantity
   const [cart, setCart] = useState<{ [id: string]: number }>({});
+  const [manualQtys, setManualQtys] = useState<{ [id: string]: number }>({});
+  const [selectedUnits, setSelectedUnits] = useState<{ [id: string]: string }>({});
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   
   // Checkout details
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -107,9 +112,16 @@ export default function CustomerHub() {
       // Load or create default profile details
       if (fbUser) {
         const emailPrefix = fbUser.email?.split('@')[0] || 'Premium Guest';
-        setAuthName(localStorage.getItem(`fg_name_${fbUser.uid}`) || emailPrefix);
-        setAuthPhone(localStorage.getItem(`fg_phone_${fbUser.uid}`) || '+91 95000 12345');
-        setCustomAddress(localStorage.getItem(`fg_address_${fbUser.uid}`) || '402, Green Meadows, Sector 4, Bangalore');
+        const isDemoShopper = fbUser.email === 'demo_shopper@farmersgate.com';
+        const isDemoRider = fbUser.email === 'partner@farmersgate.com';
+        
+        const defaultName = isDemoRider ? 'Live Partner Rider' : isDemoShopper ? 'Gold Shopper' : emailPrefix;
+        const defaultPhone = isDemoRider ? '+91 90000 00000' : '+91 95000 12345';
+        const defaultAddress = isDemoRider ? 'FarmersGate HQ Dispatch Hub, Block C, Bengaluru' : '402, Green Meadows, Sector 4, Bangalore';
+
+        setAuthName(localStorage.getItem(`fg_name_${fbUser.uid}`) || defaultName);
+        setAuthPhone(localStorage.getItem(`fg_phone_${fbUser.uid}`) || defaultPhone);
+        setCustomAddress(localStorage.getItem(`fg_address_${fbUser.uid}`) || defaultAddress);
       }
     });
     return () => unsubscribe();
@@ -149,7 +161,32 @@ export default function CustomerHub() {
 
     try {
       if (authMode === 'login') {
-        await signInWithEmailAndPassword(auth, authEmail, authPassword);
+        const cleanEmail = authEmail.trim().toLowerCase();
+        const cleanPassword = authPassword;
+        try {
+          await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+        } catch (loginErr: any) {
+          // If login fails with user-not-found or invalid-credential, check if it is a demo account
+          const isDemoShopper = cleanEmail === 'demo_shopper@farmersgate.com';
+          const isDemoRider = cleanEmail === 'partner@farmersgate.com';
+          if ((isDemoShopper || isDemoRider) && cleanPassword === 'farmersgate123') {
+            const credential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+            if (credential.user) {
+              const name = isDemoRider ? 'Live Partner Rider' : 'Gold Shopper';
+              const phone = isDemoRider ? '+91 90000 00000' : '+91 95000 12345';
+              const address = 'FarmersGate HQ Dispatch Hub, Block C, Bengaluru';
+              localStorage.setItem(`fg_name_${credential.user.uid}`, name);
+              localStorage.setItem(`fg_phone_${credential.user.uid}`, phone);
+              localStorage.setItem(`fg_address_${credential.user.uid}`, address);
+              
+              setAuthName(name);
+              setAuthPhone(phone);
+              setCustomAddress(address);
+            }
+          } else {
+            throw loginErr;
+          }
+        }
       } else {
         const credential = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
         if (credential.user) {
@@ -160,6 +197,7 @@ export default function CustomerHub() {
         }
       }
       setAuthError('');
+      setIsAuthModalOpen(false);
     } catch (err: any) {
       setAuthError(err.message || 'Authentication failed. Please verify credentials.');
     }
@@ -168,23 +206,38 @@ export default function CustomerHub() {
   // Instant Guest Login for testing/demo
   const handleInstantGuestLogin = async (role: 'customer' | 'partner') => {
     setAuthError('');
+    const email = role === 'partner' ? 'partner@farmersgate.com' : 'demo_shopper@farmersgate.com';
+    const pass = 'farmersgate123';
+    const name = role === 'partner' ? 'Live Partner Rider' : 'Gold Shopper';
+    const phone = role === 'partner' ? '+91 90000 00000' : '+91 95000 12345';
+    const address = 'FarmersGate HQ Dispatch Hub, Block C, Bengaluru';
+
     try {
-      // Use standard preconfigured accounts for seamless evaluation
-      const email = role === 'partner' ? 'partner@farmersgate.com' : 'demo_shopper@farmersgate.com';
-      const pass = 'farmersgate123';
-      
-      await signInWithEmailAndPassword(auth, email, pass);
+      const credential = await signInWithEmailAndPassword(auth, email, pass);
+      if (credential.user) {
+        localStorage.setItem(`fg_name_${credential.user.uid}`, name);
+        localStorage.setItem(`fg_phone_${credential.user.uid}`, phone);
+        localStorage.setItem(`fg_address_${credential.user.uid}`, address);
+        
+        setAuthName(name);
+        setAuthPhone(phone);
+        setCustomAddress(address);
+      }
+      setIsAuthModalOpen(false);
     } catch (err) {
       // If doesn't exist, register it automatically
       try {
-        const email = role === 'partner' ? 'partner@farmersgate.com' : 'demo_shopper@farmersgate.com';
-        const pass = 'farmersgate123';
         const credential = await createUserWithEmailAndPassword(auth, email, pass);
         if (credential.user) {
-          localStorage.setItem(`fg_name_${credential.user.uid}`, role === 'partner' ? 'Live Partner Rider' : 'Gold Shopper');
-          localStorage.setItem(`fg_phone_${credential.user.uid}`, role === 'partner' ? '+91 90000 00000' : '+91 95000 12345');
-          localStorage.setItem(`fg_address_${credential.user.uid}`, 'FarmersGate HQ Dispatch Hub, Block C, Bengaluru');
+          localStorage.setItem(`fg_name_${credential.user.uid}`, name);
+          localStorage.setItem(`fg_phone_${credential.user.uid}`, phone);
+          localStorage.setItem(`fg_address_${credential.user.uid}`, address);
+          
+          setAuthName(name);
+          setAuthPhone(phone);
+          setCustomAddress(address);
         }
+        setIsAuthModalOpen(false);
       } catch (innerErr: any) {
         setAuthError(innerErr.message);
       }
@@ -199,18 +252,50 @@ export default function CustomerHub() {
 
   // Cart Management
   const getUnitStep = (unit: string): number => {
-    if (unit === 'kg') return 0.25;
-    if (unit === 'g') return 50;
+    const u = unit.toLowerCase();
+    if (u === 'kg') return 0.25;
+    if (u === 'g') return 50;
+    if (u === 'doz') return 1;
+    if (u === 'pcs') return 1;
     return 1;
   };
 
-  const handleAddToCart = (id: string, step?: number) => {
+  const getAvailableUnits = (baseUnit: string): string[] => {
+    const base = baseUnit.toLowerCase();
+    if (base === 'kg') return ['kg', 'g'];
+    if (base === 'pcs') return ['pcs', 'doz'];
+    if (base === 'box') return ['box', 'pcs'];
+    if (base === 'pack') return ['pack', 'pcs'];
+    return [baseUnit];
+  };
+
+  const UNIT_CONVERSIONS: Record<string, Record<string, number>> = {
+    'kg': { 'g': 0.001, 'kg': 1 },
+    'pcs': { 'doz': 12, 'pcs': 1 },
+    'box': { 'pcs': 0.166, 'box': 1 },
+    'pack': { 'pcs': 0.25, 'pack': 1 }
+  };
+
+  const getConvertedQuantity = (productId: string, baseUnit: string, enteredQty: number): number => {
+    const selectedUnit = selectedUnits[productId] || baseUnit;
+    if (selectedUnit === baseUnit) return enteredQty;
+    
+    const base = baseUnit.toLowerCase();
+    const target = selectedUnit.toLowerCase();
+    
+    if (UNIT_CONVERSIONS[base] && UNIT_CONVERSIONS[base][target] !== undefined) {
+      return parseFloat((enteredQty * UNIT_CONVERSIONS[base][target]).toFixed(2));
+    }
+    return enteredQty;
+  };
+
+  const handleAddToCart = (id: string, step?: number, isSet: boolean = false) => {
     const p = products.find(prod => prod.id === id);
     if (!p || p.stock <= 0) return;
     
     const actualStep = step !== undefined ? step : getUnitStep(p.unit);
     setCart(prev => {
-      const cur = prev[id] || 0;
+      const cur = isSet ? 0 : (prev[id] || 0);
       const next = parseFloat((cur + actualStep).toFixed(2));
       if (next > p.stock) return prev; // check stock limits
       return { ...prev, [id]: next };
@@ -446,7 +531,21 @@ export default function CustomerHub() {
       // Footer
       docPdf.setFontSize(8);
       docPdf.setTextColor(148, 163, 184);
-      docPdf.text("Thank you for buying farm direct! Sourced organically & delivered in 9 mins.", 14, 280);
+      docPdf.text("Thank you for buying farm direct! Sourced organically & delivered in 9 mins.", 14, 276);
+
+      // Random healthy quote
+      const healthyQuotes = [
+        "Eat healthy, live active! Your body deserves the absolute freshest farm-direct produce. 🌱",
+        "Health is wealth. Keep cooking fresh and vibrant farm-picked veggies! 🥦",
+        "Savor the taste of pure nature. Every green on your plate builds a stronger tomorrow! 🥬",
+        "Fresh farm food is the simplest form of medicine. Stay energized and fit! 🍎",
+        "Fuel your body with premium organic nutrients from the heart of our local soil! 🥭"
+      ];
+      const randomQuote = healthyQuotes[Math.floor(Math.random() * healthyQuotes.length)];
+      docPdf.setFont('helvetica', 'italic');
+      docPdf.setTextColor(4, 120, 87); // beautiful forest green
+      docPdf.setFontSize(8.5);
+      docPdf.text(`Healthy Tip: "${randomQuote}"`, 14, 283);
 
       docPdf.save(`FarmersGate_Invoice_${order.orderNumber}.pdf`);
     } catch (e) {
@@ -509,9 +608,16 @@ export default function CustomerHub() {
               )}
             </button>
             <button 
-              onClick={() => setActiveTab('profile')}
+              onClick={() => {
+                if (user) {
+                  setActiveTab('profile');
+                } else {
+                  setAuthMode('login');
+                  setIsAuthModalOpen(true);
+                }
+              }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                activeTab === 'profile' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-emerald-900/60'
+                activeTab === 'profile' && user ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-emerald-900/60'
               }`}
             >
               👤 {user ? 'My Profile' : 'Sign In'}
@@ -527,6 +633,54 @@ export default function CustomerHub() {
           <>
             {/* Catalog list section (Left 3 cols) */}
             <div className="lg:col-span-3 space-y-4">
+              
+              {/* Promo Authentication banner */}
+              {!user ? (
+                <div className="bg-gradient-to-r from-emerald-950 to-emerald-900 border border-emerald-800/80 p-5 rounded-3xl text-white flex flex-col sm:flex-row justify-between items-center gap-4 shadow-md animate-fade-in relative overflow-hidden">
+                  <div className="absolute -right-8 -bottom-8 text-8xl opacity-10 pointer-events-none select-none">🥦</div>
+                  <div className="space-y-1 text-center sm:text-left z-10">
+                    <h3 className="font-black text-sm text-emerald-400 flex items-center justify-center sm:justify-start gap-1.5 uppercase tracking-wide">
+                      🔐 Fresh Dispatch Security Desk
+                    </h3>
+                    <p className="text-[10px] text-slate-200 font-extrabold uppercase leading-snug">Sign in or register a new shopper account to track live 9-min dispatches & secure your digital wallet!</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0 z-10">
+                    <button
+                      onClick={() => {
+                        setAuthMode('login');
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="px-4.5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-black rounded-xl uppercase transition-all shadow-md cursor-pointer"
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAuthMode('register');
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="px-4.5 py-2.5 bg-transparent hover:bg-white/10 border border-slate-600 hover:border-slate-400 text-white text-[10px] font-black rounded-xl uppercase transition-all cursor-pointer"
+                    >
+                      Create Account
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gradient-to-r from-emerald-50 to-teal-50/50 border border-emerald-100/80 p-5 rounded-3xl text-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-3xs animate-fade-in relative overflow-hidden">
+                  <div className="absolute -right-8 -bottom-8 text-8xl opacity-10 pointer-events-none select-none">🚜</div>
+                  <div className="space-y-1 text-center sm:text-left z-10">
+                    <h3 className="font-black text-sm text-emerald-800 flex items-center justify-center sm:justify-start gap-1.5 uppercase tracking-wide">
+                      🌾 Welcome back, {authName}!
+                    </h3>
+                    <p className="text-[10px] text-slate-500 font-extrabold uppercase leading-snug">
+                      Your premium Gold Shopper benefits are active. Enjoy unlimited 10% cashbacks and speedier 9-minute doorstep delivery!
+                    </p>
+                  </div>
+                  <div className="flex gap-2 shrink-0 z-10 bg-emerald-950 text-emerald-300 font-bold font-mono text-[10px] px-3.5 py-2.5 rounded-2xl border border-emerald-800/50 uppercase tracking-wider shadow-xs">
+                    💰 Wallet: ₹{walletBalance.toFixed(2)}
+                  </div>
+                </div>
+              )}
               
               {/* Category selector row */}
               <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
@@ -595,9 +749,22 @@ export default function CustomerHub() {
                         <div>
                           <span className="text-4xl block mb-2">{item.emoji || '🥦'}</span>
                           <h3 className="font-extrabold text-slate-800 text-xs tracking-tight line-clamp-1">{item.vegetableName}</h3>
-                          <span className="inline-block text-[8px] font-black uppercase text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded mt-1">
-                            {item.category}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1 mt-1">
+                            <span className="inline-block text-[8px] font-black uppercase text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">
+                              {item.category}
+                            </span>
+                            {item.stock > 0 ? (
+                              <span className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                item.stock <= 15 ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                              }`}>
+                                {item.stock} {item.unit} in stock
+                              </span>
+                            ) : (
+                              <span className="inline-block text-[8px] font-black uppercase bg-red-50 text-red-600 border border-red-100 px-1.5 py-0.5 rounded">
+                                Sold Out
+                              </span>
+                            )}
+                          </div>
 
                           <div className="flex justify-between items-baseline mt-3 border-t border-slate-100 pt-3">
                             <div>
@@ -614,16 +781,16 @@ export default function CustomerHub() {
                               Sold Out
                             </div>
                           ) : qtyInCart > 0 ? (
-                            <div className="flex items-center justify-between bg-emerald-950 text-white rounded-xl p-1 shadow-sm">
+                            <div className="flex items-center justify-between bg-emerald-950 text-white rounded-2xl p-1.5 shadow-sm">
                               <button
                                 type="button"
                                 onClick={() => handleDecreaseCart(item.id)}
-                                className="h-6 w-6 rounded-lg bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer animate-fade-in"
+                                className="h-10 w-10 rounded-xl bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-base cursor-pointer animate-fade-in"
                               >
-                                <Minus className="h-3 w-3" />
+                                <Minus className="h-5 w-5" />
                               </button>
                               
-                              <div className="flex items-center justify-center gap-0.5">
+                              <div className="flex items-center justify-center gap-1.5">
                                 <input
                                   type="number"
                                   step={getUnitStep(item.unit)}
@@ -642,28 +809,74 @@ export default function CustomerHub() {
                                       setCart(prev => ({ ...prev, [item.id]: limitedVal }));
                                     }
                                   }}
-                                  className="w-11 bg-emerald-900 text-white text-[11px] font-black font-mono text-center rounded focus:outline-none focus:ring-1 focus:ring-emerald-400 py-0.5 border-none"
+                                  className="w-20 bg-emerald-900 text-white text-base font-black font-mono text-center rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 py-1.5 border-none"
                                 />
-                                <span className="text-[8px] font-bold text-emerald-300 select-none lowercase">{item.unit}</span>
+                                <span className="text-xs font-bold text-emerald-300 select-none lowercase">{item.unit}</span>
                               </div>
 
                               <button
                                 type="button"
                                 onClick={() => handleAddToCart(item.id)}
-                                className="h-6 w-6 rounded-lg bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-xs cursor-pointer animate-fade-in"
+                                className="h-10 w-10 rounded-xl bg-emerald-900 flex items-center justify-center text-white hover:bg-emerald-800 font-black text-base cursor-pointer animate-fade-in"
                               >
-                                <Plus className="h-3 w-3" />
+                                <Plus className="h-5 w-5" />
                               </button>
                             </div>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleAddToCart(item.id)}
-                              className="w-full bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-600/50 hover:border-emerald-600 font-black py-1.5 rounded-xl text-[10px] flex items-center justify-center gap-0.5 transition-all cursor-pointer uppercase"
-                            >
-                              <Plus className="h-3.5 w-3.5 stroke-[3px]" />
-                              ADD <span className="text-[9px] font-semibold pl-0.5">({item.unit})</span>
-                            </button>
+                            <div className="flex gap-2 items-center">
+                              {/* Quantity manual input */}
+                              <div className="flex-1 flex items-center bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5">
+                                <input
+                                  type="number"
+                                  step={getUnitStep(selectedUnits[item.id] || item.unit)}
+                                  min="0.01"
+                                  value={manualQtys[item.id] !== undefined ? manualQtys[item.id] : getUnitStep(selectedUnits[item.id] || item.unit)}
+                                  onChange={(e) => {
+                                    const val = parseFloat(parseFloat(e.target.value).toFixed(2)) || 0;
+                                    setManualQtys(prev => ({ ...prev, [item.id]: val }));
+                                  }}
+                                  className="w-full bg-transparent text-slate-800 text-sm font-black font-mono text-center focus:outline-none border-none p-0"
+                                  placeholder="Qty"
+                                />
+                                {getAvailableUnits(item.unit).length > 1 ? (
+                                  <select
+                                    value={selectedUnits[item.id] || item.unit}
+                                    onChange={(e) => {
+                                      const newUnit = e.target.value;
+                                      setSelectedUnits(prev => ({ ...prev, [item.id]: newUnit }));
+                                      const defaultQty = newUnit === 'g' ? 250 : (newUnit === 'doz' ? 1 : getUnitStep(newUnit));
+                                      setManualQtys(prev => ({ ...prev, [item.id]: defaultQty }));
+                                    }}
+                                    className="text-[10px] font-extrabold text-emerald-800 bg-transparent border-none p-0 focus:ring-0 cursor-pointer max-w-[50px] lowercase select-none font-sans ml-1"
+                                  >
+                                    {getAvailableUnits(item.unit).map(u => (
+                                      <option key={u} value={u}>{u}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-slate-400 select-none lowercase ml-1">{item.unit}</span>
+                                )}
+                              </div>
+                              {/* Add Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const qty = manualQtys[item.id] !== undefined ? manualQtys[item.id] : getUnitStep(selectedUnits[item.id] || item.unit);
+                                  if (qty > 0) {
+                                    const convertedQty = getConvertedQuantity(item.id, item.unit, qty);
+                                    if (convertedQty > item.stock) {
+                                      alert(`Cannot add ${qty} ${selectedUnits[item.id] || item.unit} because it exceeds available stock (${item.stock} ${item.unit}).`);
+                                      return;
+                                    }
+                                    handleAddToCart(item.id, convertedQty, true);
+                                  }
+                                }}
+                                className="flex-[1.2] bg-emerald-950 hover:bg-emerald-900 text-white font-black py-3 rounded-xl text-[11px] flex items-center justify-center gap-1 transition-all cursor-pointer uppercase shadow-xs"
+                              >
+                                <Plus className="h-3.5 w-3.5 stroke-[3px]" />
+                                ADD
+                              </button>
+                            </div>
                           )}
                         </div>
                       </motion.div>
@@ -760,19 +973,6 @@ export default function CustomerHub() {
                       )}
                     </div>
 
-                    {/* Digital Wallet Rewards Redemption */}
-                    <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl text-[10.5px] font-bold">
-                      <label className="flex items-center gap-2 text-emerald-900 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={useWallet} 
-                          onChange={e => setUseWallet(e.target.checked)}
-                          className="h-3.5 w-3.5 text-emerald-700 focus:ring-emerald-500 rounded cursor-pointer"
-                        />
-                        <span>Redeem ₹{Math.min(walletBalance, cartSubtotal - currentDiscount).toFixed(2)} from FG Wallet (Balance: ₹{walletBalance.toFixed(2)})</span>
-                      </label>
-                    </div>
-
                     {/* Receipts details */}
                     <div className="p-3 bg-slate-50 border border-slate-150 rounded-2xl text-[10.5px] space-y-1 text-slate-500 font-semibold">
                       <div className="flex justify-between">
@@ -806,7 +1006,10 @@ export default function CustomerHub() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => setActiveTab('profile')}
+                        onClick={() => {
+                          setAuthMode('login');
+                          setIsAuthModalOpen(true);
+                        }}
                         className="w-full bg-emerald-950 hover:bg-slate-900 text-emerald-400 font-black py-3 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
                       >
                         🔐 SIGN IN TO PLACE ORDER <ArrowRight className="h-4.5 w-4.5" />
@@ -896,12 +1099,80 @@ export default function CustomerHub() {
                       </div>
 
                       {/* PDF Invoice Download */}
-                      <button 
-                        onClick={() => handleDownloadInvoice(selectedOrder)}
-                        className="w-full py-2 bg-emerald-950 hover:bg-slate-900 text-emerald-400 font-black text-[10.5px] rounded-xl uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer mt-2"
-                      >
-                        <FileText className="h-4 w-4" /> Download Digital Invoice
-                      </button>
+                      <div className="space-y-2">
+                        <button 
+                          onClick={() => handleDownloadInvoice(selectedOrder)}
+                          className="w-full py-2 bg-emerald-950 hover:bg-slate-900 text-emerald-400 font-black text-[10.5px] rounded-xl uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer mt-2 shadow-xs"
+                        >
+                          <FileText className="h-4 w-4" /> Download Digital Invoice
+                        </button>
+                        
+                        <div className="text-center pt-1">
+                          <button
+                            onClick={() => handleDownloadInvoice(selectedOrder)}
+                            className="text-emerald-700 hover:text-emerald-900 font-extrabold text-[10px] underline cursor-pointer inline-flex items-center gap-1"
+                          >
+                            📥 Direct Link: Click to download bill (PDF)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Random Healthy Quote Card */}
+                      <div className="border-t border-slate-200/60 pt-3 mt-3">
+                        <div className="p-2.5 bg-emerald-50/50 border border-emerald-100/50 rounded-xl">
+                          <span className="text-[8px] font-black text-emerald-800 uppercase tracking-widest block">💡 Daily Sourced Healthy Tip</span>
+                          <p className="text-[10px] text-slate-600 font-bold italic mt-1 leading-normal">
+                            "{[
+                              "Eat healthy, live active! Your body deserves the absolute freshest farm-direct produce. 🌱",
+                              "Health is wealth. Keep cooking fresh and vibrant farm-picked veggies! 🥦",
+                              "Savor the taste of pure nature. Every green on your plate builds a stronger tomorrow! 🥬",
+                              "Fresh farm food is the simplest form of medicine. Stay energized and fit! 🍎",
+                              "Fuel your body with premium organic nutrients from the heart of our local soil! 🥭"
+                            ][(parseInt(selectedOrder.orderNumber.replace(/[^0-9]/g, '')) || 0) % 5]}"
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Rating Option */}
+                      <div className="border-t border-slate-200/60 pt-3 mt-3 space-y-2">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Rate Your Sourced Experience</p>
+                        {selectedOrder.rating ? (
+                          <div className="flex flex-col items-center p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                            <div className="flex gap-1">
+                              {[1, 2, 3, 4, 5].map((s) => (
+                                <Star 
+                                  key={s} 
+                                  className={`h-5 w-5 ${s <= (selectedOrder.rating || 0) ? 'fill-amber-400 text-amber-500' : 'text-slate-200'}`} 
+                                />
+                              ))}
+                            </div>
+                            <span className="text-[10px] text-emerald-800 font-extrabold uppercase mt-1.5">✓ Thank you for rating this order!</span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-150 space-y-1">
+                            <span className="text-[9.5px] font-bold text-slate-500 text-center">Tap to rate Ramesh & fresh produce:</span>
+                            <div className="flex gap-1.5">
+                              {[1, 2, 3, 4, 5].map((s) => (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      await rateOrderInFirestore(selectedOrder.id!, s);
+                                      setSelectedOrder(prev => prev ? { ...prev, rating: s } : null);
+                                    } catch (e) {
+                                      alert("Failed to submit rating.");
+                                    }
+                                  }}
+                                  className="p-0.5 rounded hover:scale-110 transition-transform cursor-pointer"
+                                >
+                                  <Star className="h-6 w-6 text-slate-300 hover:text-amber-400 focus:text-amber-400 transition-colors" />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Delivery Partner Details */}
@@ -1170,17 +1441,6 @@ export default function CustomerHub() {
                     </button>
                   </div>
 
-                  {/* Digital Wallet Box */}
-                  <div className="p-4 bg-emerald-950 text-white rounded-2xl flex justify-between items-center shadow-md">
-                    <div className="space-y-1">
-                      <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest block">FarmersGate Wallet Balance</span>
-                      <p className="text-xl font-black font-mono">₹{walletBalance.toFixed(2)}</p>
-                    </div>
-                    <div className="p-3 bg-emerald-900/60 rounded-xl">
-                      <Wallet className="h-6 w-6 text-emerald-400 animate-pulse" />
-                    </div>
-                  </div>
-
                   {/* Update Delivery Address Form */}
                   <form onSubmit={handleSaveProfile} className="space-y-4 text-left">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Default Dispatch Profile</span>
@@ -1262,6 +1522,185 @@ export default function CustomerHub() {
         )}
 
       </div>
+
+      {/* 🔐 Custom Auth Modal (Login / Create Account) */}
+      <AnimatePresence>
+        {isAuthModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl max-w-md w-full relative space-y-6 text-left"
+            >
+              {/* Close Button */}
+              <button 
+                onClick={() => setIsAuthModalOpen(false)}
+                className="absolute top-4 right-4 h-8 w-8 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-black cursor-pointer text-xs"
+              >
+                ✕
+              </button>
+
+              <div className="text-center space-y-1.5">
+                <span className="text-4xl block">🔐</span>
+                <h3 className="font-black text-slate-800 text-sm uppercase tracking-tight">FarmersGate Security Desk</h3>
+                <p className="text-[10.5px] text-slate-400 font-bold uppercase">
+                  {authMode === 'login' ? 'Sign in to access your digital wallet' : 'Create a fresh shopper account'}
+                </p>
+              </div>
+
+              {authError && (
+                <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-xs font-bold flex items-center gap-1.5">
+                  ⚠ {authError}
+                </div>
+              )}
+
+              {/* 🔑 Demo Accounts Quick-Click Panel */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2">
+                <span className="text-[9.5px] font-black text-slate-500 uppercase tracking-wider block">🔑 Demo Accounts (Click to login instantly)</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('login');
+                      setAuthEmail('demo_shopper@farmersgate.com');
+                      setAuthPassword('farmersgate123');
+                      handleInstantGuestLogin('customer');
+                    }}
+                    className="p-2.5 bg-white hover:bg-emerald-50/50 border border-slate-150 hover:border-emerald-200 rounded-xl text-left cursor-pointer transition-all space-y-1 group"
+                  >
+                    <span className="text-[10px] font-black text-emerald-800 uppercase block group-hover:text-emerald-700">🛒 Shopper Demo</span>
+                    <span className="text-[8.5px] font-semibold text-slate-400 font-mono block">demo_shopper@farmersgate.com</span>
+                    <span className="text-[8.5px] font-bold text-slate-500 block">Pass: farmersgate123</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('login');
+                      setAuthEmail('partner@farmersgate.com');
+                      setAuthPassword('farmersgate123');
+                      handleInstantGuestLogin('partner');
+                    }}
+                    className="p-2.5 bg-white hover:bg-slate-100 border border-slate-150 hover:border-slate-350 rounded-xl text-left cursor-pointer transition-all space-y-1 group"
+                  >
+                    <span className="text-[10px] font-black text-slate-800 uppercase block group-hover:text-slate-700">🏍️ Rider Demo</span>
+                    <span className="text-[8.5px] font-semibold text-slate-400 font-mono block">partner@farmersgate.com</span>
+                    <span className="text-[8.5px] font-bold text-slate-500 block">Pass: farmersgate123</span>
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={handleAuthSubmit} className="space-y-4">
+                {authMode === 'register' && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-400 block uppercase">Your Name</label>
+                        <input 
+                          type="text"
+                          required
+                          placeholder="e.g. Ramesh Sourced"
+                          value={authName}
+                          onChange={e => setAuthName(e.target.value)}
+                          className="w-full text-xs font-bold px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-400 block uppercase">Mobile Number</label>
+                        <input 
+                          type="text"
+                          required
+                          placeholder="e.g. +91 95000 12345"
+                          value={authPhone}
+                          onChange={e => setAuthPhone(e.target.value)}
+                          className="w-full text-xs font-bold px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-400 block uppercase">Delivery Location Address</label>
+                      <input 
+                        type="text"
+                        required
+                        placeholder="e.g. 402, Green Meadows, Sector 4, Bangalore"
+                        value={authAddress}
+                        onChange={e => setAuthAddress(e.target.value)}
+                        className="w-full text-xs font-bold px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 block uppercase">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                    <input 
+                      type="email"
+                      required
+                      placeholder="shopper@farmersgate.com"
+                      value={authEmail}
+                      onChange={e => setAuthEmail(e.target.value)}
+                      className="w-full text-xs font-bold pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 block uppercase">Account Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                    <input 
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={authPassword}
+                      onChange={e => setAuthPassword(e.target.value)}
+                      className="w-full text-xs font-bold pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl uppercase tracking-wider cursor-pointer shadow-md transition-all"
+                >
+                  {authMode === 'login' ? '🔐 Sign In Account' : '📝 Create Shopper Account'}
+                </button>
+              </form>
+
+              <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 border-t border-slate-100 pt-3">
+                <button 
+                  onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                  className="text-emerald-600 hover:underline cursor-pointer"
+                >
+                  {authMode === 'login' ? "Don't have an account? Sign Up" : 'Already have an account? Sign In'}
+                </button>
+              </div>
+
+              {/* Instant Bypass inside Modal */}
+              <div className="border-t border-slate-100 pt-4 space-y-2">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block text-center">⚡ INSTANT DEMO BYPASS</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={() => handleInstantGuestLogin('customer')}
+                    className="py-2.5 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-xl cursor-pointer uppercase text-center"
+                  >
+                    🛍️ Shopper
+                  </button>
+                  <button 
+                    onClick={() => handleInstantGuestLogin('partner')}
+                    className="py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-emerald-400 text-[10px] font-black rounded-xl cursor-pointer uppercase text-center"
+                  >
+                    🏍️ Partner Rider
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
