@@ -9,7 +9,8 @@ import {
   Briefcase,
   UserCheck,
   Sprout,
-  ArrowRight
+  ArrowRight,
+  Check
 } from 'lucide-react';
 import CustomerHub from './components/CustomerHub';
 import PartnerPortal from './components/PartnerPortal';
@@ -35,14 +36,14 @@ export default function App() {
   useEffect(() => {
     if (!showIntro) return;
 
-    // Fast but organic loading bar progress
+    // Slow, premium, organic loading bar progress
     const timer = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) {
           clearInterval(timer);
           return 100;
         }
-        const step = Math.floor(Math.random() * 5) + 4;
+        const step = Math.floor(Math.random() * 3) + 2; // slow, luxurious pacing
         const nextProgress = Math.min(prev + step, 100);
         
         const calculatedIndex = Math.min(
@@ -55,10 +56,20 @@ export default function App() {
 
         return nextProgress;
       });
-    }, 70);
+    }, 120);
 
     return () => clearInterval(timer);
   }, [showIntro, statusIndex]);
+
+  // Clean, seamless auto-transition when loading completes
+  useEffect(() => {
+    if (progress === 100) {
+      const delay = setTimeout(() => {
+        setShowIntro(false);
+      }, 900); // Elegant 900ms pause to show fully-loaded operational state
+      return () => clearTimeout(delay);
+    }
+  }, [progress]);
 
   // Auto-seed Firestore on app startup
   useEffect(() => {
@@ -83,117 +94,118 @@ export default function App() {
         <motion.div 
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-emerald-950 to-slate-950 text-white p-6 overflow-hidden select-none"
           initial={{ opacity: 1 }}
-          exit={{ opacity: 0, scale: 1.05 }}
-          transition={{ duration: 0.4 }}
+          exit={{ opacity: 0, scale: 1.03, filter: 'blur(8px)' }}
+          transition={{ duration: 0.5, ease: "easeInOut" }}
         >
           {/* Animated decorative grid background */}
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#022c22_1px,transparent_1px),linear-gradient(to_bottom,#022c22_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-30" />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#022c22_1px,transparent_1px),linear-gradient(to_bottom,#022c22_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-35" />
 
-          <div className="relative z-10 max-w-md w-full flex flex-col items-center text-center">
+          <div className="relative z-10 max-w-sm w-full flex flex-col items-center text-center">
             {/* Pulsing Animated Emblem Container */}
             <motion.div 
               className="relative mb-8"
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.1, duration: 0.6, type: "spring" }}
+              transition={{ delay: 0.05, duration: 0.5, type: "spring" }}
             >
               {/* Outer glowing ring */}
               <motion.div 
                 className="absolute -inset-4 rounded-full bg-emerald-500/10 blur-xl"
-                animate={{ scale: [1, 1.2, 1] }}
+                animate={{ scale: [1, 1.15, 1] }}
                 transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
               />
               
               {/* Spinning dotted ring */}
               <motion.div 
-                className="absolute -inset-2 rounded-full border border-dashed border-emerald-500/30"
+                className="absolute -inset-2 rounded-full border border-dashed border-emerald-500/20"
                 animate={{ rotate: 360 }}
-                transition={{ repeat: Infinity, duration: 12, ease: "linear" }}
+                transition={{ repeat: Infinity, duration: 16, ease: "linear" }}
               />
 
               {/* Inner solid ring */}
-              <div className="h-24 w-24 rounded-full bg-emerald-950/80 border border-emerald-500/50 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+              <div className="h-20 w-20 rounded-full bg-emerald-950/90 border border-emerald-500/40 flex items-center justify-center shadow-[0_0_25px_rgba(16,185,129,0.15)]">
                 <motion.div
-                  animate={{ y: [0, -3, 0] }}
-                  transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                  animate={progress >= 100 ? { scale: [1, 1.1, 1], rotate: 360 } : { y: [0, -2, 0] }}
+                  transition={progress >= 100 ? { duration: 0.4 } : { repeat: Infinity, duration: 2, ease: "easeInOut" }}
                 >
-                  <Sprout className="h-12 w-12 text-emerald-400" />
+                  {progress >= 100 ? (
+                    <Check className="h-10 w-10 text-emerald-400 stroke-[3.5]" />
+                  ) : (
+                    <Sprout className="h-10 w-10 text-emerald-400" />
+                  )}
                 </motion.div>
               </div>
             </motion.div>
 
             {/* Title & Brand */}
             <motion.h1 
-              className="text-4xl font-black tracking-[0.25em] text-white uppercase font-sans mb-2"
-              initial={{ opacity: 0, y: 15 }}
+              className="text-3xl font-black tracking-[0.25em] text-white uppercase font-sans mb-1.5"
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
+              transition={{ delay: 0.1, duration: 0.4 }}
             >
               FARMERS<span className="text-emerald-400">GATE</span>
             </motion.h1>
             
             <motion.p 
-              className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-500/80 mb-12"
+              className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 mb-10"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.5 }}
+              transition={{ delay: 0.15, duration: 0.4 }}
             >
               Enterprise Retail & Supply Ecosystem
             </motion.p>
 
             {/* Progress Engine */}
-            <div className="w-full px-4 mb-8">
-              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                <span className="text-left max-w-[240px] truncate">{statuses[statusIndex]}</span>
-                <span className="text-emerald-400 font-mono">{progress}%</span>
+            <div className="w-full px-2 mb-6">
+              <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                <span className="text-left max-w-[220px] truncate transition-all duration-200">{statuses[statusIndex]}</span>
+                <span className="text-emerald-400 font-mono text-[10px]">{progress}%</span>
               </div>
               
-              <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800 p-[1px]">
+              <div className="h-1 w-full bg-slate-900/80 rounded-full overflow-hidden border border-slate-800/60 p-[0.5px]">
                 <motion.div 
-                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
+                  className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 rounded-full"
                   style={{ width: `${progress}%` }}
                   transition={{ ease: "easeInOut" }}
                 />
               </div>
             </div>
 
-            {/* Launch Action */}
-            <div className="h-14 w-full flex items-center justify-center">
+            {/* Auto Launch Action Message */}
+            <div className="h-10 w-full flex items-center justify-center">
               <AnimatePresence mode="wait">
                 {progress >= 100 ? (
-                  <motion.button
-                    onClick={() => setShowIntro(false)}
-                    className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs uppercase tracking-widest rounded-xl transition-all duration-300 transform hover:scale-[1.03] cursor-pointer shadow-[0_0_25px_rgba(16,185,129,0.3)] flex items-center gap-2"
-                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ type: "spring", stiffness: 200, damping: 15 }}
+                  <motion.div
+                    className="text-[10px] font-black text-emerald-400 tracking-widest uppercase flex items-center gap-1.5"
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
                   >
-                    <span>Launch Ecosystem</span>
-                    <ArrowRight className="h-4 w-4 stroke-[3]" />
-                  </motion.button>
+                    <span>Ecosystem Ready • Launching...</span>
+                  </motion.div>
                 ) : (
                   <motion.div
-                    className="text-[10px] font-bold text-slate-500 tracking-wider uppercase flex items-center gap-2"
+                    className="text-[9px] font-bold text-slate-500 tracking-widest uppercase flex items-center gap-1.5"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                    <span>Systems loading...</span>
+                    <span>Synchronizing ledger...</span>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
 
             {/* Developer and Version Badge */}
-            <div className="absolute bottom-10 left-0 right-0 flex flex-col items-center gap-2">
-              <div className="inline-flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 px-3.5 py-1.5 rounded-full">
-                <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase">Developer:</span>
-                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wide">Arvind Kumar Shukla</span>
+            <div className="absolute bottom-10 left-0 right-0 flex flex-col items-center gap-1.5">
+              <div className="inline-flex items-center gap-1.5 bg-slate-900/60 border border-slate-800/80 px-3 py-1.5 rounded-full">
+                <span className="text-[8px] font-black tracking-wider text-slate-400 uppercase">Developer:</span>
+                <span className="text-[9px] font-black text-emerald-400 uppercase tracking-wide">Arvind Kumar Shukla</span>
               </div>
               <div className="text-[9px] font-mono font-bold text-slate-600 uppercase tracking-widest">
-                System Version v2.1.3 • Secured with Firebase
+                System Version v2.1.5 • Secured with Firebase
               </div>
             </div>
           </div>
@@ -307,7 +319,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3 flex-wrap justify-center text-center">
             <span>Developer: <strong className="text-emerald-700 font-extrabold">Arvind Kumar Shukla</strong></span>
-            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono text-[9px]">v2.1.3</span>
+            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono text-[9px]">v2.1.5</span>
             <span>© 2026 FarmersGate Tech Inc • Powered by Firebase</span>
           </div>
         </div>

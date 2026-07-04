@@ -825,7 +825,8 @@ export default function SupplierManager({
                         <input
                           type="number"
                           required
-                          min="1"
+                          min="0.01"
+                          step="0.01"
                           value={item.quantity}
                           onChange={e => handlePOItemChange(index, 'quantity', e.target.value)}
                           className="w-full text-xs px-2.5 py-1 bg-white border border-slate-200 rounded focus:outline-none font-semibold text-slate-800"

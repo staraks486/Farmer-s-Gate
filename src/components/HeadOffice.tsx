@@ -627,10 +627,11 @@ export default function HeadOffice({
                     <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Qty (kg)</label>
                     <input
                       type="number"
-                      min="1"
+                      min="0.01"
+                      step="0.01"
                       required
                       value={distQty}
-                      onChange={(e) => setDistQty(Math.max(1, parseInt(e.target.value) || 0))}
+                      onChange={(e) => setDistQty(Math.max(0.01, parseFloat(e.target.value) || 0))}
                       className="w-full text-xs font-mono font-bold rounded-lg border border-slate-200 p-2 focus:outline-none bg-slate-50/50 text-center"
                     />
                   </div>
@@ -1371,10 +1372,11 @@ export default function HeadOffice({
                   <span className="text-[8px] font-black uppercase tracking-wider text-slate-400">Qty (kg)</span>
                   <input
                     type="number"
-                    min="1"
+                    min="0.01"
+                    step="0.01"
                     required
                     value={distQty}
-                    onChange={(e) => setDistQty(Math.max(1, parseInt(e.target.value) || 0))}
+                    onChange={(e) => setDistQty(Math.max(0.01, parseFloat(e.target.value) || 0))}
                     className="w-full text-xs font-mono font-bold rounded-lg border border-slate-200 p-2 focus:outline-none bg-slate-50/50"
                   />
                 </div>

@@ -3212,8 +3212,8 @@ export default function StoreManager({
                   <input
                     id="pur-qty"
                     type="number"
-                    step="0.1"
-                    min="0.1"
+                    step="0.01"
+                    min="0.01"
                     required
                     placeholder="e.g. 100.0"
                     value={purchaseQty || ''}
@@ -3465,7 +3465,7 @@ export default function StoreManager({
                       <div className="flex items-center gap-2 animate-fade-in">
                         <input
                           type="number"
-                          step="1"
+                          step="0.01"
                           placeholder="Correct Qty"
                           defaultValue={item.quantity}
                           id={`input-adjust-${item.id}`}
@@ -3552,12 +3552,12 @@ export default function StoreManager({
                     <input
                       id="req-qty"
                       type="number"
-                      step="1"
-                      min="1"
+                      step="0.01"
+                      min="0.01"
                       required
                       placeholder="e.g. 50"
                       value={reqQty || ''}
-                      onChange={(e) => setReqQty(parseInt(e.target.value) || 0)}
+                      onChange={(e) => setReqQty(parseFloat(e.target.value) || 0)}
                       className="w-full rounded-xl border border-zinc-200 py-2 pl-3 pr-12 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-zinc-850"
                     />
                     <span className="absolute inset-y-0 right-3 flex items-center text-xs font-bold text-zinc-400">
