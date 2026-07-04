@@ -90,20 +90,7 @@ export default function App() {
       setAdminLoggingIn(false);
     }
   };
-  const [showIntro, setShowIntro] = useState(() => {
-    try {
-      const localSettings = localStorage.getItem('farmersgate_cpanel_settings');
-      if (localSettings) {
-        const parsed = JSON.parse(localSettings);
-        if (parsed && parsed.disableLoadingIntro) {
-          return false;
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return true;
-  });
+  const [showIntro, setShowIntro] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusIndex, setStatusIndex] = useState(0);
 
