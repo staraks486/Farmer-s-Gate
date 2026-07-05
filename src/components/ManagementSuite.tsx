@@ -23,8 +23,17 @@ import {
   MasterCrop, 
   CpanelSettings, 
   StorefrontAd,
-  SupabaseConfig
+  SupabaseConfig,
+  AppNotification,
+  getUserRole
 } from '../types';
+import { 
+  subscribeToOrders, 
+  subscribeToNotifications, 
+  addNotificationToFirestore, 
+  updateOrderStatusInFirestore,
+  FirebaseOrder
+} from '../lib/firebase';
 import { 
   dbGetStores, 
   dbAddStore, 
@@ -85,9 +94,13 @@ const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   introSpeedSeconds: 4
 };
 
-export default function ManagementSuite() {
+export default function ManagementSuite({ user }: { user: any }) {
+  const roleInfo = getUserRole(user?.email);
+  const allowedTabs = roleInfo.allowedTabs || ['dashboard', 'headoffice', 'store', 'suppliers', 'accounts', 'admin'];
+  const defaultTab = allowedTabs[0] || 'dashboard';
+
   // Navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin'>(defaultTab);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
 
   // Database states
@@ -103,6 +116,10 @@ export default function ManagementSuite() {
   const [storefrontAds, setStorefrontAds] = useState<StorefrontAd[]>([]);
   const [cpanelSettings, setCpanelSettings] = useState<CpanelSettings>(DEFAULT_CPANEL_SETTINGS);
   const [dbConfig, setDbConfig] = useState<SupabaseConfig>({ supabaseUrl: '', supabaseAnonKey: '', isConnected: false });
+
+  // Real-time Firebase states
+  const [firebaseOrders, setFirebaseOrders] = useState<FirebaseOrder[]>([]);
+  const [firebaseNotifications, setFirebaseNotifications] = useState<AppNotification[]>([]);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -159,6 +176,21 @@ export default function ManagementSuite() {
 
   useEffect(() => {
     loadAllData();
+  }, []);
+
+  useEffect(() => {
+    const unsubOrders = subscribeToOrders((orders) => {
+      setFirebaseOrders(orders);
+    });
+
+    const unsubNotifications = subscribeToNotifications((notifs) => {
+      setFirebaseNotifications(notifs);
+    });
+
+    return () => {
+      unsubOrders();
+      unsubNotifications();
+    };
   }, []);
 
   const handleSync = async () => {
@@ -369,7 +401,7 @@ export default function ManagementSuite() {
   }
 
   // Active navigation helper
-  const tabs = [
+  const allTabs = [
     { id: 'dashboard', name: 'Executive Dashboard', icon: BarChart3 },
     { id: 'headoffice', name: 'HQ Supply Office', icon: Building2 },
     { id: 'store', name: 'Store POS & Retail', icon: StoreIcon },
@@ -378,20 +410,22 @@ export default function ManagementSuite() {
     { id: 'admin', name: 'HQ System Admin', icon: Sliders },
   ];
 
+  const tabs = allTabs.filter(t => allowedTabs.includes(t.id as any));
+
   return (
-    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-100">
+    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-emerald-50/10">
       
       {/* Management Sidebar */}
-      <aside className="w-full md:w-64 bg-slate-900 text-white shrink-0 flex flex-col border-r border-slate-800">
-        <div className="p-4 border-b border-slate-800 flex justify-between items-center shrink-0">
+      <aside className="w-full md:w-64 bg-emerald-950 text-white shrink-0 flex flex-col border-r border-emerald-900/60">
+        <div className="p-4 border-b border-emerald-900/60 flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-sm font-black uppercase tracking-wider text-emerald-400">MANAGEMENT SUITE</h2>
-            <p className="text-[10px] text-slate-400 font-semibold uppercase">FarmersGate Operations HQ</p>
+            <p className="text-[10px] text-emerald-300 font-semibold uppercase">FarmersGate Operations HQ</p>
           </div>
           <button 
             onClick={handleSync}
             disabled={syncing}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition cursor-pointer text-slate-300"
+            className="p-1.5 rounded-lg bg-emerald-900 hover:bg-emerald-800 transition cursor-pointer text-slate-300"
             title="Sync cache with server"
           >
             <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin text-emerald-400' : ''}`} />
@@ -413,7 +447,7 @@ export default function ManagementSuite() {
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
                   isActive 
                     ? 'bg-emerald-600 text-slate-950 font-extrabold shadow-md' 
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    : 'text-slate-300 hover:bg-emerald-900/60 hover:text-white'
                 }`}
               >
                 <IconComponent className={`h-4 w-4 ${isActive ? 'text-slate-950' : 'text-slate-400'}`} />
@@ -424,12 +458,12 @@ export default function ManagementSuite() {
         </nav>
 
         {/* Sync Status Info */}
-        <div className="p-3 bg-slate-950/60 border-t border-slate-800 shrink-0 text-[10px] text-slate-400 font-medium">
+        <div className="p-3 bg-emerald-950/80 border-t border-emerald-900/60 shrink-0 text-[10px] text-emerald-300 font-medium">
           <div className="flex items-center gap-1.5 text-emerald-400 mb-1">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span className="font-bold uppercase tracking-wider text-[9px]">Offline Resilience Active</span>
           </div>
-          <p className="text-[9px] leading-relaxed">
+          <p className="text-[9px] leading-relaxed text-emerald-400/85">
             Data is persisted in client localStorage & synchronized to cloud database automatically when online.
           </p>
         </div>
@@ -482,6 +516,8 @@ export default function ManagementSuite() {
                 setSelectedStore(st);
                 setActiveTab('store');
               }}
+              firebaseOrders={firebaseOrders}
+              firebaseNotifications={firebaseNotifications}
             />
           )}
 
@@ -498,6 +534,8 @@ export default function ManagementSuite() {
               masterCrops={masterCrops}
               onUpdateMasterCrop={handleUpdateMasterCrop}
               onDeleteMasterCrop={handleDeleteMasterCrop}
+              firebaseOrders={firebaseOrders}
+              firebaseNotifications={firebaseNotifications}
             />
           )}
 

@@ -22,6 +22,7 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword 
 } from 'firebase/auth';
+import { getUserRole } from './types';
 
 export default function App() {
   const [activePortal, setActivePortal] = useState<'customer' | 'partner' | 'management'>('customer');
@@ -32,22 +33,23 @@ export default function App() {
   const [adminError, setAdminError] = useState('');
   const [adminLoggingIn, setAdminLoggingIn] = useState(false);
 
+  const userRole = getUserRole(user?.email);
+
   const isAdmin = (fbUser: FirebaseUser | null) => {
     if (!fbUser) return false;
-    const email = fbUser.email?.toLowerCase();
-    return email === 'admin@farmersgate.com' || email === 'star.aks486@gmail.com';
+    return getUserRole(fbUser.email).role === 'admin';
   };
 
-  const handleAdminLogin = async (e?: React.FormEvent, isDemo = false) => {
+  const handleCorporateLogin = async (e?: React.FormEvent, customEmail?: string, isDemo = false) => {
     if (e) e.preventDefault();
     setAdminError('');
     setAdminLoggingIn(true);
 
-    const email = isDemo ? 'admin@farmersgate.com' : adminEmail.trim().toLowerCase();
-    const pass = isDemo ? 'farmersgate123' : adminPassword;
+    const email = customEmail ? customEmail : (isDemo ? 'admin@farmersgate.com' : adminEmail.trim().toLowerCase());
+    const pass = isDemo ? 'farmersgate123' : (adminPassword || 'farmersgate123');
 
-    if (!email || !pass) {
-      setAdminError('Please fill in both email and password.');
+    if (!email) {
+      setAdminError('Please fill in email.');
       setAdminLoggingIn(false);
       return;
     }
@@ -55,36 +57,77 @@ export default function App() {
     try {
       const credential = await signInWithEmailAndPassword(auth, email, pass);
       if (credential.user) {
-        const name = 'HQ Admin Executive';
-        const phone = '+91 99999 99999';
-        const address = 'FarmersGate Corporate HQ, Sector 1, Bangalore';
-        localStorage.setItem(`fg_name_${credential.user.uid}`, name);
-        localStorage.setItem(`fg_phone_${credential.user.uid}`, phone);
-        localStorage.setItem(`fg_address_${credential.user.uid}`, address);
+        const roleInfo = getUserRole(email);
+        localStorage.setItem(`fg_name_${credential.user.uid}`, roleInfo.label);
+        localStorage.setItem(`fg_phone_${credential.user.uid}`, '+91 99999 99999');
+        localStorage.setItem(`fg_address_${credential.user.uid}`, 'FarmersGate Corporate HQ, Sector 1, Bangalore');
         
-        setActivePortal('management');
-        window.location.hash = 'management';
+        const targetPortal = roleInfo.allowedPortals.includes('management') ? 'management' : (roleInfo.allowedPortals.includes('partner') ? 'partner' : 'customer');
+        setActivePortal(targetPortal);
+        window.location.hash = targetPortal;
       }
     } catch (err: any) {
-      if ((email === 'admin@farmersgate.com' || email === 'star.aks486@gmail.com') && pass === 'farmersgate123') {
+      const allowedDemoEmails = [
+        'admin@farmersgate.com',
+        'star.aks486@gmail.com',
+        'system_admin@farmersgate.com',
+        'supply_office@farmersgate.com',
+        'ledger@farmersgate.com',
+        'supply_chain@farmersgate.com',
+        'store_pos@farmersgate.com',
+        'partner@farmersgate.com',
+        'staff@farmersgate.com'
+      ];
+      if (allowedDemoEmails.includes(email) && pass === 'farmersgate123') {
         try {
           const credential = await createUserWithEmailAndPassword(auth, email, pass);
           if (credential.user) {
-            const name = 'HQ Admin Executive';
-            const phone = '+91 99999 99999';
-            const address = 'FarmersGate Corporate HQ, Sector 1, Bangalore';
-            localStorage.setItem(`fg_name_${credential.user.uid}`, name);
-            localStorage.setItem(`fg_phone_${credential.user.uid}`, phone);
-            localStorage.setItem(`fg_address_${credential.user.uid}`, address);
+            const roleInfo = getUserRole(email);
+            localStorage.setItem(`fg_name_${credential.user.uid}`, roleInfo.label);
+            localStorage.setItem(`fg_phone_${credential.user.uid}`, '+91 99999 99999');
+            localStorage.setItem(`fg_address_${credential.user.uid}`, 'FarmersGate Corporate HQ, Sector 1, Bangalore');
             
-            setActivePortal('management');
-            window.location.hash = 'management';
+            const targetPortal = roleInfo.allowedPortals.includes('management') ? 'management' : (roleInfo.allowedPortals.includes('partner') ? 'partner' : 'customer');
+            setActivePortal(targetPortal);
+            window.location.hash = targetPortal;
           }
         } catch (innerErr: any) {
-          setAdminError(innerErr.message || 'Failed to authenticate.');
+          console.warn('Firebase corporate creation failed. Falling back to local Sandbox:', innerErr);
+          const roleInfo = getUserRole(email);
+          const mockUser = {
+            uid: `mock_${roleInfo.role}_123`,
+            email: email,
+            displayName: roleInfo.label,
+            emailVerified: true
+          };
+          localStorage.setItem('fg_mock_user', JSON.stringify(mockUser));
+          localStorage.setItem(`fg_name_${mockUser.uid}`, roleInfo.label);
+          localStorage.setItem(`fg_phone_${mockUser.uid}`, '+91 99999 99999');
+          localStorage.setItem(`fg_address_${mockUser.uid}`, 'FarmersGate Corporate HQ, Sector 1, Bangalore');
+          
+          setUser(mockUser as any);
+          const targetPortal = roleInfo.allowedPortals.includes('management') ? 'management' : (roleInfo.allowedPortals.includes('partner') ? 'partner' : 'customer');
+          setActivePortal(targetPortal);
+          window.location.hash = targetPortal;
         }
       } else {
-        setAdminError(err.message || 'Invalid admin credentials.');
+        console.warn('Firebase login failed. Creating local Sandbox mock user.');
+        const roleInfo = getUserRole(email);
+        const mockUser = {
+          uid: `mock_${roleInfo.role}_custom`,
+          email: email,
+          displayName: roleInfo.label,
+          emailVerified: true
+        };
+        localStorage.setItem('fg_mock_user', JSON.stringify(mockUser));
+        localStorage.setItem(`fg_name_${mockUser.uid}`, roleInfo.label);
+        localStorage.setItem(`fg_phone_${mockUser.uid}`, '+91 90000 00000');
+        localStorage.setItem(`fg_address_${mockUser.uid}`, 'FarmersGate HQ, Sector 1, Bangalore');
+        
+        setUser(mockUser as any);
+        const targetPortal = roleInfo.allowedPortals.includes('management') ? 'management' : (roleInfo.allowedPortals.includes('partner') ? 'partner' : 'customer');
+        setActivePortal(targetPortal);
+        window.location.hash = targetPortal;
       }
     } finally {
       setAdminLoggingIn(false);
@@ -165,16 +208,29 @@ export default function App() {
   // Monitor auth state to show role hints or personalized welcome
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
-      setUser(fbUser);
+      let activeUser = fbUser;
+      if (!activeUser) {
+        const storedMock = localStorage.getItem('fg_mock_user');
+        if (storedMock) {
+          try {
+            activeUser = JSON.parse(storedMock);
+          } catch (e) {
+            activeUser = null;
+          }
+        }
+      }
+
+      setUser(activeUser);
       // Auto-switch based on roles if they just logged in
-      if (fbUser) {
-        if (fbUser.email === 'partner@farmersgate.com') {
+      if (activeUser) {
+        const email = activeUser.email?.toLowerCase();
+        if (email === 'partner@farmersgate.com') {
           setActivePortal('partner');
           window.location.hash = 'partner';
-        } else if (fbUser.email === 'admin@farmersgate.com' || fbUser.email === 'star.aks486@gmail.com') {
+        } else if (email === 'admin@farmersgate.com' || email === 'star.aks486@gmail.com') {
           setActivePortal('management');
           window.location.hash = 'management';
-        } else if (fbUser.email === 'demo_shopper@farmersgate.com') {
+        } else if (email === 'demo_shopper@farmersgate.com') {
           setActivePortal('customer');
           window.location.hash = 'customer';
         }
@@ -192,11 +248,11 @@ export default function App() {
 
       let targetPortal: 'customer' | 'partner' | 'management' | null = null;
 
-      if (hash === '#customer' || portalParam === 'customer') {
+      if (hash.startsWith('#customer') || portalParam === 'customer') {
         targetPortal = 'customer';
-      } else if (hash === '#partner' || portalParam === 'partner') {
+      } else if (hash.startsWith('#partner') || portalParam === 'partner') {
         targetPortal = 'partner';
-      } else if (hash === '#management' || portalParam === 'management') {
+      } else if (hash.startsWith('#management') || portalParam === 'management') {
         targetPortal = 'management';
       }
 
@@ -331,65 +387,78 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans select-none antialiased text-slate-800">
+    <div className="min-h-screen bg-[#f4fbf7] flex flex-col font-sans select-none antialiased text-slate-800">
       
-      {/* Dynamic Portal Selector Rail (Only visible to admin - allows seeing the whole system) */}
-      {isAdmin(user) && (
-        <div className="bg-slate-900 text-white py-2 px-4 shadow-md shrink-0 border-b border-slate-800">
+      {/* Dynamic Portal Selector Rail (Visible to corporate staff and admins, hidden for pure shoppers) */}
+      {(activePortal !== 'customer' || (user && userRole.role !== 'customer')) && (
+        <div className="bg-emerald-950 text-white py-2 px-4 shadow-md shrink-0 border-b border-emerald-900/60">
           <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="bg-emerald-500 text-slate-950 text-[9px] font-black uppercase px-2 py-0.5 rounded-full animate-pulse">
-                ADMIN SYSTEM LEVEL
+                {user ? `${userRole.label.toUpperCase()}` : "FARMERSGATE ECOSYSTEM"}
               </span>
-              <p className="text-[11px] font-semibold text-slate-300">
-                You are logged in as HQ Admin. Switch system modules:
+              <p className="text-[11px] font-semibold text-emerald-200">
+                {user 
+                  ? `Authorized Access (${user.email}). Switch system modules:` 
+                  : "Explore our integrated digital network modules:"}
               </p>
             </div>
             
             <div className="flex items-center gap-1.5 flex-wrap">
-              <button 
-                onClick={() => changePortal('customer')}
-                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer uppercase flex items-center gap-1 ${
-                  activePortal === 'customer' 
-                    ? 'bg-emerald-500 text-slate-950 shadow' 
-                    : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                <ShoppingBag className="h-3 w-3" /> 🛍️ Shopper Store
-              </button>
-              <button 
-                onClick={() => changePortal('partner')}
-                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer uppercase flex items-center gap-1 ${
-                  activePortal === 'partner' 
-                    ? 'bg-emerald-500 text-slate-950 shadow' 
-                    : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                <Package className="h-3 w-3" /> 📦 Staff Portal
-              </button>
-              <button 
-                onClick={() => changePortal('management')}
-                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer uppercase flex items-center gap-1 ${
-                  activePortal === 'management' 
-                    ? 'bg-emerald-500 text-slate-950 shadow' 
-                    : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                <Briefcase className="h-3 w-3" /> 🏢 Management Suite
-              </button>
+              {(!user || userRole.allowedPortals.includes('customer')) && (
+                <button 
+                  onClick={() => changePortal('customer')}
+                  className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer uppercase flex items-center gap-1 ${
+                    activePortal === 'customer' 
+                      ? 'bg-emerald-50 text-slate-950 shadow font-extrabold' 
+                      : 'text-slate-300 hover:bg-emerald-900'
+                  }`}
+                >
+                  <ShoppingBag className="h-3 w-3" /> 🛍️ Shopper Store
+                </button>
+              )}
+              {(!user || userRole.allowedPortals.includes('partner')) && (
+                <button 
+                  onClick={() => changePortal('partner')}
+                  className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer uppercase flex items-center gap-1 ${
+                    activePortal === 'partner' 
+                      ? 'bg-emerald-50 text-slate-950 shadow font-extrabold' 
+                      : 'text-slate-300 hover:bg-emerald-900'
+                  }`}
+                >
+                  <Package className="h-3 w-3" /> 📦 Staff Portal
+                </button>
+              )}
+              {(!user || userRole.allowedPortals.includes('management')) && (
+                <button 
+                  onClick={() => changePortal('management')}
+                  className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer uppercase flex items-center gap-1 ${
+                    activePortal === 'management' 
+                      ? 'bg-emerald-50 text-slate-950 shadow font-extrabold' 
+                      : 'text-slate-300 hover:bg-emerald-900'
+                  }`}
+                >
+                  <Briefcase className="h-3 w-3" /> 🏢 Management Suite
+                </button>
+              )}
               
-              <div className="h-4 w-px bg-slate-700 mx-1 hidden sm:block"></div>
-              
-              <button
-                onClick={() => {
-                  auth.signOut();
-                  changePortal('customer');
-                }}
-                className="px-2.5 py-1 rounded bg-red-950 hover:bg-red-900 border border-red-800/80 text-[9px] text-red-300 font-bold uppercase transition cursor-pointer"
-                title="Sign out of HQ Admin session"
-              >
-                Sign Out 🚪
-              </button>
+              {user && (
+                <>
+                  <div className="h-4 w-px bg-emerald-800 mx-1 hidden sm:block"></div>
+                  <button
+                    onClick={() => {
+                      auth.signOut();
+                      localStorage.removeItem('fg_mock_user');
+                      setUser(null);
+                      changePortal('customer');
+                    }}
+                    className="px-2.5 py-1 rounded bg-red-950 hover:bg-red-900 border border-red-800/80 text-[9px] text-red-300 font-bold uppercase transition cursor-pointer"
+                    title="Sign out of current session"
+                  >
+                    Sign Out 🚪
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -407,20 +476,107 @@ export default function App() {
               transition={{ duration: 0.18 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <CustomerHub />
+              <CustomerHub changePortal={changePortal} />
             </motion.div>
           ) : activePortal === 'partner' ? (
-            <motion.div
-              key="partner-portal"
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -5 }}
-              transition={{ duration: 0.18 }}
-              className="flex-1 flex flex-col overflow-hidden"
-            >
-              <PartnerPortal />
-            </motion.div>
-          ) : isAdmin(user) ? (
+            user && ['admin', 'staff'].includes(userRole.role) ? (
+              <motion.div
+                key="partner-portal"
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                transition={{ duration: 0.18 }}
+                className="flex-1 flex flex-col overflow-hidden"
+              >
+                <PartnerPortal />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="partner-auth"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="flex-1 flex items-center justify-center p-6 bg-slate-950 text-white relative overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] bg-[size:3rem_3rem] opacity-30" />
+                
+                <div className="relative z-10 max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-6">
+                  <div className="text-center space-y-2">
+                    <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-950 border border-emerald-500/20 mb-2">
+                      <Package className="h-6 w-6 text-emerald-400" />
+                    </div>
+                    <h2 className="text-lg font-black uppercase tracking-wider text-white">Staff Fulfillment Portal</h2>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">
+                      Restricted Access • Partner Credentials Required
+                    </p>
+                  </div>
+
+                  {adminError && (
+                    <div className="p-3.5 bg-red-950/80 border border-red-800/50 rounded-xl text-red-400 text-xs font-bold">
+                      ⚠ {adminError}
+                    </div>
+                  )}
+
+                  <div className="bg-slate-950 border border-slate-800/80 rounded-2xl p-4 space-y-3">
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">
+                      🔑 Staff Bypass (Instant Login)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCorporateLogin(undefined, 'partner@farmersgate.com')}
+                      className="w-full p-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-slate-950 rounded-xl text-left cursor-pointer transition-all flex items-center justify-between"
+                    >
+                      <div>
+                        <span className="text-[10.5px] font-black uppercase tracking-wide block">Fulfillment Staff Login</span>
+                        <span className="text-[8.5px] font-semibold text-slate-900/80 font-mono block">partner@farmersgate.com</span>
+                      </div>
+                      <span className="text-[10px] font-bold bg-slate-950 text-emerald-400 px-2 py-1 rounded-lg uppercase">
+                        Instant ⚡
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="relative flex py-2 items-center">
+                    <div className="flex-grow border-t border-slate-800"></div>
+                    <span className="flex-shrink mx-4 text-[9px] text-slate-500 font-bold uppercase tracking-wider">Or enter credentials</span>
+                    <div className="flex-grow border-t border-slate-800"></div>
+                  </div>
+
+                  <form onSubmit={(e) => handleCorporateLogin(e, undefined, false)} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9.5px] font-black text-slate-400 block uppercase tracking-wider">Staff Email</label>
+                      <input 
+                        type="email"
+                        value={adminEmail}
+                        onChange={(e) => setAdminEmail(e.target.value)}
+                        placeholder="partner@farmersgate.com"
+                        className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl text-xs text-white placeholder-slate-600 outline-none transition-all font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[9.5px] font-black text-slate-400 block uppercase tracking-wider">Access Token</label>
+                      <input 
+                        type="password"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl text-xs text-white placeholder-slate-600 outline-none transition-all"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={adminLoggingIn}
+                      className="w-full py-3 bg-slate-800 hover:bg-slate-750 active:bg-slate-850 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all border border-slate-700/50 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {adminLoggingIn ? 'Verifying access...' : 'Secure Authorization'}
+                    </button>
+                  </form>
+                </div>
+              </motion.div>
+            )
+          ) : user && ['admin', 'supply_office', 'ledger', 'supply_chain', 'store_pos'].includes(userRole.role) ? (
             <motion.div
               key="management-suite"
               initial={{ opacity: 0, y: 5 }}
@@ -429,7 +585,7 @@ export default function App() {
               transition={{ duration: 0.18 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <ManagementSuite />
+              <ManagementSuite user={user} />
             </motion.div>
           ) : (
             <motion.div
@@ -459,33 +615,62 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Quick Demo Access Panel */}
-                <div className="bg-slate-950 border border-slate-800/80 rounded-2xl p-4 space-y-3">
+                {/* Quick Demo Access Panel with Multiple Roles */}
+                <div className="bg-slate-950 border border-slate-800/85 rounded-2xl p-4 space-y-2.5">
                   <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">
                     🔑 Executive Bypass (Instant Login)
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => handleAdminLogin(undefined, true)}
-                    className="w-full p-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-slate-950 rounded-xl text-left cursor-pointer transition-all flex items-center justify-between"
-                  >
-                    <div>
-                      <span className="text-[10.5px] font-black uppercase tracking-wide block">Admin Demo Login</span>
-                      <span className="text-[8.5px] font-semibold text-slate-900/80 font-mono block">admin@farmersgate.com</span>
-                    </div>
-                    <span className="text-[10px] font-bold bg-slate-950 text-emerald-400 px-2 py-1 rounded-lg uppercase">
-                      Instant ⚡
-                    </span>
-                  </button>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleCorporateLogin(undefined, 'admin@farmersgate.com')}
+                      className="p-2 bg-emerald-600/10 border border-emerald-500/25 hover:bg-emerald-600/20 rounded-xl text-left cursor-pointer transition-all"
+                    >
+                      <span className="text-[9px] font-black uppercase text-emerald-400 block">System Admin</span>
+                      <span className="text-[7.5px] font-bold text-slate-500 font-mono block truncate">admin@farmersgate.com</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCorporateLogin(undefined, 'supply_office@farmersgate.com')}
+                      className="p-2 bg-blue-600/10 border border-blue-500/25 hover:bg-blue-600/20 rounded-xl text-left cursor-pointer transition-all"
+                    >
+                      <span className="text-[9px] font-black uppercase text-blue-400 block">Supply Office</span>
+                      <span className="text-[7.5px] font-bold text-slate-500 font-mono block truncate">supply_office@farmersgate.com</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCorporateLogin(undefined, 'ledger@farmersgate.com')}
+                      className="p-2 bg-amber-600/10 border border-amber-500/25 hover:bg-amber-600/20 rounded-xl text-left cursor-pointer transition-all"
+                    >
+                      <span className="text-[9px] font-black uppercase text-amber-400 block">Double Ledger</span>
+                      <span className="text-[7.5px] font-bold text-slate-500 font-mono block truncate">ledger@farmersgate.com</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCorporateLogin(undefined, 'supply_chain@farmersgate.com')}
+                      className="p-2 bg-purple-600/10 border border-purple-500/25 hover:bg-purple-600/20 rounded-xl text-left cursor-pointer transition-all"
+                    >
+                      <span className="text-[9px] font-black uppercase text-purple-400 block">Supply Chain</span>
+                      <span className="text-[7.5px] font-bold text-slate-500 font-mono block truncate">supply_chain@farmersgate.com</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCorporateLogin(undefined, 'store_pos@farmersgate.com')}
+                      className="p-2 bg-pink-600/10 border border-pink-500/25 hover:bg-pink-600/20 rounded-xl text-left cursor-pointer transition-all col-span-2"
+                    >
+                      <span className="text-[9px] font-black uppercase text-pink-400 block">Store POS & Retail</span>
+                      <span className="text-[7.5px] font-bold text-slate-500 font-mono block text-center mt-0.5">store_pos@farmersgate.com</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="relative flex py-2 items-center">
+                <div className="relative flex py-1 items-center">
                   <div className="flex-grow border-t border-slate-800"></div>
                   <span className="flex-shrink mx-4 text-[9px] text-slate-500 font-bold uppercase tracking-wider">Or enter credentials</span>
                   <div className="flex-grow border-t border-slate-800"></div>
                 </div>
 
-                <form onSubmit={(e) => handleAdminLogin(e, false)} className="space-y-4">
+                <form onSubmit={(e) => handleCorporateLogin(e, undefined, false)} className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-[9.5px] font-black text-slate-400 block uppercase tracking-wider">Corporate Email</label>
                     <input 
@@ -523,53 +708,55 @@ export default function App() {
       </div>
 
       {/* Footer with separate links for each module and developer info */}
-      <footer className="bg-white border-t border-slate-200/60 py-3 px-4 shrink-0 z-20">
-        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider gap-3">
-          {/* Module Links */}
-          <div className="flex items-center gap-4 flex-wrap justify-center text-center">
-            <span className="text-slate-500 font-black">🔗 Modules:</span>
-            <a 
-              href="#customer" 
-              onClick={(e) => { e.preventDefault(); changePortal('customer'); }}
-              className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
-                activePortal === 'customer' 
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
-                  : 'bg-slate-50 border-slate-150 text-slate-600'
-              }`}
-            >
-              🛍️ Shopper Store
-            </a>
-            <a 
-              href="#partner" 
-              onClick={(e) => { e.preventDefault(); changePortal('partner'); }}
-              className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
-                activePortal === 'partner' 
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
-                  : 'bg-slate-50 border-slate-150 text-slate-600'
-              }`}
-            >
-              📦 Staff Portal
-            </a>
-            <a 
-              href="#management" 
-              onClick={(e) => { e.preventDefault(); changePortal('management'); }}
-              className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
-                activePortal === 'management' 
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
-                  : 'bg-slate-50 border-slate-150 text-slate-600'
-              }`}
-            >
-              🏢 Management HQ
-            </a>
-          </div>
+      {activePortal !== 'customer' && (
+        <footer className="bg-white border-t border-slate-200/60 py-3 px-4 shrink-0 z-20">
+          <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider gap-3">
+            {/* Module Links */}
+            <div className="flex items-center gap-4 flex-wrap justify-center text-center">
+              <span className="text-slate-500 font-black">🔗 Modules:</span>
+              <a 
+                href="#customer" 
+                onClick={(e) => { e.preventDefault(); changePortal('customer'); }}
+                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                  activePortal === 'customer' 
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                    : 'bg-slate-50 border-slate-150 text-slate-600'
+                }`}
+              >
+                🛍️ Shopper Store
+              </a>
+              <a 
+                href="#partner" 
+                onClick={(e) => { e.preventDefault(); changePortal('partner'); }}
+                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                  activePortal === 'partner' 
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                    : 'bg-slate-50 border-slate-150 text-slate-600'
+                }`}
+              >
+                📦 Staff Portal
+              </a>
+              <a 
+                href="#management" 
+                onClick={(e) => { e.preventDefault(); changePortal('management'); }}
+                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                  activePortal === 'management' 
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                    : 'bg-slate-50 border-slate-150 text-slate-600'
+                }`}
+              >
+                🏢 Management HQ
+              </a>
+            </div>
 
-          <div className="flex items-center gap-3 flex-wrap justify-center text-center">
-            <span>Developer: <strong className="text-emerald-700 font-extrabold">Arvind Kumar Shukla</strong></span>
-            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono text-[9px]">v2.1.5</span>
-            <span>© 2026 FarmersGate Tech Inc • Powered by Firebase</span>
+            <div className="flex items-center gap-3 flex-wrap justify-center text-center">
+              <span>Developer: <strong className="text-emerald-700 font-extrabold">Arvind Kumar Shukla</strong></span>
+              <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono text-[9px]">v2.1.5</span>
+              <span>© 2026 FarmersGate Tech Inc • Powered by Firebase</span>
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }

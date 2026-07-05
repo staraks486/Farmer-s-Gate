@@ -13,6 +13,7 @@ import {
   Users, 
   Info,
   Layers,
+  MessageSquare,
   MapPin,
   Settings2,
   Sliders,
@@ -545,6 +546,18 @@ export default function AdminPanel({
   const [storePassword, setStorePassword] = useState('');
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
 
+  // Store Messaging State
+  const [activeMessageStoreId, setActiveMessageStoreId] = useState<string | null>(null);
+  const [messageText, setMessageText] = useState('');
+  const [messageTemplate, setMessageTemplate] = useState('none');
+  const [messageLogs, setMessageLogs] = useState<Array<{
+    id: string;
+    storeName: string;
+    whatsapp: string;
+    content: string;
+    timestamp: string;
+  }>>([]);
+
   // Ad Form State
   const [adFormOpen, setAdFormOpen] = useState(false);
   const [adTitle, setAdTitle] = useState('');
@@ -772,9 +785,9 @@ export default function AdminPanel({
       if (match) {
         onUpdateStore({
           ...match,
-          name: storeName,
+          name: storeName.startsWith("Farmer's Gate - ") ? storeName : `Farmer's Gate - ${storeName}`,
           location: storeLocation,
-          whatsappNumber: storeWhatsapp,
+          whatsappNumber: storeWhatsapp.replace(/[^\d+]/g, ''), // clean phone input
           password: storePassword || undefined
         });
       }
@@ -1077,6 +1090,20 @@ export default function AdminPanel({
                 </div>
 
                 <div className="mt-5 flex justify-end gap-2 border-t border-zinc-100 pt-3">
+                  {store.whatsappNumber && (
+                    <button
+                      onClick={() => {
+                        setActiveMessageStoreId(store.id);
+                        setMessageText('');
+                        setMessageTemplate('none');
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 flex items-center gap-1 transition-all cursor-pointer"
+                      title="Send WhatsApp message or announcement to store manager"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <span>Message</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       onUpdateStore({
@@ -1094,18 +1121,18 @@ export default function AdminPanel({
                   </button>
                   <button
                     onClick={() => handleEditStoreClick(store)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-700 hover:bg-zinc-100 cursor-pointer"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => {
-                      if(confirm(`Are you sure you want to delete ${store.name}?`)) {
+                      if (confirm(`Are you sure you want to permanently delete store "${store.name}"? This action cannot be undone.`)) {
                         onDeleteStore(store.id);
                       }
                     }}
-                    className="p-1.5 rounded-lg text-red-600 hover:bg-red-50"
-                    title="Delete Store"
+                    className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 hover:text-red-700 transition cursor-pointer"
+                    title="Delete Store Outlet"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -1121,6 +1148,161 @@ export default function AdminPanel({
               </div>
             )}
           </div>
+
+          {/* WhatsApp / Announcement Message Composer Modal */}
+          {activeMessageStoreId && (() => {
+            const currentStore = stores.find(s => s.id === activeMessageStoreId);
+            if (!currentStore) return null;
+
+            // Template Handler
+            const applyTemplate = (val: string) => {
+              setMessageTemplate(val);
+              if (val === 'pricing') {
+                setMessageText(`Dear Store Manager of ${currentStore.name},\n\nPlease review and update your retail price list immediately to ensure unified crop pricing across all FarmersGate retail divisions.\n\nRegards,\nSystem Administrator`);
+              } else if (val === 'requirements') {
+                setMessageText(`Dear Store Manager of ${currentStore.name},\n\nNotice: Please submit your outstanding fresh crop requirements and stock demands for the upcoming delivery cycle.\n\nRegards,\nSystem Administrator`);
+              } else if (val === 'audit') {
+                setMessageText(`Dear Store Manager of ${currentStore.name},\n\nHeads up: A financial and physical inventory audit of your outlet has been scheduled. Please keep sales registers balanced and stock sheets ready.\n\nRegards,\nSystem Administrator`);
+              } else if (val === 'system') {
+                setMessageText(`Dear Store Manager of ${currentStore.name},\n\nSystem Admin Alert: An online synchronization sequence has been completed on the database server. Please check your current POS registers to ensure accurate ledgers.\n\nRegards,\nSystem Administrator`);
+              } else {
+                setMessageText('');
+              }
+            };
+
+            const handleSendMessage = (e: React.FormEvent) => {
+              e.preventDefault();
+              if (!messageText.trim()) return;
+
+              // Generate WhatsApp link
+              const encodedMsg = encodeURIComponent(messageText);
+              const waUrl = `https://wa.me/${currentStore.whatsappNumber}?text=${encodedMsg}`;
+
+              // Add to message logs
+              const newLog = {
+                id: `log-${Date.now()}`,
+                storeName: currentStore.name,
+                whatsapp: currentStore.whatsappNumber,
+                content: messageText,
+                timestamp: new Date().toLocaleString()
+              };
+              setMessageLogs([newLog, ...messageLogs]);
+
+              // Open in new window
+              window.open(waUrl, '_blank', 'noopener,noreferrer');
+
+              // Reset modal
+              setActiveMessageStoreId(null);
+              setMessageText('');
+              setMessageTemplate('none');
+            };
+
+            return (
+              <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+                <div className="bg-white rounded-2xl shadow-xl border border-zinc-200 max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
+                  {/* Modal Header */}
+                  <div className="bg-emerald-600 text-white px-6 py-4 flex justify-between items-center">
+                    <div>
+                      <h4 className="font-bold text-base">Send Announcement to Store</h4>
+                      <p className="text-xs text-emerald-100 mt-0.5">Composing message for: <strong className="text-white">{currentStore.name}</strong></p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMessageStoreId(null)}
+                      className="text-white hover:text-emerald-150 transition text-lg font-bold p-1"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSendMessage} className="p-6 space-y-4 flex-1 overflow-y-auto">
+                    {/* Destination info */}
+                    <div className="bg-zinc-50 border border-zinc-200 p-3 rounded-xl flex items-center justify-between text-xs">
+                      <span className="text-zinc-500 font-medium">Recipient WhatsApp:</span>
+                      <strong className="text-zinc-800 font-mono font-bold">+{currentStore.whatsappNumber}</strong>
+                    </div>
+
+                    {/* Presets */}
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-600 uppercase tracking-wide mb-1.5">Announcement Presets</label>
+                      <select
+                        value={messageTemplate}
+                        onChange={(e) => applyTemplate(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 py-2 px-3 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white font-semibold text-zinc-700 cursor-pointer"
+                      >
+                        <option value="none">-- Custom Message (Type below) --</option>
+                        <option value="pricing">📋 Update Retail Price List</option>
+                        <option value="requirements">🥦 Submit Fresh Requirements</option>
+                        <option value="audit">🔍 Inventory/Financial Audit notice</option>
+                        <option value="system">⚡ Database Synchronization Notice</option>
+                      </select>
+                    </div>
+
+                    {/* Message input */}
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-600 uppercase tracking-wide mb-1.5">Message Content</label>
+                      <textarea
+                        required
+                        rows={6}
+                        placeholder="Write your announcement message here..."
+                        value={messageText}
+                        onChange={(e) => setMessageText(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 p-3 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-zinc-800"
+                      />
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100">
+                      <button
+                        type="button"
+                        onClick={() => setActiveMessageStoreId(null)}
+                        className="rounded-xl border border-zinc-200 px-4 py-2 text-xs font-bold text-zinc-600 hover:bg-zinc-50 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-md shadow-emerald-100 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        <span>Send WhatsApp</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Sent Announcements Log / Audit Trail */}
+          {messageLogs.length > 0 && (
+            <div className="mt-8 rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs animate-fade-in">
+              <div className="flex items-center gap-2 border-b border-zinc-100 pb-3 mb-4">
+                <span className="text-base">📋</span>
+                <div>
+                  <h4 className="font-bold text-zinc-900 text-sm">Sent Announcements History</h4>
+                  <p className="text-xs text-zinc-500">Log trace of all messages dispatched from this Admin Panel session.</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                {messageLogs.map(log => (
+                  <div key={log.id} className="p-3 bg-zinc-50 rounded-xl border border-zinc-150 text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-zinc-800">{log.storeName}</span>
+                        <span className="bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded text-[9px] font-mono">+{log.whatsapp}</span>
+                      </div>
+                      <p className="text-zinc-600 font-semibold italic bg-white p-2 rounded-lg border border-zinc-100 mt-1">"{log.content}"</p>
+                    </div>
+                    <div className="text-[10px] text-zinc-400 font-bold whitespace-nowrap self-end sm:self-center">
+                      ⏱️ {log.timestamp}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

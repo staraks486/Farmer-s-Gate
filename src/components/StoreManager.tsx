@@ -35,8 +35,9 @@ import {
   Printer
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification } from '../types';
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
+import { subscribeToNotifications } from '../lib/firebase';
 import { QrScanner } from './QrScanner';
 
 interface StoreManagerProps {
@@ -170,6 +171,16 @@ export default function StoreManager({
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Card' | 'UPI'>('Cash');
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+
+  // Real-time broadcast notifications from the central database
+  const [broadcastNotifications, setBroadcastNotifications] = useState<AppNotification[]>([]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToNotifications((notifs) => {
+      setBroadcastNotifications(notifs);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const COMMON_CROPS_LIST = [
     { name: 'Potato', emoji: '🥔', defaultPrice: 30 },
@@ -2109,7 +2120,7 @@ export default function StoreManager({
                   {(() => {
                     const lowStockCount = storeInventory.filter(item => item.quantity <= item.minStockThreshold).length;
                     const pendingOrdersCount = customerOrders.filter(co => co.storeId === store.id && co.status !== 'Completed' && co.status !== 'Cancelled').length;
-                    const totalAlerts = lowStockCount + pendingOrdersCount;
+                    const totalAlerts = lowStockCount + pendingOrdersCount + broadcastNotifications.length;
                     return totalAlerts > 0 ? (
                       <span className="bg-rose-500 text-white text-[8px] sm:text-[9px] px-1 py-0.5 rounded-full font-black animate-pulse">
                         {totalAlerts}
@@ -2900,20 +2911,47 @@ export default function StoreManager({
                     const pendingOrders = customerOrders.filter(co => co.storeId === store.id && co.status !== 'Completed' && co.status !== 'Cancelled');
                     const pendingRequests = storeRequirements.filter(r => r.status === 'Pending' || r.status === 'Ordered');
                     
-                    const noAlerts = lowStockItems.length === 0 && pendingOrders.length === 0 && pendingRequests.length === 0;
+                    const noAlerts = lowStockItems.length === 0 && pendingOrders.length === 0 && pendingRequests.length === 0 && broadcastNotifications.length === 0;
 
                     if (noAlerts) {
                       return (
                         <div className="py-12 text-center bg-emerald-50 border border-emerald-200 rounded-3xl p-6">
                           <span className="text-3xl block mb-2">✨</span>
                           <h4 className="text-xs font-black text-emerald-900">Your branch desk is fully operational!</h4>
-                          <p className="text-[11px] text-emerald-700 mt-1 max-w-sm mx-auto">All parameters are healthy. No low stock crops, pending online customer orders, or urgent restock requests requiring attention.</p>
+                          <p className="text-[11px] text-emerald-700 mt-1 max-w-sm mx-auto">All parameters are healthy. No low stock crops, central notifications, pending online customer orders, or urgent restock requests requiring attention.</p>
                         </div>
                       );
                     }
 
                     return (
                       <div className="space-y-5">
+                        {/* Central Catalog Broadcasts section */}
+                        {broadcastNotifications.length > 0 && (
+                          <div className="bg-gradient-to-br from-emerald-50/70 to-teal-50/30 border border-emerald-150 p-5 rounded-3xl shadow-3xs space-y-3">
+                            <div className="flex items-center justify-between border-b border-emerald-100 pb-2.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-base">📢</span>
+                                <h4 className="text-xs font-black uppercase text-emerald-800 tracking-wider">Central Catalogue Broadcasts ({broadcastNotifications.length})</h4>
+                              </div>
+                              <span className="text-[8px] bg-emerald-600 text-white font-black uppercase px-2 py-0.5 rounded-full tracking-wider animate-pulse">Live Broadcast</span>
+                            </div>
+                            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                              {broadcastNotifications.map(notif => (
+                                <div key={notif.id} className="p-3.5 bg-white rounded-2xl border border-emerald-100 shadow-3xs flex flex-col gap-2 transition-all hover:shadow-2xs">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                      <h5 className="text-xs font-black text-slate-800 leading-snug">{notif.title}</h5>
+                                      <p className="text-[9px] text-slate-400 mt-0.5 font-medium font-mono">{new Date(notif.timestamp).toLocaleString()}</p>
+                                    </div>
+                                    <span className="text-[8px] bg-teal-50 text-teal-800 font-black px-2 py-0.5 rounded-md uppercase tracking-wide border border-teal-100 shrink-0">Catalog Update</span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-600 font-medium leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">{notif.message}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {/* Pending online customer orders section */}
                         {pendingOrders.length > 0 && (
                           <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3">

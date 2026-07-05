@@ -16,7 +16,9 @@ import {
   Search, 
   Send,
   X,
-  Database
+  Database,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import { 
   db, 
@@ -24,6 +26,10 @@ import {
   updateOrderStatusInFirestore, 
   getProductsFromFirestore, 
   updateProductStockInFirestore,
+  updateProductInFirestore,
+  addProductToFirestore,
+  deleteProductFromFirestore,
+  addNotificationToFirestore,
   FirebaseOrder
 } from '../lib/firebase';
 
@@ -37,6 +43,87 @@ export default function PartnerPortal() {
   const [selectedOrder, setSelectedOrder] = useState<FirebaseOrder | null>(null);
   const [chatMessage, setChatMessage] = useState('');
   const [riderInput, setRiderInput] = useState({ name: '', phone: '' });
+
+  const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [newProductForm, setNewProductForm] = useState({
+    vegetableName: '',
+    category: 'Vegetable',
+    sellingPrice: 0,
+    costPrice: 0,
+    stock: 0,
+    unit: 'kg',
+    emoji: '🥦',
+    minStockThreshold: 10
+  });
+
+  // Handler to update an existing product
+  const handleUpdateProduct = async (productId: string, updatedFields: Partial<any>) => {
+    try {
+      await updateProductInFirestore(productId, updatedFields);
+      setProducts(prev => prev.map(p => p.id === productId ? { ...p, ...updatedFields } : p));
+      setEditingProduct(null);
+    } catch (err) {
+      alert('Error updating product details.');
+    }
+  };
+
+  // Handler to delete a product
+  const handleDeleteProduct = async (productId: string) => {
+    if (confirm('Are you sure you want to delete this item from the catalog?')) {
+      try {
+        await deleteProductFromFirestore(productId);
+        setProducts(prev => prev.filter(p => p.id !== productId));
+        if (editingProduct?.id === productId) {
+          setEditingProduct(null);
+        }
+      } catch (err) {
+        alert('Error deleting product.');
+      }
+    }
+  };
+
+  // Handler to add a new product
+  const handleAddProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProductForm.vegetableName.trim()) {
+      alert('Please enter a product name.');
+      return;
+    }
+    try {
+      const addedId = await addProductToFirestore(newProductForm);
+      const newProd = { ...newProductForm, id: addedId };
+      setProducts(prev => [...prev, newProd]);
+
+      // Send real-time central catalog broadcast notification to all stores
+      try {
+        await addNotificationToFirestore({
+          type: 'new_product',
+          title: '🥦 New Crop Added to Catalogue!',
+          message: `A fresh batch of "${newProductForm.emoji} ${newProductForm.vegetableName}" has been successfully added to the central catalogue. Category: ${newProductForm.category}. Sourcing price: ₹${newProductForm.costPrice}/${newProductForm.unit} (selling price is set to ₹${newProductForm.sellingPrice}/${newProductForm.unit}). Initial available farm pool stock: ${newProductForm.stock} ${newProductForm.unit}. Local stores can now request restocks of this item!`,
+          timestamp: new Date().toISOString(),
+          severity: 'success',
+          linkToView: 'store'
+        });
+      } catch (notifErr) {
+        console.error('Failed to broadcast central catalog notification:', notifErr);
+      }
+
+      setIsAddingProduct(false);
+      setNewProductForm({
+        vegetableName: '',
+        category: 'Vegetable',
+        sellingPrice: 0,
+        costPrice: 0,
+        stock: 0,
+        unit: 'kg',
+        emoji: '🥦',
+        minStockThreshold: 10
+      });
+    } catch (err) {
+      alert('Error creating product.');
+    }
+  };
 
   // Load orders and products in real-time
   useEffect(() => {
@@ -529,17 +616,25 @@ export default function PartnerPortal() {
                   <h3 className="font-black text-slate-800 text-sm uppercase flex items-center gap-1.5">
                     🗄️ Instant Inventory controller
                   </h3>
-                  <p className="text-[10.5px] text-slate-400 font-bold uppercase mt-0.5">Adjust FarmersGate stock and pricing on the fly</p>
+                  <p className="text-[10.5px] text-slate-400 font-bold uppercase mt-0.5">Adjust, edit or add FarmersGate stock and pricing on the fly</p>
                 </div>
-                <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search fresh produce..."
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
+                <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                  <button
+                    onClick={() => setIsAddingProduct(true)}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black rounded-xl uppercase tracking-wider cursor-pointer shadow-xs whitespace-nowrap flex items-center gap-1.5 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" /> Add Produce
+                  </button>
+                  <div className="relative w-full sm:w-56">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search fresh produce..."
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -563,7 +658,7 @@ export default function PartnerPortal() {
                           <div className="flex items-center gap-1.5">
                             <span className="text-2xl">{p.emoji || '🥦'}</span>
                             <div>
-                              <h4 className="font-black text-slate-800 text-xs truncate max-w-[120px]" title={p.vegetableName}>
+                              <h4 className="font-black text-slate-800 text-xs truncate max-w-[110px]" title={p.vegetableName}>
                                 {p.vegetableName}
                               </h4>
                               <span className="inline-block text-[8px] font-black uppercase bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded mt-0.5">
@@ -571,11 +666,20 @@ export default function PartnerPortal() {
                               </span>
                             </div>
                           </div>
-                          {isLow && (
-                            <span className="text-[8px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full uppercase flex items-center gap-0.5 animate-pulse">
-                              <AlertCircle className="h-2 w-2" /> LOW
-                            </span>
-                          )}
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            {isLow && (
+                              <span className="text-[8px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full uppercase flex items-center gap-0.5 animate-pulse">
+                                <AlertCircle className="h-2 w-2" /> LOW
+                              </span>
+                            )}
+                            <button
+                              onClick={() => setEditingProduct(p)}
+                              className="p-1 text-slate-400 hover:text-emerald-600 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                              title="Modify item & price details"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="border-t border-b border-slate-100 py-2 flex justify-between items-center text-xs">
@@ -618,6 +722,278 @@ export default function PartnerPortal() {
                 </div>
               )}
             </div>
+
+            {/* Modals for Add & Edit product details */}
+            {isAddingProduct && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+                <div className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-xl space-y-4 text-left">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <h3 className="font-black text-slate-800 text-sm uppercase flex items-center gap-1.5">
+                      <span>➕ Add Fresh Produce Item</span>
+                    </h3>
+                    <button 
+                      onClick={() => setIsAddingProduct(false)}
+                      className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleAddProduct} className="space-y-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Product Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={newProductForm.vegetableName}
+                        onChange={e => setNewProductForm({...newProductForm, vegetableName: e.target.value})}
+                        placeholder="e.g. Fresh Red Radish"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Category</label>
+                        <select
+                          value={newProductForm.category}
+                          onChange={e => setNewProductForm({...newProductForm, category: e.target.value})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        >
+                          <option value="Vegetable">Vegetable</option>
+                          <option value="Fruit">Fruit</option>
+                          <option value="Herbs">Herbs</option>
+                          <option value="Grocery">Grocery</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Unit</label>
+                        <input
+                          type="text"
+                          required
+                          value={newProductForm.unit}
+                          onChange={e => setNewProductForm({...newProductForm, unit: e.target.value})}
+                          placeholder="e.g. kg, bunch, box"
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Selling Price (₹)</label>
+                        <input
+                          type="number"
+                          required
+                          min="0"
+                          value={newProductForm.sellingPrice}
+                          onChange={e => setNewProductForm({...newProductForm, sellingPrice: Number(e.target.value)})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Cost Price (₹)</label>
+                        <input
+                          type="number"
+                          required
+                          min="0"
+                          value={newProductForm.costPrice}
+                          onChange={e => setNewProductForm({...newProductForm, costPrice: Number(e.target.value)})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Initial Stock</label>
+                        <input
+                          type="number"
+                          required
+                          min="0"
+                          value={newProductForm.stock}
+                          onChange={e => setNewProductForm({...newProductForm, stock: Number(e.target.value)})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Min Stock Warning</label>
+                        <input
+                          type="number"
+                          required
+                          min="0"
+                          value={newProductForm.minStockThreshold}
+                          onChange={e => setNewProductForm({...newProductForm, minStockThreshold: Number(e.target.value)})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Emoji Icon</label>
+                      <input
+                        type="text"
+                        required
+                        value={newProductForm.emoji}
+                        onChange={e => setNewProductForm({...newProductForm, emoji: e.target.value})}
+                        placeholder="🥦"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none text-center text-lg"
+                      />
+                    </div>
+                    <div className="pt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingProduct(false)}
+                        className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl uppercase tracking-wider cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl uppercase tracking-wider cursor-pointer shadow-md"
+                      >
+                        Save Produce
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {editingProduct && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+                <div className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-xl space-y-4 text-left">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <h3 className="font-black text-slate-800 text-sm uppercase">📝 Edit Produce Details</h3>
+                    <button 
+                      onClick={() => setEditingProduct(null)}
+                      className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Product Name</label>
+                      <input
+                        type="text"
+                        value={editingProduct.vegetableName}
+                        onChange={e => setEditingProduct({...editingProduct, vegetableName: e.target.value})}
+                        placeholder="e.g. Fresh Red Radish"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Category</label>
+                        <select
+                          value={editingProduct.category}
+                          onChange={e => setEditingProduct({...editingProduct, category: e.target.value})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        >
+                          <option value="Vegetable">Vegetable</option>
+                          <option value="Fruit">Fruit</option>
+                          <option value="Herbs">Herbs</option>
+                          <option value="Grocery">Grocery</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Unit</label>
+                        <input
+                          type="text"
+                          value={editingProduct.unit}
+                          onChange={e => setEditingProduct({...editingProduct, unit: e.target.value})}
+                          placeholder="e.g. kg, bunch, box"
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Selling Price (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingProduct.sellingPrice}
+                          onChange={e => setEditingProduct({...editingProduct, sellingPrice: Number(e.target.value)})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Cost Price (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingProduct.costPrice}
+                          onChange={e => setEditingProduct({...editingProduct, costPrice: Number(e.target.value)})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Stock</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingProduct.stock}
+                          onChange={e => setEditingProduct({...editingProduct, stock: Number(e.target.value)})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Min Stock Warning</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingProduct.minStockThreshold}
+                          onChange={e => setEditingProduct({...editingProduct, minStockThreshold: Number(e.target.value)})}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Emoji Icon</label>
+                      <input
+                        type="text"
+                        value={editingProduct.emoji}
+                        onChange={e => setEditingProduct({...editingProduct, emoji: e.target.value})}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none text-center text-lg"
+                      />
+                    </div>
+                    <div className="pt-3 flex gap-2 justify-between">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProduct(editingProduct.id)}
+                        className="px-3.5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-black rounded-xl uppercase tracking-wider cursor-pointer flex items-center gap-1 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingProduct(null)}
+                          className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl uppercase tracking-wider cursor-pointer transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateProduct(editingProduct.id, {
+                            vegetableName: editingProduct.vegetableName,
+                            category: editingProduct.category,
+                            sellingPrice: editingProduct.sellingPrice,
+                            costPrice: editingProduct.costPrice,
+                            stock: editingProduct.stock,
+                            unit: editingProduct.unit,
+                            emoji: editingProduct.emoji,
+                            minStockThreshold: editingProduct.minStockThreshold
+                          })}
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl uppercase tracking-wider cursor-pointer shadow-md transition-colors"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>

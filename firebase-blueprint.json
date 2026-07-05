@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Represents an organic crop item in the master catalogue",
+      "type": "object",
+      "properties": {
+        "vegetableName": { "type": "string", "description": "Name of the crop" },
+        "category": { "type": "string", "enum": ["Vegetable", "Fruit", "Herbs", "Grocery", "Other"], "description": "Product category classification" },
+        "sellingPrice": { "type": "number", "description": "Outward shelf retail price in Rupees" },
+        "costPrice": { "type": "number", "description": "Procurement cost in Rupees" },
+        "stock": { "type": "number", "description": "HQ or farming depot inventory stockpile" },
+        "unit": { "type": "string", "description": "Unit of measurement (e.g., kg, bunch, box, pcs)" },
+        "emoji": { "type": "string", "description": "Visual illustrative symbol" },
+        "minStockThreshold": { "type": "number", "description": "Alert triggering threshold for local outlets" }
+      },
+      "required": ["vegetableName", "category", "sellingPrice", "costPrice", "stock", "unit", "emoji", "minStockThreshold"]
+    },
+    "FirebaseOrder": {
+      "title": "FirebaseOrder",
+      "description": "Customer home delivery or pick-up order entry",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerAddress": { "type": "string" },
+        "items": {
+          "type": "array",
+          "description": "Items in the order"
+        },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Pending", "Dispatched", "Completed", "Cancelled"] },
+        "orderDate": { "type": "string" },
+        "storeId": { "type": "string" },
+        "storeName": { "type": "string" },
+        "rating": { "type": "number" },
+        "ratingComment": { "type": "string" }
+      },
+      "required": ["orderNumber", "customerName", "customerPhone", "customerAddress", "items", "totalAmount", "status", "orderDate", "storeId", "storeName"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "Broadcast notifications and alerts distributed to all store outlets",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Notification type (e.g., new_product, alert, low_stock)" },
+        "title": { "type": "string", "description": "Summary of the broadcast notification" },
+        "message": { "type": "string", "description": "Full details of the added crop item or announcement" },
+        "timestamp": { "type": "string", "description": "ISO timestamp of publication" },
+        "severity": { "type": "string", "enum": ["info", "warning", "error", "success"], "description": "Display importance tier" },
+        "linkToView": { "type": "string", "description": "Optional navigation hint" }
+      },
+      "required": ["type", "title", "message", "timestamp", "severity"]
+    }
+  },
+  "firestore": {
+    "products": {
+      "schema": "Product",
+      "description": "Master catalogue containing fresh crops sourced from registered farmers"
+    },
+    "orders": {
+      "schema": "FirebaseOrder",
+      "description": "Consolidated customer orders synchronized across regions"
+    },
+    "notifications": {
+      "schema": "AppNotification",
+      "description": "Real-time global announcements and new crop dispatch notifications for branch outlets"
+    }
+  }
+}

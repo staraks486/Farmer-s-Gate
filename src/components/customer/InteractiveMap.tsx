@@ -108,7 +108,7 @@ export default function InteractiveMap({ currentAddress, onSelectAddress }: Inte
             </span>
           </div>
           <span className="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded uppercase tracking-wider font-extrabold shadow-sm">
-            EST. 9 MINS
+            EST. EXPRESS
           </span>
         </div>
       )}

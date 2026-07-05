@@ -577,6 +577,9 @@ export async function dbGetStores(): Promise<Store[]> {
         .select('*')
         .order('name', { ascending: true });
       if (error) throw error;
+      if (data) {
+        localStorage.setItem('fg_stores', JSON.stringify(data));
+      }
       return data as Store[];
     } catch (e) {
       console.warn('Supabase fetch failed, falling back to local storage:', e);
@@ -588,6 +591,15 @@ export async function dbGetStores(): Promise<Store[]> {
 
 export async function dbAddStore(store: Store): Promise<Store> {
   const config = getSupabaseConfig();
+  
+  // Always update local storage first so that the UI can update instantly and reliably
+  const local = localStorage.getItem('fg_stores');
+  const stores = local ? JSON.parse(local) : [];
+  if (!stores.some((s: Store) => s.id === store.id)) {
+    stores.push(store);
+    localStorage.setItem('fg_stores', JSON.stringify(stores));
+  }
+
   if (config.isConnected && supabaseInstance) {
     try {
       const { data, error } = await supabaseInstance
@@ -598,21 +610,28 @@ export async function dbAddStore(store: Store): Promise<Store> {
       if (error) throw error;
       return data as Store;
     } catch (e) {
-      console.warn('Supabase save failed, writing to local storage:', e);
+      console.warn('Supabase save failed, writing to local storage as fallback:', e);
       dbAddUnsyncedOp('stores', 'insert', store);
     }
   } else {
     dbAddUnsyncedOp('stores', 'insert', store);
   }
   
-  const stores = await dbGetStores();
-  stores.push(store);
-  localStorage.setItem('fg_stores', JSON.stringify(stores));
   return store;
 }
 
 export async function dbUpdateStore(store: Store): Promise<Store> {
   const config = getSupabaseConfig();
+  
+  // Always update local storage first
+  const local = localStorage.getItem('fg_stores');
+  const stores = local ? JSON.parse(local) : [];
+  const index = stores.findIndex((s: Store) => s.id === store.id);
+  if (index !== -1) {
+    stores[index] = store;
+    localStorage.setItem('fg_stores', JSON.stringify(stores));
+  }
+
   if (config.isConnected && supabaseInstance) {
     try {
       const { data, error } = await supabaseInstance
@@ -624,24 +643,25 @@ export async function dbUpdateStore(store: Store): Promise<Store> {
       if (error) throw error;
       return data as Store;
     } catch (e) {
-      console.warn('Supabase update failed, falling back to local storage:', e);
+      console.warn('Supabase update failed, falling back to local storage as fallback:', e);
       dbAddUnsyncedOp('stores', 'update', store);
     }
   } else {
     dbAddUnsyncedOp('stores', 'update', store);
   }
 
-  const stores = await dbGetStores();
-  const index = stores.findIndex(s => s.id === store.id);
-  if (index !== -1) {
-    stores[index] = store;
-    localStorage.setItem('fg_stores', JSON.stringify(stores));
-  }
   return store;
 }
 
 export async function dbDeleteStore(id: string): Promise<void> {
   const config = getSupabaseConfig();
+  
+  // Always update local storage first
+  const local = localStorage.getItem('fg_stores');
+  const stores = local ? JSON.parse(local) : [];
+  const filtered = stores.filter((s: Store) => s.id !== id);
+  localStorage.setItem('fg_stores', JSON.stringify(filtered));
+
   if (config.isConnected && supabaseInstance) {
     try {
       const { error } = await supabaseInstance
@@ -651,16 +671,12 @@ export async function dbDeleteStore(id: string): Promise<void> {
       if (error) throw error;
       return;
     } catch (e) {
-      console.warn('Supabase delete failed, writing to local storage:', e);
+      console.warn('Supabase delete failed, writing to local storage as fallback:', e);
       dbAddUnsyncedOp('stores', 'delete', { id });
     }
   } else {
     dbAddUnsyncedOp('stores', 'delete', { id });
   }
-
-  const stores = await dbGetStores();
-  const filtered = stores.filter(s => s.id !== id);
-  localStorage.setItem('fg_stores', JSON.stringify(filtered));
 }
 
 

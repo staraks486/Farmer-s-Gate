@@ -151,7 +151,7 @@ export interface MasterCrop {
 
 export interface AppNotification {
   id: string;
-  type: 'low_stock' | 'requirement' | 'customer_order' | 'sale' | 'purchase_order';
+  type: 'low_stock' | 'requirement' | 'customer_order' | 'sale' | 'purchase_order' | 'new_product';
   title: string;
   message: string;
   timestamp: string;
@@ -195,8 +195,75 @@ export interface StorefrontAd {
   isActive: boolean;
   tagline?: string;
   actionText?: string;
+}export interface AppUserRole {
+  role: 'admin' | 'supply_office' | 'ledger' | 'supply_chain' | 'store_pos' | 'staff' | 'customer';
+  label: string;
+  allowedPortals: ('customer' | 'partner' | 'management')[];
+  allowedTabs?: ('dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin')[];
 }
 
-
-
+export function getUserRole(email: string | null | undefined): AppUserRole {
+  if (!email) {
+    return {
+      role: 'customer',
+      label: 'Shopper',
+      allowedPortals: ['customer']
+    };
+  }
+  const cleanEmail = email.toLowerCase().trim();
+  if (cleanEmail === 'admin@farmersgate.com' || cleanEmail === 'star.aks486@gmail.com' || cleanEmail === 'system_admin@farmersgate.com') {
+    return {
+      role: 'admin',
+      label: 'HQ System Admin',
+      allowedPortals: ['customer', 'partner', 'management'],
+      allowedTabs: ['dashboard', 'headoffice', 'store', 'suppliers', 'accounts', 'admin']
+    };
+  }
+  if (cleanEmail === 'supply_office@farmersgate.com') {
+    return {
+      role: 'supply_office',
+      label: 'Supply Office Executive',
+      allowedPortals: ['management'],
+      allowedTabs: ['headoffice']
+    };
+  }
+  if (cleanEmail === 'ledger@farmersgate.com') {
+    return {
+      role: 'ledger',
+      label: 'Double Entry Accountant',
+      allowedPortals: ['management'],
+      allowedTabs: ['accounts']
+    };
+  }
+  if (cleanEmail === 'supply_chain@farmersgate.com') {
+    return {
+      role: 'supply_chain',
+      label: 'Supply Chain Coordinator',
+      allowedPortals: ['management'],
+      allowedTabs: ['suppliers']
+    };
+  }
+  if (cleanEmail === 'store_pos@farmersgate.com') {
+    return {
+      role: 'store_pos',
+      label: 'Store POS Cashier',
+      allowedPortals: ['management'],
+      allowedTabs: ['store']
+    };
+  }
+  if (cleanEmail === 'partner@farmersgate.com' || cleanEmail === 'staff@farmersgate.com') {
+    return {
+      role: 'staff',
+      label: 'Fulfillment & Field Rider',
+      allowedPortals: ['partner']
+    };
+  }
+  
+  // Default to standard customer/shopper
+  return {
+    role: 'customer',
+    label: 'Shopper',
+    allowedPortals: ['customer']
+  };
+}
 

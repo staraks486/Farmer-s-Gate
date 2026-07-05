@@ -134,11 +134,11 @@ export default function OrderTracker({
             <h4 className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">Estimated Dispatch ETA</h4>
             <p className="text-base font-black text-white font-mono mt-0.5">
               {order.status === 'Completed' || (simProgress === 100 && !simActive) ? (
-                <span className="text-emerald-400 flex items-center gap-1">✅ DELIVERED (9 MINS)</span>
+                <span className="text-emerald-400 flex items-center gap-1">✅ DELIVERED (EXPRESS)</span>
               ) : simActive ? (
                 <span className="text-yellow-400 animate-pulse">{formatEta(etaSeconds)} remaining</span>
               ) : (
-                <span>9 Mins Speed Delivery</span>
+                <span>Express Speed Delivery</span>
               )}
             </p>
           </div>

@@ -13,7 +13,8 @@ import {
   Smartphone,
   ShieldCheck
 } from 'lucide-react';
-import { Store, Sale, Purchase, InventoryItem, TerminalActivityLog } from '../types';
+import { Store, Sale, Purchase, InventoryItem, TerminalActivityLog, AppNotification } from '../types';
+import { FirebaseOrder } from '../lib/firebase';
 
 interface DashboardProps {
   stores: Store[];
@@ -24,6 +25,8 @@ interface DashboardProps {
   onSelectStore?: (store: Store) => void;
   terminalLogs?: TerminalActivityLog[];
   onClearLogs?: () => void;
+  firebaseOrders?: FirebaseOrder[];
+  firebaseNotifications?: AppNotification[];
 }
 
 export default function Dashboard({
@@ -34,7 +37,9 @@ export default function Dashboard({
   role,
   onSelectStore,
   terminalLogs = [],
-  onClearLogs
+  onClearLogs,
+  firebaseOrders = [],
+  firebaseNotifications = []
 }: DashboardProps) {
   const [selectedFilterStore, setSelectedFilterStore] = useState<string>('all');
   const isEmployee = role === 'Employee';
@@ -287,85 +292,185 @@ export default function Dashboard({
         </div>
       </div>
 
-      {/* 4. SECURE TERMINAL AUDIT LOGS */}
+      {/* 4. REAL-TIME ACTIVITY FEED & SECURE TERMINAL AUDIT LOGS */}
       {role === 'Admin' && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                <span className="p-1 rounded bg-slate-100 text-slate-800">🔒</span>
-                Farmer's Gate Terminal Activity Logs
-              </h3>
-              <p className="text-[11px] text-slate-500">Real-time audit track of admin and store manager logins & logouts.</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* REAL-TIME ACTIVITY FEED FROM FIREBASE */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                  Firebase Real-Time Corporate Activity Feed
+                </h3>
+                <p className="text-[11px] text-slate-500">Live order confirmations, inventory modifications, and branch alerts.</p>
+              </div>
+              <span className="text-[9px] font-black uppercase text-slate-400 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100">
+                ● LIVE BROADCAST
+              </span>
             </div>
-            {terminalLogs.length > 0 && onClearLogs && (
-              <button
-                onClick={onClearLogs}
-                className="text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/80 px-2.5 py-1.5 rounded-lg border border-rose-100 transition-colors cursor-pointer text-center shrink-0 self-start sm:self-auto"
-              >
-                Clear Audit History
-              </button>
-            )}
+
+            {/* Scrolling List container */}
+            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 flex-1">
+              {/* Combine notifications and orders into a unified stream sorted by timestamp */}
+              {(() => {
+                const stream: Array<{
+                  id: string;
+                  type: 'order' | 'notification';
+                  title: string;
+                  message: string;
+                  timestamp: string;
+                  severity: 'info' | 'warning' | 'error' | 'success';
+                  badge?: string;
+                }> = [];
+
+                // Add firebaseOrders to stream
+                firebaseOrders.forEach(order => {
+                  stream.push({
+                    id: order.id || `order-${order.orderNumber}`,
+                    type: 'order',
+                    title: `Order placed: #${order.orderNumber}`,
+                    message: `Customer ${order.customerName} ordered ${order.items.length} items (Total ₹${order.totalAmount}). Status is currently "${order.status}".`,
+                    timestamp: order.orderDate,
+                    severity: order.status === 'Cancelled' ? 'error' : order.status === 'Delivered' ? 'success' : 'info',
+                    badge: `₹${order.totalAmount}`
+                  });
+                });
+
+                // Add firebaseNotifications to stream
+                firebaseNotifications.forEach(notif => {
+                  stream.push({
+                    id: notif.id,
+                    type: 'notification',
+                    title: notif.title,
+                    message: notif.message,
+                    timestamp: notif.timestamp,
+                    severity: notif.severity,
+                    badge: notif.type.replace('_', ' ').toUpperCase()
+                  });
+                });
+
+                // Sort descending
+                const sortedStream = stream.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+                if (sortedStream.length === 0) {
+                  return (
+                    <div className="h-full py-20 text-center text-slate-400 italic">
+                      <span className="text-xl block mb-1">📡</span>
+                      No real-time activities logged in Firebase database yet.
+                    </div>
+                  );
+                }
+
+                return sortedStream.slice(0, 15).map(event => {
+                  let severityClasses = 'bg-slate-50 border-slate-150 text-slate-700';
+                  let icon = '📢';
+
+                  if (event.severity === 'success') {
+                    severityClasses = 'bg-emerald-50 border-emerald-100 text-emerald-800';
+                    icon = '✅';
+                  } else if (event.severity === 'warning') {
+                    severityClasses = 'bg-amber-50 border-amber-100 text-amber-850';
+                    icon = '⚠️';
+                  } else if (event.severity === 'error') {
+                    severityClasses = 'bg-rose-50 border-rose-100 text-rose-800';
+                    icon = '🚨';
+                  } else if (event.severity === 'info') {
+                    severityClasses = 'bg-blue-50 border-blue-100 text-blue-800';
+                    icon = 'ℹ️';
+                  }
+
+                  return (
+                    <div key={event.id} className={`p-3 rounded-xl border text-xs font-medium leading-relaxed flex flex-col justify-between gap-1.5 transition-all hover:shadow-xs ${severityClasses}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <span>{icon}</span>
+                          <span>{event.title}</span>
+                        </div>
+                        {event.badge && (
+                          <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-white border border-current shadow-3xs uppercase shrink-0">
+                            {event.badge}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] opacity-90">{event.message}</p>
+                      <div className="flex items-center justify-between text-[9px] opacity-70 font-mono mt-0.5">
+                        <span>{new Date(event.timestamp).toLocaleTimeString('en-IN', { hour12: true })}</span>
+                        <span>{new Date(event.timestamp).toLocaleDateString('en-IN')}</span>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-100">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                  <th className="p-3">Timestamp (IST)</th>
-                  <th className="p-3">Terminal ID</th>
-                  <th className="p-3">Branch / Portal Name</th>
-                  <th className="p-3">Access Role</th>
-                  <th className="p-3 text-right">Event Type</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {terminalLogs.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="p-6 text-center text-slate-400 italic">
-                      No terminal logouts or logins recorded in this session.
-                    </td>
+          {/* SECURE TERMINAL AUDIT LOGS */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                  <span className="p-1 rounded bg-slate-100 text-slate-800 text-xs">🔒</span>
+                  Farmer's Gate Terminal Audit Logs
+                </h3>
+                <p className="text-[11px] text-slate-500">Real-time audit track of admin and store manager logins & logouts.</p>
+              </div>
+              {terminalLogs.length > 0 && onClearLogs && (
+                <button
+                  onClick={onClearLogs}
+                  className="text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/80 px-2.5 py-1 rounded-lg border border-rose-100 transition-colors cursor-pointer text-center shrink-0 self-start sm:self-auto"
+                >
+                  Clear Logs
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-150 flex-1 max-h-[350px] overflow-y-auto">
+              <table className="w-full text-left border-collapse text-[11px]">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase text-slate-500 tracking-wider sticky top-0 z-10">
+                    <th className="p-2.5">Timestamp</th>
+                    <th className="p-2.5">Branch / Portal</th>
+                    <th className="p-2.5 text-right">Event</th>
                   </tr>
-                ) : (
-                  terminalLogs.slice(0, 15).map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="p-3 font-mono text-[11px] text-slate-500">
-                        {new Date(log.timestamp).toLocaleString('en-IN', {
-                          timeZone: 'Asia/Kolkata',
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                          hour12: true
-                        })}
-                      </td>
-                      <td className="p-3 font-mono text-[11px] text-indigo-600 font-bold">{log.terminalId}</td>
-                      <td className="p-3 text-slate-800 font-bold">{log.terminalName}</td>
-                      <td className="p-3">
-                        <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold">
-                          {log.role}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wider ${
-                            log.action === 'login'
-                              ? 'bg-emerald-50 border border-emerald-100 text-emerald-700'
-                              : 'bg-rose-50 border border-rose-100 text-rose-700'
-                          }`}
-                        >
-                          <span className={`h-1.5 w-1.5 rounded-full ${log.action === 'login' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                          {log.action}
-                        </span>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {terminalLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="p-6 text-center text-slate-400 italic">
+                        No logins or logouts recorded.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    terminalLogs.slice(0, 10).map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-2.5 font-mono text-[10px] text-slate-500">
+                          {new Date(log.timestamp).toLocaleTimeString('en-IN', { hour12: true })}
+                        </td>
+                        <td className="p-2.5 text-slate-800 font-bold">{log.terminalName}</td>
+                        <td className="p-2.5 text-right">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[8px] font-black uppercase tracking-wider ${
+                              log.action === 'login'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                : 'bg-rose-50 text-rose-700 border border-rose-100'
+                            }`}
+                          >
+                            {log.action}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
+
         </div>
       )}
 

@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { Store, Requirement, InventoryItem, Sale, UserRole, ConsolidatedRequirement, MasterCrop } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Store, Requirement, InventoryItem, Sale, UserRole, ConsolidatedRequirement, MasterCrop, AppNotification } from '../types';
+import { FirebaseOrder, updateOrderStatusInFirestore, addNotificationToFirestore } from '../lib/firebase';
+import QRCode from 'qrcode';
 import { 
   Building2, 
   TrendingUp, 
@@ -29,7 +31,14 @@ import {
   MessageSquare,
   Edit,
   Trash2,
-  Tag
+  Tag,
+  QrCode,
+  Download,
+  Palette,
+  Link,
+  Printer,
+  Eye,
+  Sparkles
 } from 'lucide-react';
 
 interface HeadOfficeProps {
@@ -44,6 +53,8 @@ interface HeadOfficeProps {
   masterCrops: MasterCrop[];
   onUpdateMasterCrop: (crop: MasterCrop) => void;
   onDeleteMasterCrop: (id: string) => void;
+  firebaseOrders?: FirebaseOrder[];
+  firebaseNotifications?: AppNotification[];
 }
 
 export default function HeadOffice({
@@ -57,14 +68,64 @@ export default function HeadOffice({
   onUpdateInventoryItem,
   masterCrops = [],
   onUpdateMasterCrop,
-  onDeleteMasterCrop
+  onDeleteMasterCrop,
+  firebaseOrders = [],
+  firebaseNotifications = []
 }: HeadOfficeProps) {
   // Main and sub layout tabs
-  const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog'>('requirements');
+  const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog' | 'customer-orders' | 'qr-catalog'>('requirements');
   const [reqSubTab, setReqSubTab] = useState<'itemized' | 'consolidated'>('itemized');
+
+  // Custom QR Code Generation Settings
+  const [qrFgColor, setQrFgColor] = useState('#065f46'); // Premium emerald dark
+  const [qrBgColor, setQrBgColor] = useState('#ffffff');
+  const [qrSize, setQrSize] = useState(300);
+  const [qrErrorLevel, setQrErrorLevel] = useState<'L' | 'M' | 'Q' | 'H'>('H');
+  const [qrImages, setQrImages] = useState<{ [key: string]: string }>({});
+  const [qrGenerating, setQrGenerating] = useState(false);
+  const [qrSuccessMsg, setQrSuccessMsg] = useState('');
+
+  const QR_CATEGORIES = [
+    { key: 'All', label: 'All Crops Catalog', emoji: '📂', description: 'Complete pesticide-free harvest and groceries catalog', color: 'from-slate-50 to-slate-100/50 border-slate-200 text-slate-800' },
+    { key: 'Vegetable', label: 'Veggies Catalog', emoji: '🥦', description: 'Fresh organic leafy vegetables, roots, and farm greens', color: 'from-emerald-50 to-emerald-100/30 border-emerald-100 text-emerald-800' },
+    { key: 'Fruit', label: 'Fruits Catalog', emoji: '🍊', description: 'Sweet organic summer fruits, berries, and citrus', color: 'from-orange-50 to-orange-100/30 border-orange-100 text-orange-850' },
+    { key: 'Herbs', label: 'Fresh Herbs Catalog', emoji: '🌿', description: 'Local aromatic herbs, organic seasonings, and mints', color: 'from-teal-50 to-teal-100/30 border-teal-100 text-teal-850' },
+    { key: 'Grocery', label: 'Essential Grocery Catalog', emoji: '🌾', description: 'Whole grains, organic flours, rice, pulses, and staples', color: 'from-amber-50 to-amber-100/30 border-amber-150 text-amber-850' },
+    { key: 'Recipes', label: 'Quick Recipes Catalog', emoji: '🍳', description: 'Chef-paired organic meal kits and easy farm-to-table recipes', color: 'from-purple-50 to-purple-100/30 border-purple-150 text-purple-850' },
+  ];
+
+  // Effect to automatically generate QR Codes when settings change
+  useEffect(() => {
+    const generateAllQrs = async () => {
+      setQrGenerating(true);
+      const generated: { [key: string]: string } = {};
+      for (const cat of QR_CATEGORIES) {
+        const targetUrl = `${window.location.origin}${window.location.pathname}?portal=customer&category=${cat.key}#customer`;
+        try {
+          const dataUrl = await QRCode.toDataURL(targetUrl, {
+            width: qrSize,
+            margin: 2,
+            errorCorrectionLevel: qrErrorLevel,
+            color: {
+              dark: qrFgColor,
+              light: qrBgColor
+            }
+          });
+          generated[cat.key] = dataUrl;
+        } catch (err) {
+          console.error(`Error generating QR for ${cat.key}:`, err);
+        }
+      }
+      setQrImages(generated);
+      setQrGenerating(false);
+    };
+
+    generateAllQrs();
+  }, [qrFgColor, qrBgColor, qrSize, qrErrorLevel]);
 
   // Search/Filters states
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+  const [selectedCustomerOrderId, setSelectedCustomerOrderId] = useState<string | null>(null);
   const [requirementFilter, setRequirementFilter] = useState<'all' | 'Pending' | 'Ordered' | 'Fulfilled'>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'Low' | 'Medium' | 'High'>('all');
   const [cropSearch, setCropSearch] = useState('');
@@ -506,7 +567,7 @@ export default function HeadOffice({
 
       {/* Main Multi-Tab Navigation Hub */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-1 w-full lg:w-auto">
+        <div className="flex flex-wrap gap-1.5 w-full lg:w-auto">
           <button
             type="button"
             onClick={() => setActiveTab('requirements')}
@@ -553,6 +614,30 @@ export default function HeadOffice({
             }`}
           >
             <span>🏷️</span> Master Catalog
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('customer-orders')}
+            className={`px-3 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'customer-orders' 
+                ? 'bg-slate-900 text-white shadow-sm' 
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            }`}
+          >
+            <span>📡</span> Customer Orders Desk
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('qr-catalog')}
+            className={`px-3 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'qr-catalog' 
+                ? 'bg-slate-900 text-white shadow-sm' 
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            }`}
+          >
+            <span>📱</span> Category QR Codes
           </button>
         </div>
 
@@ -1950,6 +2035,685 @@ export default function HeadOffice({
               </div>
             </div>
           )}
+
+        </div>
+      )}
+
+      {/* TAB CONTENT: PRODUCT CATEGORY QR CODES LAUNCHER */}
+      {activeTab === 'qr-catalog' && (
+        <div className="space-y-6 animate-fade-in text-slate-900">
+          
+          {/* Main info card */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-md border border-slate-700/30">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                  <QrCode className="h-5 w-5" />
+                </span>
+                <h3 className="font-extrabold text-lg">Category QR Code Generator & Portal Launchers</h3>
+              </div>
+              <p className="text-xs text-slate-300 max-w-2xl">
+                Create downloadable high-resolution QR codes linking customers directly to specific filtered departments on the FarmersGate storefront. Print stickers for grocery boxes, branch banners, or local marketing campaigns.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 self-start md:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  QR_CATEGORIES.forEach((cat, idx) => {
+                    setTimeout(() => {
+                      const dataUrl = qrImages[cat.key];
+                      if (dataUrl) {
+                        const a = document.createElement('a');
+                        a.href = dataUrl;
+                        a.download = `farmersgate_qr_${cat.key.toLowerCase()}.png`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                      }
+                    }, idx * 250);
+                  });
+                  setQrSuccessMsg('Bulk download triggered! Check your browser downloads.');
+                  setTimeout(() => setQrSuccessMsg(''), 4000);
+                }}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black text-xs px-5 py-3 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+              >
+                <Download className="h-4 w-4 stroke-[3px]" /> Bulk Download All (PNG)
+              </button>
+            </div>
+          </div>
+
+          {qrSuccessMsg && (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-bold flex items-center gap-2 animate-bounce-subtle">
+              🎉 {qrSuccessMsg}
+            </div>
+          )}
+
+          {/* Settings Customizer & Presets Box */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-3xs space-y-5">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <Palette className="h-4 w-4 text-slate-500" />
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">QR Code Style & Design Customizer</h4>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              {/* Foreground Color Picker */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Foreground Accent</label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={qrFgColor}
+                    onChange={(e) => setQrFgColor(e.target.value)}
+                    className="w-10 h-10 rounded-xl cursor-pointer border border-slate-200 p-1"
+                  />
+                  <input
+                    type="text"
+                    value={qrFgColor}
+                    onChange={(e) => setQrFgColor(e.target.value)}
+                    placeholder="#065f46"
+                    className="flex-1 text-xs font-mono font-bold rounded-xl border border-slate-200 p-2.5 bg-slate-50 text-slate-800 uppercase focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                {/* Presets */}
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {[
+                    { hex: '#065f46', name: 'Emerald' },
+                    { hex: '#0f172a', name: 'Ink' },
+                    { hex: '#312e81', name: 'Indigo' },
+                    { hex: '#b45309', name: 'Amber' }
+                  ].map(preset => (
+                    <button
+                      key={preset.hex}
+                      type="button"
+                      onClick={() => setQrFgColor(preset.hex)}
+                      className={`text-[9px] font-black px-2 py-1 rounded-lg border transition ${
+                        qrFgColor.toLowerCase() === preset.hex ? 'bg-slate-900 border-slate-900 text-white' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Background Color Picker */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Background Surface</label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={qrBgColor}
+                    onChange={(e) => setQrBgColor(e.target.value)}
+                    className="w-10 h-10 rounded-xl cursor-pointer border border-slate-200 p-1"
+                  />
+                  <input
+                    type="text"
+                    value={qrBgColor}
+                    onChange={(e) => setQrBgColor(e.target.value)}
+                    placeholder="#ffffff"
+                    className="flex-1 text-xs font-mono font-bold rounded-xl border border-slate-200 p-2.5 bg-slate-50 text-slate-800 uppercase focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                {/* Presets */}
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {[
+                    { hex: '#ffffff', name: 'White' },
+                    { hex: '#f8fafc', name: 'Ice' },
+                    { hex: '#fffbeb', name: 'Cream' }
+                  ].map(preset => (
+                    <button
+                      key={preset.hex}
+                      type="button"
+                      onClick={() => setQrBgColor(preset.hex)}
+                      className={`text-[9px] font-black px-2 py-1 rounded-lg border transition ${
+                        qrBgColor.toLowerCase() === preset.hex ? 'bg-slate-900 border-slate-900 text-white' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Resolution / Dimensions */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Sticker Resolution (Width)</label>
+                <select
+                  value={qrSize}
+                  onChange={(e) => setQrSize(Number(e.target.value))}
+                  className="w-full text-xs font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50 text-slate-800"
+                >
+                  <option value={150}>Compact (150 x 150px)</option>
+                  <option value={300}>Standard (300 x 300px)</option>
+                  <option value={500}>High-Res (500 x 500px)</option>
+                  <option value={800}>Print Masters (800 x 800px)</option>
+                </select>
+                <p className="text-[9px] text-slate-400 leading-relaxed">
+                  Higher width makes printed sticker grids and catalog labels look perfectly sharp.
+                </p>
+              </div>
+
+              {/* Error Correction Level */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Redundant Scan Correction</label>
+                <select
+                  value={qrErrorLevel}
+                  onChange={(e) => setQrErrorLevel(e.target.value as any)}
+                  className="w-full text-xs font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50 text-slate-800"
+                >
+                  <option value="L">Low (7% recovery rate)</option>
+                  <option value="M">Medium (15% recovery rate)</option>
+                  <option value="Q">Quartile (25% recovery rate)</option>
+                  <option value="H">High (30% recovery rate - Best for stickers)</option>
+                </select>
+                <p className="text-[9px] text-slate-400 leading-relaxed">
+                  High correction keeps the QR code fully scannable even if the printed sticker gets dusty or partially torn on product bags.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* QR Code Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {QR_CATEGORIES.map(cat => {
+              const dataUrl = qrImages[cat.key];
+              const targetUrl = `${window.location.origin}${window.location.pathname}?portal=customer&category=${cat.key}#customer`;
+
+              return (
+                <div 
+                  key={cat.key} 
+                  id={`qr-card-${cat.key}`}
+                  className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-3xs flex flex-col justify-between transition-all hover:shadow-xs border-t-4"
+                  style={{ borderTopColor: qrFgColor }}
+                >
+                  {/* Card Header */}
+                  <div className={`p-5 bg-gradient-to-br ${cat.color} flex items-start gap-3 border-b border-slate-100`}>
+                    <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-2xl shadow-3xs border border-white/50">
+                      {cat.emoji}
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Store Department</span>
+                      <h4 className="text-sm font-black text-slate-800">{cat.label}</h4>
+                    </div>
+                  </div>
+
+                  {/* QR Core Render */}
+                  <div className="p-6 flex flex-col items-center justify-center gap-4 bg-slate-50/50">
+                    <div className="relative p-4 bg-white rounded-2xl border border-slate-200/80 shadow-2xs group">
+                      {qrGenerating || !dataUrl ? (
+                        <div className="w-48 h-48 flex items-center justify-center">
+                          <span className="text-xs font-bold text-slate-400 animate-pulse">Generating code...</span>
+                        </div>
+                      ) : (
+                        <img 
+                          src={dataUrl} 
+                          alt={`${cat.label} QR`}
+                          className="w-48 h-48 select-none mx-auto"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                      
+                      {/* Scan badge overlay */}
+                      <div className="absolute inset-x-0 bottom-3 flex justify-center">
+                        <span className="text-[8px] bg-slate-900/95 text-white font-black uppercase tracking-wider px-2 py-0.5 rounded-full backdrop-blur-xs flex items-center gap-1">
+                          ⚡ Scan Me
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Target URL Info */}
+                    <div className="w-full text-center space-y-1">
+                      <div className="flex items-center justify-center gap-1 text-[9px] font-mono text-slate-400">
+                        <Link className="h-3 w-3" />
+                        <span>Target Store Link</span>
+                      </div>
+                      <div className="bg-white px-3 py-1.5 rounded-xl border border-slate-150 text-[10px] font-semibold text-slate-600 truncate max-w-[240px] mx-auto font-mono">
+                        ?portal=customer&category={cat.key}#customer
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Footer / Action Buttons */}
+                  <div className="p-5 border-t border-slate-100 bg-slate-50/20 grid grid-cols-2 gap-2">
+                    {/* View Portal Trigger */}
+                    <a
+                      href={targetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-[10px] uppercase tracking-wide rounded-xl transition text-center flex items-center justify-center gap-1.5"
+                    >
+                      <Eye className="h-3.5 w-3.5" /> Test URL
+                    </a>
+
+                    {/* Download Image Button */}
+                    <button
+                      type="button"
+                      disabled={!dataUrl}
+                      onClick={() => {
+                        if (dataUrl) {
+                          const a = document.createElement('a');
+                          a.href = dataUrl;
+                          a.download = `farmersgate_qr_${cat.key.toLowerCase()}.png`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          setQrSuccessMsg(`Successfully downloaded ${cat.label} QR code image!`);
+                          setTimeout(() => setQrSuccessMsg(''), 4000);
+                        }
+                      }}
+                      className="px-3 py-2.5 bg-slate-950 hover:bg-slate-850 text-white font-extrabold text-[10px] uppercase tracking-wide rounded-xl transition shadow-3xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Download
+                    </button>
+
+                    {/* Printable Label View Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const printWindow = window.open('', '_blank');
+                        if (printWindow) {
+                          printWindow.document.write(`
+                            <html>
+                              <head>
+                                <title>FarmersGate Label - ${cat.label}</title>
+                                <style>
+                                  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+                                  body {
+                                    font-family: 'Inter', sans-serif;
+                                    text-align: center;
+                                    padding: 40px;
+                                    background: #fff;
+                                    color: #0f172a;
+                                  }
+                                  .ticket-card {
+                                    border: 4px solid ${qrFgColor};
+                                    border-radius: 24px;
+                                    padding: 40px;
+                                    max-width: 400px;
+                                    margin: 0 auto;
+                                    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+                                  }
+                                  .logo {
+                                    font-size: 20px;
+                                    font-weight: 900;
+                                    text-transform: uppercase;
+                                    letter-spacing: 2px;
+                                    color: ${qrFgColor};
+                                    margin-bottom: 5px;
+                                  }
+                                  .sublogo {
+                                    font-size: 8px;
+                                    font-weight: 700;
+                                    text-transform: uppercase;
+                                    letter-spacing: 3px;
+                                    color: #64748b;
+                                    margin-bottom: 25px;
+                                  }
+                                  .badge {
+                                    background: ${qrFgColor}15;
+                                    color: ${qrFgColor};
+                                    font-size: 11px;
+                                    font-weight: 900;
+                                    text-transform: uppercase;
+                                    padding: 6px 16px;
+                                    border-radius: 50px;
+                                    display: inline-block;
+                                    margin-bottom: 25px;
+                                  }
+                                  .qr-img {
+                                    width: 220px;
+                                    height: 220px;
+                                    margin: 0 auto 20px auto;
+                                    display: block;
+                                  }
+                                  .footer-text {
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: #475569;
+                                    margin-bottom: 5px;
+                                  }
+                                  .desc {
+                                    font-size: 9px;
+                                    color: #94a3b8;
+                                    font-weight: 500;
+                                    max-width: 300px;
+                                    margin: 0 auto;
+                                  }
+                                </style>
+                              </head>
+                              <body>
+                                <div class="ticket-card">
+                                  <div class="logo">Farmers<span style="color: #10b981">Gate</span></div>
+                                  <div class="sublogo">Enterprise Retail Ecosystem</div>
+                                  <div class="badge">${cat.emoji} ${cat.label}</div>
+                                  <img class="qr-img" src="${dataUrl}" />
+                                  <div class="footer-text">SCAN FOR LIVE HARVEST</div>
+                                  <div class="desc">${cat.description}</div>
+                                </div>
+                                <script>
+                                  window.onload = function() {
+                                    window.print();
+                                  }
+                                </script>
+                              </body>
+                            </html>
+                          `);
+                          printWindow.document.close();
+                        }
+                      }}
+                      className="col-span-2 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 font-extrabold text-[9px] uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Printer className="h-3 w-3" /> Print Storefront Sticker Label
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'customer-orders' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Left Panel: Customer Orders Registry */}
+          <div className="lg:col-span-1 bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">Incoming Orders</h3>
+                <p className="text-[10px] text-slate-500">Live stream of customer storefront requests.</p>
+              </div>
+              <span className="text-[9px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100 uppercase animate-pulse">
+                ● Live Link
+              </span>
+            </div>
+
+            {/* Filters */}
+            <div className="space-y-2">
+              <input
+                type="text"
+                placeholder="Search phone or name..."
+                value={cropSearch}
+                onChange={(e) => setCropSearch(e.target.value)}
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-emerald-600 font-medium"
+              />
+            </div>
+
+            {/* List */}
+            <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+              {(() => {
+                const filtered = firebaseOrders.filter(order => {
+                  const query = cropSearch.toLowerCase();
+                  return order.customerPhone.includes(query) || 
+                         order.customerName.toLowerCase().includes(query) ||
+                         order.orderNumber.includes(query);
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-12 text-center text-slate-400 text-xs italic">
+                      No matching customer orders found.
+                    </div>
+                  );
+                }
+
+                return filtered.map(order => {
+                  const assignedStore = stores.find(s => s.id === order.storeId);
+                  const isUnassigned = !order.storeId;
+
+                  return (
+                    <button
+                      type="button"
+                      key={order.id}
+                      onClick={() => setSelectedCustomerOrderId(order.id || null)}
+                      className={`w-full text-left p-3.5 rounded-2xl border transition-all flex flex-col gap-1.5 cursor-pointer ${
+                        selectedCustomerOrderId === order.id
+                          ? 'border-slate-900 bg-slate-900 text-white shadow-md'
+                          : 'border-slate-150 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-black text-xs">#{order.orderNumber}</span>
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                          isUnassigned
+                            ? 'bg-rose-50 text-rose-700 border-rose-100 animate-pulse'
+                            : 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                        }`}>
+                          {isUnassigned ? '🚨 UNROUTED' : '✓ ROUTED'}
+                        </span>
+                      </div>
+
+                      <div className="text-xs opacity-90 font-bold">
+                        {order.customerName}
+                      </div>
+
+                      <div className="flex justify-between items-center text-[10px] opacity-75 font-mono">
+                        <span>{order.items.length} items • ₹{order.totalAmount}</span>
+                        <span>{new Date(order.orderDate).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                      </div>
+
+                      {assignedStore && (
+                        <div className="mt-1 pt-1.5 border-t border-dashed border-current/15 text-[9px] font-black uppercase flex items-center gap-1 opacity-90">
+                          <span>📍 Assigned Branch:</span>
+                          <span>{assignedStore.name.replace("Farmer's Gate - ", "")}</span>
+                        </div>
+                      )}
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+
+          {/* Right Panel: Order Inspection & Store Routing Desk */}
+          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-5 flex flex-col">
+            {(() => {
+              const selectedOrder = firebaseOrders.find(o => o.id === selectedCustomerOrderId);
+
+              if (!selectedOrder) {
+                return (
+                  <div className="h-full py-24 flex flex-col items-center justify-center text-center text-slate-400 space-y-2">
+                    <span className="text-3xl">📡</span>
+                    <p className="text-xs font-bold text-slate-600">Select an Order to Inspect</p>
+                    <p className="text-[10px] max-w-xs">Select any customer order from the incoming live queue to route it to the appropriate store for local packaging and home delivery.</p>
+                  </div>
+                );
+              }
+
+              const isUnassigned = !selectedOrder.storeId;
+
+              return (
+                <div className="space-y-5">
+                  
+                  {/* Order Details Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-extrabold text-slate-900 text-sm">Order Verification Desk</h3>
+                        <span className="text-[10px] bg-slate-100 font-mono font-bold text-slate-600 px-2 py-0.5 rounded">
+                          #{selectedOrder.orderNumber}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Ordered on {new Date(selectedOrder.orderDate).toLocaleString()}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${
+                        selectedOrder.status === 'Cancelled' ? 'bg-rose-50 text-rose-700 border-rose-100' :
+                        selectedOrder.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                        'bg-amber-50 text-amber-700 border-amber-100'
+                      }`}>
+                        Status: {selectedOrder.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Customer Information Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                    <div className="space-y-1.5 text-xs">
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Customer Details</p>
+                      <p className="font-extrabold text-slate-800">{selectedOrder.customerName}</p>
+                      <p className="font-mono text-[11px] text-slate-500">{selectedOrder.customerPhone}</p>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs">
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Delivery Destination</p>
+                      <p className="font-semibold text-slate-700 leading-relaxed">{selectedOrder.customerAddress}</p>
+                    </div>
+                  </div>
+
+                  {/* Ordered Items Table */}
+                  <div className="space-y-2">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Ordered Vegetables & Fruits</p>
+                    <div className="border border-slate-150 rounded-xl overflow-hidden text-xs">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-150 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                            <th className="p-2.5">Crop Name</th>
+                            <th className="p-2.5 text-center">Qty (Kg)</th>
+                            <th className="p-2.5 text-right">Price per Kg</th>
+                            <th className="p-2.5 text-right">Subtotal</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {selectedOrder.items.map(item => (
+                            <tr key={item.id} className="hover:bg-slate-50/30">
+                              <td className="p-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                                <span className="text-base">{item.emoji || getVegEmoji(item.vegetableName)}</span>
+                                <span>{item.vegetableName}</span>
+                              </td>
+                              <td className="p-2.5 text-center font-mono font-bold text-slate-600">{item.quantity} kg</td>
+                              <td className="p-2.5 text-right font-mono text-slate-500 font-bold">₹{item.pricePerKg}</td>
+                              <td className="p-2.5 text-right font-mono font-bold text-slate-800">₹{item.totalPrice}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-slate-50 border-t border-slate-150 font-black text-slate-900">
+                            <td colSpan={3} className="p-2.5 text-right uppercase text-[10px]">Grand Paid Total:</td>
+                            <td className="p-2.5 text-right text-emerald-700 text-sm">₹{selectedOrder.totalAmount}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* ROUTING LOGIC */}
+                  <div className="space-y-3 pt-3 border-t border-slate-100">
+                    <h4 className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
+                      <span>📍</span> Route & Assign Delivery to Physical Store Outlet
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium">Select which physical branch outlet will package this order and execute rider delivery based on their current inventory capacity.</p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[220px] overflow-y-auto pr-1">
+                      {stores.map(store => {
+                        // Check if the store has inventory for all ordered items
+                        const itemCoverage = selectedOrder.items.map(oItem => {
+                          const invItem = inventory.find(
+                            i => i.storeId === store.id && i.vegetableName.toLowerCase() === oItem.vegetableName.toLowerCase()
+                          );
+                          const hasStock = invItem && invItem.quantity >= oItem.quantity;
+                          return {
+                            name: oItem.vegetableName,
+                            qty: oItem.quantity,
+                            storeQty: invItem ? invItem.quantity : 0,
+                            hasStock
+                          };
+                        });
+
+                        const isCovered = itemCoverage.every(c => c.hasStock);
+
+                        return (
+                          <div
+                            key={store.id}
+                            className={`p-3 rounded-2xl border transition-all text-xs space-y-2 flex flex-col justify-between ${
+                              selectedOrder.storeId === store.id
+                                ? 'bg-indigo-50 border-indigo-300'
+                                : 'bg-slate-50/30 border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-extrabold text-slate-800">{store.name.replace("Farmer's Gate - ", "")}</span>
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                isCovered ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-850'
+                              }`}>
+                                {isCovered ? '✓ In Stock' : '⚠️ Stock Deficit'}
+                              </span>
+                            </div>
+
+                            {/* Micro stock coverage indicators */}
+                            <div className="space-y-1">
+                              {itemCoverage.map(c => (
+                                <div key={c.name} className="flex justify-between items-center text-[9px] text-slate-500 font-bold">
+                                  <span className="truncate max-w-[100px]">{c.name}</span>
+                                  <span className={c.hasStock ? 'text-emerald-700' : 'text-rose-600'}>
+                                    {c.qty} / {c.storeQty} kg
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!isCovered) {
+                                  if (!confirm(`Warning: ${store.name} currently lacks sufficient stock for some ordered items. This may require them to request immediate HQ dispatching. Assign anyway?`)) {
+                                    return;
+                                  }
+                                }
+
+                                try {
+                                  // 1. Update in Firebase
+                                  await updateOrderStatusInFirestore(selectedOrder.id!, 'Packing', { storeId: store.id });
+                                  
+                                  // 2. Add real-time notification
+                                  await addNotificationToFirestore({
+                                    title: `New Order Routed: #${selectedOrder.orderNumber}`,
+                                    message: `Order #${selectedOrder.orderNumber} (₹${selectedOrder.totalAmount}) assigned to branch "${store.name.replace("Farmer's Gate - ", "")}" for packing and local delivery.`,
+                                    timestamp: new Date().toISOString(),
+                                    severity: 'success',
+                                    type: 'customer_order'
+                                  });
+
+                                  // 3. Deduct ordered items from store inventory in local state for realistic live sync
+                                  selectedOrder.items.forEach(oItem => {
+                                    const invItem = inventory.find(
+                                      i => i.storeId === store.id && i.vegetableName.toLowerCase() === oItem.vegetableName.toLowerCase()
+                                    );
+                                    if (invItem) {
+                                      onUpdateInventoryItem({
+                                        ...invItem,
+                                        quantity: parseFloat(Math.max(0, invItem.quantity - oItem.quantity).toFixed(2)),
+                                        lastUpdated: new Date().toISOString()
+                                      });
+                                    }
+                                  });
+
+                                  alert(`🚀 Success! Order #${selectedOrder.orderNumber} assigned and routed to ${store.name.replace("Farmer's Gate - ", "")} successfully. Customer notification broadcasted!`);
+                                } catch (err) {
+                                  console.error('Error routing order:', err);
+                                  alert('Failed to route order: ' + err);
+                                }
+                              }}
+                              className={`w-full py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
+                                selectedOrder.storeId === store.id
+                                  ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                  : 'bg-slate-900 text-white hover:bg-slate-800'
+                              }`}
+                            >
+                              {selectedOrder.storeId === store.id ? '✓ Partner Assigned' : 'Assign to Branch'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })()}
+          </div>
 
         </div>
       )}

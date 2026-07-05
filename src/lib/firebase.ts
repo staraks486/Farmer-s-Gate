@@ -7,6 +7,7 @@ import {
   doc, 
   addDoc, 
   updateDoc, 
+  deleteDoc,
   query, 
   where, 
   orderBy, 
@@ -21,6 +22,55 @@ import {
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
+import { AppNotification } from '../types';
+
+// Firestore error operation types for diagnostic tracking
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 const firebaseConfig = {
   apiKey: "AIzaSyDduigOVfEXfZnoN_xSz1Shcl3fV1gY6CE",
@@ -100,6 +150,40 @@ export async function updateProductStockInFirestore(productId: string, newStock:
   }
 }
 
+// Update complete product details in Firestore
+export async function updateProductInFirestore(productId: string, updatedFields: Partial<any>) {
+  try {
+    const docRef = doc(db, 'products', productId);
+    await updateDoc(docRef, updatedFields);
+  } catch (err) {
+    console.error('Error updating product in firestore:', err);
+    throw err;
+  }
+}
+
+// Add a new product to Firestore
+export async function addProductToFirestore(product: any) {
+  try {
+    const colRef = collection(db, 'products');
+    const docRef = await addDoc(colRef, product);
+    return docRef.id;
+  } catch (err) {
+    console.error('Error adding product to firestore:', err);
+    throw err;
+  }
+}
+
+// Delete a product from Firestore
+export async function deleteProductFromFirestore(productId: string) {
+  try {
+    const docRef = doc(db, 'products', productId);
+    await deleteDoc(docRef);
+  } catch (err) {
+    console.error('Error deleting product from firestore:', err);
+    throw err;
+  }
+}
+
 // Create custom order in Firestore
 export interface FirebaseOrder {
   id?: string;
@@ -129,6 +213,7 @@ export interface FirebaseOrder {
   riderPhone?: string;
   rating?: number;
   ratingComment?: string;
+  storeId?: string;
 }
 
 export async function placeOrderInFirestore(order: FirebaseOrder) {
@@ -201,5 +286,33 @@ export function subscribeToCustomerOrders(phone: string, callback: (orders: Fire
     callback(list);
   }, (err) => {
     console.error('Error in customer order subscription:', err);
+  });
+}
+
+// Add a central broadcast notification to all stores
+export async function addNotificationToFirestore(notification: Omit<AppNotification, 'id'>) {
+  const path = 'notifications';
+  try {
+    const colRef = collection(db, path);
+    const docRef = await addDoc(colRef, notification);
+    return docRef.id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+  }
+}
+
+// Subscribe to real-time broadcast notifications
+export function subscribeToNotifications(callback: (notifications: AppNotification[]) => void) {
+  const path = 'notifications';
+  const colRef = collection(db, path);
+  const q = query(colRef, orderBy('timestamp', 'desc'));
+  return onSnapshot(q, (snapshot) => {
+    const list: AppNotification[] = [];
+    snapshot.forEach((docSnap) => {
+      list.push({ ...docSnap.data() as any, id: docSnap.id });
+    });
+    callback(list);
+  }, (err) => {
+    console.error('Error in notifications subscription:', err);
   });
 }
