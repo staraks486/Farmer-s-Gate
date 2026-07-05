@@ -17,7 +17,31 @@ export interface Sale {
   pricePerKg: number;
   totalPrice: number;
   customerName?: string;
+  salespersonName?: string;
   saleDate: string;
+}
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: 'Manager' | 'Staff' | 'Cashier' | 'Salesperson';
+  phone: string;
+  assignedStoreId: string; // The store they are currently assigned/sifted to
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  staffId: string;
+  staffName: string;
+  staffRole: string;
+  storeId: string; // The store they are present on
+  date: string; // YYYY-MM-DD
+  status: 'Present' | 'Leave' | 'Absent';
+  timeIn?: string; // HH:MM
+  timeOut?: string; // HH:MM
+  lastUpdated: string;
 }
 
 export interface Purchase {
@@ -199,7 +223,7 @@ export interface StorefrontAd {
   role: 'admin' | 'supply_office' | 'ledger' | 'supply_chain' | 'store_pos' | 'staff' | 'customer';
   label: string;
   allowedPortals: ('customer' | 'partner' | 'management')[];
-  allowedTabs?: ('dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin')[];
+  allowedTabs?: ('dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'staff' | 'admin')[];
 }
 
 export function getUserRole(email: string | null | undefined): AppUserRole {
@@ -216,7 +240,7 @@ export function getUserRole(email: string | null | undefined): AppUserRole {
       role: 'admin',
       label: 'HQ System Admin',
       allowedPortals: ['customer', 'partner', 'management'],
-      allowedTabs: ['dashboard', 'headoffice', 'store', 'suppliers', 'accounts', 'admin']
+      allowedTabs: ['dashboard', 'headoffice', 'store', 'suppliers', 'accounts', 'staff', 'admin']
     };
   }
   if (cleanEmail === 'supply_office@farmersgate.com') {

@@ -675,7 +675,7 @@ export default function HeadOffice({
                     className="w-full text-xs font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-55/60 text-slate-700"
                   >
                     <option value="">-- Choose Store --</option>
-                    {stores.map(s => (
+                    {stores.filter(s => s.isActive).map(s => (
                       <option key={s.id} value={s.id}>
                         [{getStoreAbbreviation(s.name)}] {s.name.replace("Farmer's Gate - ", "")}
                       </option>
@@ -1152,7 +1152,7 @@ export default function HeadOffice({
                   className="w-full text-xs font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50 text-slate-700"
                 >
                   <option value="all">All Stores Combined</option>
-                  {stores.map(s => (
+                  {stores.filter(s => s.isActive).map(s => (
                     <option key={s.id} value={s.id}>
                       [{getStoreAbbreviation(s.name)}] {s.name.replace("Farmer's Gate - ", "")}
                     </option>
@@ -1420,7 +1420,7 @@ export default function HeadOffice({
                   className="w-full text-xs font-bold rounded-xl border border-slate-200 p-2 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50 text-slate-700"
                 >
                   <option value="">-- Select Store --</option>
-                  {stores.map(s => (
+                  {stores.filter(s => s.isActive).map(s => (
                     <option key={s.id} value={s.id}>
                       [{getStoreAbbreviation(s.name)}] {s.name.replace("Farmer's Gate - ", "")}
                     </option>
@@ -1520,7 +1520,7 @@ export default function HeadOffice({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {stores.map(store => {
+            {stores.filter(s => s.isActive).map(store => {
               const abbr = getStoreAbbreviation(store.name);
               const cleanName = store.name.replace("Farmer's Gate - ", "");
               const items = inventory.filter(item => item.storeId === store.id);
@@ -2607,7 +2607,7 @@ export default function HeadOffice({
                     <p className="text-[11px] text-slate-500 font-medium">Select which physical branch outlet will package this order and execute rider delivery based on their current inventory capacity.</p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[220px] overflow-y-auto pr-1">
-                      {stores.map(store => {
+                      {stores.filter(s => s.isActive).map(store => {
                         // Check if the store has inventory for all ordered items
                         const itemCoverage = selectedOrder.items.map(oItem => {
                           const invItem = inventory.find(

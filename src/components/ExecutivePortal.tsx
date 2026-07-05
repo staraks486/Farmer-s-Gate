@@ -40,7 +40,7 @@ import {
 } from '../lib/supabase';
 import Dashboard from './Dashboard';
 
-export default function ExecutivePortal() {
+export default function ExecutivePortal({ isAdmin = false }: { isAdmin?: boolean }) {
   const [stores, setStores] = useState<Store[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -137,94 +137,96 @@ export default function ExecutivePortal() {
     <div className="flex-1 overflow-y-auto bg-[#f8fdfa] p-4 md:p-8 space-y-6">
       
       {/* 1. SEPARATE ENVIRONMENT LINKS DIRECTORY (For Safety Purpose) */}
-      <div className="bg-emerald-950 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden border border-emerald-900/40">
-        <div className="absolute -right-16 -top-16 text-9xl opacity-5 select-none pointer-events-none">🔐</div>
-        
-        <div className="max-w-4xl space-y-4 relative z-10">
-          <div className="space-y-1.5">
-            <span className="bg-emerald-500 text-slate-950 text-[10px] font-black uppercase px-2.5 py-1 rounded-full">
-              🛡️ SAFETY DIRECTORY
-            </span>
-            <h2 className="text-xl font-black uppercase tracking-wider text-emerald-300">
-              Isolated Ecosystem Access URLs
-            </h2>
-            <p className="text-xs text-emerald-100/80 leading-relaxed max-w-2xl">
-              To guarantee data isolation and operational safety, distribute these direct links to the respective user groups. Storing separate links ensures shoppers, retail personnel, and corporate executives operate in distinct, sandboxed modules.
-            </p>
-          </div>
+      {isAdmin && (
+        <div className="bg-emerald-950 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden border border-emerald-900/40">
+          <div className="absolute -right-16 -top-16 text-9xl opacity-5 select-none pointer-events-none">🔐</div>
+          
+          <div className="max-w-4xl space-y-4 relative z-10">
+            <div className="space-y-1.5">
+              <span className="bg-emerald-500 text-slate-950 text-[10px] font-black uppercase px-2.5 py-1 rounded-full">
+                🛡️ SAFETY DIRECTORY
+              </span>
+              <h2 className="text-xl font-black uppercase tracking-wider text-emerald-300">
+                Isolated Ecosystem Access URLs
+              </h2>
+              <p className="text-xs text-emerald-100/80 leading-relaxed max-w-2xl">
+                To guarantee data isolation and operational safety, distribute these direct links to the respective user groups. Storing separate links ensures shoppers, retail personnel, and corporate executives operate in distinct, sandboxed modules.
+              </p>
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-3">
-            {[
-              {
-                title: '🛍️ Shopper Store',
-                desc: 'Fresh online catalog order booking',
-                path: '?portal=customer',
-                key: 'customer',
-                badge: 'Public'
-              },
-              {
-                title: '📦 Staff Fulfillment',
-                desc: 'Dispatch rider & picker interface',
-                path: '?portal=partner',
-                key: 'partner',
-                badge: 'Staff Auth'
-              },
-              {
-                title: '🏪 Store POS Station',
-                desc: 'Retail registers, weight billing & checkout',
-                path: '?portal=store_pos',
-                key: 'store_pos',
-                badge: 'Store Auth'
-              },
-              {
-                title: '🏢 Management HQ',
-                desc: 'System settings, double ledgers & database DDL',
-                path: '?portal=management',
-                key: 'management',
-                badge: 'Secure Login'
-              },
-              {
-                title: '📡 Executive Live',
-                desc: 'Real-time read-only monitoring dashboard',
-                path: '?portal=executive',
-                key: 'executive',
-                badge: 'No Login View'
-              }
-            ].map((mod) => (
-              <div 
-                key={mod.key} 
-                className="bg-emerald-900/40 border border-emerald-800/60 p-4 rounded-2xl flex flex-col justify-between space-y-3 hover:bg-emerald-900/60 transition-all group"
-              >
-                <div className="space-y-1">
-                  <div className="flex justify-between items-baseline">
-                    <h4 className="font-extrabold text-xs text-emerald-200">{mod.title}</h4>
-                    <span className="text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-800/40 text-emerald-400">
-                      {mod.badge}
-                    </span>
-                  </div>
-                  <p className="text-[9.5px] text-emerald-200/60 leading-snug font-medium">{mod.desc}</p>
-                </div>
-                
-                <button
-                  type="button"
-                  onClick={() => handleCopyLink(mod.path, mod.key)}
-                  className="w-full mt-2 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[9px] uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-3">
+              {[
+                {
+                  title: '🛍️ Shopper Store',
+                  desc: 'Fresh online catalog order booking',
+                  path: '?portal=customer',
+                  key: 'customer',
+                  badge: 'Public'
+                },
+                {
+                  title: '📦 Staff Fulfillment',
+                  desc: 'Dispatch rider & picker interface',
+                  path: '?portal=partner',
+                  key: 'partner',
+                  badge: 'Staff Auth'
+                },
+                {
+                  title: '🏪 Store POS Station',
+                  desc: 'Retail registers, weight billing & checkout',
+                  path: '?portal=store_pos',
+                  key: 'store_pos',
+                  badge: 'Store Auth'
+                },
+                {
+                  title: '🏢 Management HQ',
+                  desc: 'System settings, double ledgers & database DDL',
+                  path: '?portal=management',
+                  key: 'management',
+                  badge: 'Secure Login'
+                },
+                {
+                  title: '📡 Executive Live',
+                  desc: 'Real-time read-only monitoring dashboard',
+                  path: '?portal=executive',
+                  key: 'executive',
+                  badge: 'No Login View'
+                }
+              ].map((mod) => (
+                <div 
+                  key={mod.key} 
+                  className="bg-emerald-900/40 border border-emerald-800/60 p-4 rounded-2xl flex flex-col justify-between space-y-3 hover:bg-emerald-900/60 transition-all group"
                 >
-                  {copiedLink === mod.key ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 stroke-[3]" /> Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" /> Copy Secure Link
-                    </>
-                  )}
-                </button>
-              </div>
-            ))}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-baseline">
+                      <h4 className="font-extrabold text-xs text-emerald-200">{mod.title}</h4>
+                      <span className="text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-800/40 text-emerald-400">
+                        {mod.badge}
+                      </span>
+                    </div>
+                    <p className="text-[9.5px] text-emerald-200/60 leading-snug font-medium">{mod.desc}</p>
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={() => handleCopyLink(mod.path, mod.key)}
+                    className="w-full mt-2 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[9px] uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    {copiedLink === mod.key ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 stroke-[3]" /> Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" /> Copy Secure Link
+                      </>
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* 2. EXECUTIVE LIVE HEADER */}
       <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">

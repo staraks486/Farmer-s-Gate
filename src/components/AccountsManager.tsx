@@ -349,7 +349,7 @@ export default function AccountsManager({ stores, sales, purchases, role }: Acco
                 className="w-full text-xs font-semibold rounded-xl border border-slate-200 p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
               >
                 <option value="global">Global (General Headquarters)</option>
-                {stores.map(s => (
+                {stores.filter(s => s.isActive).map(s => (
                   <option key={s.id} value={s.id}>{s.name.replace("Farmer's Gate - ", "")}</option>
                 ))}
               </select>
@@ -475,7 +475,7 @@ export default function AccountsManager({ stores, sales, purchases, role }: Acco
             >
               <option value="all">🏢 Consolidated (All Branches)</option>
               <option value="global">📍 HQ / Global accounts only</option>
-              {stores.map(s => (
+              {stores.filter(s => s.isActive).map(s => (
                 <option key={s.id} value={s.id}>🏪 {s.name.replace("Farmer's Gate - ", "")}</option>
               ))}
             </select>

@@ -411,8 +411,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#f4fbf7] flex flex-col font-sans select-none antialiased text-slate-800">
       
-      {/* Dynamic Portal Selector Rail (Visible to corporate staff and admins, hidden for pure shoppers) */}
-      {(activePortal !== 'customer' || (user && userRole.role !== 'customer')) && (
+      {/* Dynamic Portal Selector Rail (Visible only in the management admin module to authorized staff) */}
+      {activePortal === 'management' && (
         <div className="bg-emerald-950 text-white py-2 px-4 shadow-md shrink-0 border-b border-emerald-900/60">
           <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center gap-2">
             <div className="flex items-center gap-2 flex-wrap">
@@ -879,10 +879,9 @@ export default function App() {
       </div>
 
       {/* Footer with separate links for each module and developer info */}
-      {activePortal !== 'customer' && (
-        <footer className="bg-white border-t border-slate-200/60 py-3 px-4 shrink-0 z-20">
-          <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider gap-3">
-            {/* Module Links */}
+      <footer className="bg-white border-t border-slate-200/60 py-3 px-4 shrink-0 z-20">
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider gap-3">
+          {activePortal === 'management' ? (
             <div className="flex items-center gap-4 flex-wrap justify-center text-center">
               <span className="text-slate-500 font-black">🔗 Modules:</span>
               <a 
@@ -907,7 +906,7 @@ export default function App() {
               >
                 📦 Staff Portal
               </a>
-               <a 
+              <a 
                 href="#management" 
                 onClick={(e) => { e.preventDefault(); changePortal('management'); }}
                 className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
@@ -941,15 +940,19 @@ export default function App() {
                 📡 Executive Live
               </a>
             </div>
-
-            <div className="flex items-center gap-3 flex-wrap justify-center text-center">
-              <span>Developer: <strong className="text-emerald-700 font-extrabold">Arvind Kumar Shukla</strong></span>
-              <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono text-[9px]">v2.1.5</span>
-              <span>© 2026 FarmersGate Tech Inc • Powered by Firebase</span>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 font-black">🏪 FarmersGate Secure Gateway</span>
             </div>
+          )}
+
+          <div className="flex items-center gap-3 flex-wrap justify-center text-center">
+            <span>Developer: <strong className="text-emerald-700 font-extrabold">Arvind Kumar Shukla</strong></span>
+            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono text-[9px]">v2.1.5</span>
+            <span>© 2026 FarmersGate Tech Inc • Powered by Firebase</span>
           </div>
-        </footer>
-      )}
+        </div>
+      </footer>
     </div>
   );
 }

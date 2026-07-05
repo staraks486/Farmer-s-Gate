@@ -32,10 +32,12 @@ import {
   Download,
   Copy,
   ExternalLink,
-  Printer
+  Printer,
+  Fingerprint,
+  UserCheck
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification, StaffMember, AttendanceRecord } from '../types';
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
 import { subscribeToNotifications } from '../lib/firebase';
 import { QrScanner } from './QrScanner';
@@ -48,6 +50,8 @@ interface StoreManagerProps {
   requirements: Requirement[];
   customerOrders?: CustomerOrder[];
   role?: string;
+  staff?: StaffMember[];
+  attendance?: AttendanceRecord[];
   onAddSale: (sale: Sale) => void;
   onDeleteSale: (id: string) => void;
   onAddPurchase: (purchase: Purchase) => void;
@@ -59,6 +63,7 @@ interface StoreManagerProps {
   onFulfillCustomerOrder?: (order: CustomerOrder) => void;
   onUpdateCustomerOrder?: (order: CustomerOrder) => void;
   onDeleteCustomerOrder?: (id: string) => void;
+  onSaveAttendance?: (record: AttendanceRecord) => Promise<void>;
   cpanelSettings?: CpanelSettings;
 }
 
@@ -152,6 +157,8 @@ export default function StoreManager({
   requirements,
   customerOrders = [],
   role,
+  staff = [],
+  attendance = [],
   onAddSale,
   onDeleteSale,
   onAddPurchase,
@@ -163,14 +170,113 @@ export default function StoreManager({
   onFulfillCustomerOrder,
   onUpdateCustomerOrder,
   onDeleteCustomerOrder,
+  onSaveAttendance,
   cpanelSettings
 }: StoreManagerProps) {
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
-  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code'>('sale');
+  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance'>('sale');
   const [offlineMode, setOfflineMode] = useState<boolean>(dbGetForceOffline());
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Card' | 'UPI'>('Cash');
+  const [salespersonName, setSalespersonName] = useState<string>('');
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+
+  // Biometric Attendance states
+  const [biometricStaffId, setBiometricStaffId] = useState<string | null>(null);
+  const [biometricScanState, setBiometricScanState] = useState<'idle' | 'scanning' | 'success' | 'failed'>('idle');
+  const [biometricScanProgress, setBiometricScanProgress] = useState<number>(0);
+  const [biometricMessage, setBiometricMessage] = useState<string>('');
+  const [attendanceDate, setAttendanceDate] = useState<string>(new Date().toISOString().split('T')[0]);
+
+  // Employee details extraction & central sync states
+  const [extractedStaffDetails, setExtractedStaffDetails] = useState<{
+    member: StaffMember;
+    record: AttendanceRecord;
+    attendanceRate: number;
+    presentDays: number;
+    leaveDays: number;
+    hoursWorked: number;
+    payout: number;
+    verifiedBy: 'Biometrics v4.8' | 'Manual POS Register';
+  } | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'extracting' | 'ready' | 'syncing' | 'synced'>('idle');
+  const [syncProgress, setSyncProgress] = useState<number>(0);
+
+  const triggerEmployeeDetailsExtraction = (
+    member: StaffMember, 
+    record: AttendanceRecord, 
+    verifiedBy: 'Biometrics v4.8' | 'Manual POS Register'
+  ) => {
+    // Extract & calculate employee-specific stats
+    const staffAttendance = attendance.filter(r => r.staffId === member.id);
+    const totalDaysRecorded = staffAttendance.length + (staffAttendance.find(r => r.date === record.date) ? 0 : 1);
+    const presentDays = staffAttendance.filter(r => r.status === 'Present').length + (record.status === 'Present' ? 1 : 0);
+    const leaveDays = staffAttendance.filter(r => r.status === 'Leave').length + (record.status === 'Leave' ? 1 : 0);
+    const attendanceRate = totalDaysRecorded > 0 ? Math.round((presentDays / totalDaysRecorded) * 100) : 100;
+
+    // Calculate hours worked (Standard hours = 8.0)
+    let hoursWorked = 0;
+    if (record.status === 'Present') {
+      const inTime = record.timeIn || '09:00';
+      const outTime = record.timeOut || '18:00';
+      const [inH, inM] = inTime.split(':').map(Number);
+      const [outH, outM] = outTime.split(':').map(Number);
+      hoursWorked = Math.max(0, (outH + outM / 60) - (inH + inM / 60));
+    }
+
+    // Role-based pay calculation
+    const rateMap = { Manager: 250, Cashier: 180, Staff: 120, Salesperson: 150 };
+    const hourlyRate = rateMap[member.role] || 120;
+    const payout = Math.round(hoursWorked * hourlyRate);
+
+    setExtractedStaffDetails({
+      member,
+      record,
+      attendanceRate,
+      presentDays,
+      leaveDays,
+      hoursWorked: parseFloat(hoursWorked.toFixed(2)),
+      payout,
+      verifiedBy
+    });
+    setSyncStatus('extracting');
+    setSyncProgress(0);
+
+    // Simulated Extraction Delay
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 25;
+      setSyncProgress(progress);
+      if (progress >= 100) {
+        clearInterval(interval);
+        setSyncStatus('ready');
+      }
+    }, 120);
+  };
+
+  const handleExecuteCentralSync = async () => {
+    if (!extractedStaffDetails) return;
+    setSyncStatus('syncing');
+    setSyncProgress(0);
+
+    let progress = 0;
+    const interval = setInterval(async () => {
+      progress += 20;
+      setSyncProgress(progress);
+      if (progress >= 100) {
+        clearInterval(interval);
+        if (onSaveAttendance) {
+          await onSaveAttendance(extractedStaffDetails.record);
+        }
+        setSyncStatus('synced');
+        setTimeout(() => {
+          setExtractedStaffDetails(null);
+          setSyncStatus('idle');
+          setSyncProgress(0);
+        }, 1200);
+      }
+    }, 150);
+  };
 
   // Real-time broadcast notifications from the central database
   const [broadcastNotifications, setBroadcastNotifications] = useState<AppNotification[]>([]);
@@ -239,6 +345,144 @@ export default function StoreManager({
         console.log("Audio feedback error:", e);
       }
     }
+  };
+
+  const handleTriggerBiometricScan = (member: StaffMember) => {
+    if (biometricScanState === 'scanning') return;
+    
+    setBiometricStaffId(member.id);
+    setBiometricScanState('scanning');
+    setBiometricScanProgress(0);
+    setBiometricMessage('Please place finger on the capacitive biometric scan glass...');
+    
+    if (cpanelSettings?.alertSoundEnabled) {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      } catch (e) {}
+    }
+    
+    let currentProgress = 0;
+    const interval = setInterval(() => {
+      currentProgress += 10;
+      if (currentProgress <= 100) {
+        setBiometricScanProgress(currentProgress);
+        
+        if (currentProgress === 20) {
+          setBiometricMessage('Laser calibration in progress...');
+        } else if (currentProgress === 40) {
+          setBiometricMessage('Scanning ridges & pattern matching...');
+        } else if (currentProgress === 65) {
+          setBiometricMessage('Matching hashed minutiae points...');
+        } else if (currentProgress === 85) {
+          setBiometricMessage('Decrypting core staff credential logs...');
+        } else if (currentProgress === 100) {
+          setBiometricMessage('Authenticated! Handshaking signature key...');
+        }
+        
+        if (cpanelSettings?.alertSoundEnabled) {
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(600 + currentProgress * 4, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.05);
+          } catch (e) {}
+        }
+      }
+      
+      if (currentProgress >= 100) {
+        clearInterval(interval);
+        
+        setTimeout(async () => {
+          setBiometricScanState('success');
+          setBiometricMessage(`Access Granted: ${member.name} authenticated!`);
+          
+          if (cpanelSettings?.alertSoundEnabled) {
+            try {
+              const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.connect(gain);
+              gain.connect(audioCtx.destination);
+              osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+              osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.08); // E5
+              osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.16); // G5
+              gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+              osc.start();
+              osc.stop(audioCtx.currentTime + 0.35);
+            } catch (e) {}
+          }
+          
+          const now = new Date();
+          const curTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          
+          const existing = attendance.find(
+            (r) => r.staffId === member.id && r.date === attendanceDate
+          );
+          
+          const record: AttendanceRecord = {
+            id: existing?.id || `att_${Date.now()}_${member.id}`,
+            staffId: member.id,
+            staffName: member.name,
+            staffRole: member.role,
+            storeId: store.id,
+            date: attendanceDate,
+            status: 'Present',
+            timeIn: existing?.timeIn || curTime,
+            timeOut: existing?.timeOut || undefined,
+            lastUpdated: new Date().toISOString()
+          };
+          
+          triggerEmployeeDetailsExtraction(member, record, 'Biometrics v4.8');
+          
+          setTimeout(() => {
+            setBiometricScanState('idle');
+            setBiometricStaffId(null);
+            setBiometricScanProgress(0);
+          }, 2000);
+          
+        }, 300);
+      }
+    }, 200);
+  };
+
+  const handleSaveManualAttendance = async (
+    member: StaffMember,
+    status: 'Present' | 'Leave' | 'Absent',
+    timeIn?: string,
+    timeOut?: string
+  ) => {
+    const existing = attendance.find(
+      (r) => r.staffId === member.id && r.date === attendanceDate
+    );
+    
+    const record: AttendanceRecord = {
+      id: existing?.id || `att_${Date.now()}_${member.id}`,
+      staffId: member.id,
+      staffName: member.name,
+      staffRole: member.role,
+      storeId: store.id,
+      date: attendanceDate,
+      status,
+      timeIn: status === 'Present' ? (timeIn || '09:00') : undefined,
+      timeOut: status === 'Present' ? (timeOut || '18:00') : undefined,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    triggerEmployeeDetailsExtraction(member, record, 'Manual POS Register');
   };
 
   const handleToggleOfflineMode = () => {
@@ -890,6 +1134,7 @@ export default function StoreManager({
         pricePerKg: cartItem.pricePerKg,
         totalPrice: parseFloat(sub.toFixed(2)),
         customerName: posCustomerName.trim() || undefined,
+        salespersonName: salespersonName.trim() || undefined,
         saleDate: new Date().toISOString()
       };
       onAddSale(newSale);
@@ -913,6 +1158,7 @@ export default function StoreManager({
     // Clear cart
     setPosCart({});
     setPosCustomerName('');
+    setSalespersonName('');
     setShowCheckoutModal(false);
   };
 
@@ -1465,6 +1711,9 @@ export default function StoreManager({
   // 3. STATE FOR INVENTORY TAB (Manual initialization or quick-adjust)
   const [adjustingItemId, setAdjustingItemId] = useState<string | null>(null);
   const [adjustQtyVal, setAdjustQtyVal] = useState<number>(0);
+  const [requestingItemId, setRequestingItemId] = useState<string | null>(null);
+  const [quickReqQty, setQuickReqQty] = useState<number>(50);
+  const [quickReqPriority, setQuickReqPriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
   const [initVegName, setInitVegName] = useState('');
   const [initMinStock, setInitMinStock] = useState<number>(15);
   const [initCostPrice, setInitCostPrice] = useState<number>(1.5);
@@ -1725,6 +1974,21 @@ export default function StoreManager({
     alert(`Successfully reused requisition! Raised a new Pending restock request for ${oldReq.quantity}kg of ${oldReq.vegetableName}.`);
   };
 
+  const handleQuickRequestRequirement = (vegName: string, qty: number, priority: 'Low' | 'Medium' | 'High') => {
+    if (qty <= 0) return;
+    const newReq: Requirement = {
+      id: `req-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      storeId: store.id,
+      vegetableName: vegName,
+      quantity: qty,
+      status: 'Pending',
+      priority: priority,
+      createdAt: new Date().toISOString()
+    };
+    onAddRequirement(newReq);
+    setRequestingItemId(null);
+  };
+
   const handleQuickAdjustStock = (item: InventoryItem, newQty: number) => {
     onUpdateInventoryItem({
       ...item,
@@ -1910,6 +2174,20 @@ export default function StoreManager({
         >
           <QrCode className="h-3.5 w-3.5" />
           Store QR Codes
+        </button>
+
+        {/* Attendance & Biometrics Tab */}
+        <button
+          id="tab-attendance"
+          onClick={() => setActiveSubTab('attendance')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+            activeSubTab === 'attendance'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <Fingerprint className="h-3.5 w-3.5 text-emerald-600" />
+          Fingerprint & Attendance
         </button>
       </div>
 
@@ -3507,33 +3785,89 @@ export default function StoreManager({
                           placeholder="Correct Qty"
                           defaultValue={item.quantity}
                           id={`input-adjust-${item.id}`}
-                          className="w-20 border border-zinc-200 rounded px-1.5 py-1 text-xs text-center font-bold"
+                          className="w-full max-w-[85px] border border-zinc-200 rounded-lg px-2 py-1 text-xs text-center font-bold text-zinc-800"
                         />
                         <button
                           onClick={() => {
                             const val = parseFloat((document.getElementById(`input-adjust-${item.id}`) as HTMLInputElement)?.value || '0');
                             handleQuickAdjustStock(item, val);
                           }}
-                          className="px-2 py-1 bg-zinc-900 text-white rounded text-[10px] font-bold"
+                          className="px-2.5 py-1 bg-zinc-900 text-white rounded-lg text-[10px] font-extrabold cursor-pointer hover:bg-zinc-800"
                         >
                           Apply
                         </button>
                         <button
                           onClick={() => setAdjustingItemId(null)}
-                          className="px-2 py-1 border border-zinc-200 rounded text-[10px] font-semibold text-zinc-500"
+                          className="px-2.5 py-1 border border-zinc-200 rounded-lg text-[10px] font-semibold text-zinc-500 hover:bg-zinc-50 cursor-pointer"
                         >
-                          X
+                          Cancel
                         </button>
                       </div>
+                    ) : requestingItemId === item.id ? (
+                      <div className="flex flex-col gap-2 bg-amber-50/50 border border-amber-100 rounded-xl p-2.5 animate-fade-in">
+                        <span className="text-[9px] font-extrabold text-amber-800 uppercase tracking-wider block">🚨 Requisition Parameters</span>
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <input
+                              type="number"
+                              placeholder="Qty"
+                              value={quickReqQty}
+                              onChange={(e) => setQuickReqQty(parseFloat(e.target.value) || 0)}
+                              className="w-full border border-zinc-200 rounded-lg py-1 px-2 text-xs font-bold text-zinc-800 text-center bg-white"
+                            />
+                            <span className="absolute right-1.5 top-1 text-[9px] font-black text-zinc-400">kg</span>
+                          </div>
+                          
+                          <select
+                            value={quickReqPriority}
+                            onChange={(e) => setQuickReqPriority(e.target.value as any)}
+                            className="border border-zinc-200 rounded-lg py-1 px-1.5 text-xs font-semibold text-zinc-700 bg-white cursor-pointer"
+                          >
+                            <option value="Low">Low</option>
+                            <option value="Medium">Med</option>
+                            <option value="High">High</option>
+                          </select>
+                        </div>
+
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleQuickRequestRequirement(item.vegetableName, quickReqQty, quickReqPriority)}
+                            className="flex-1 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg text-[10px] cursor-pointer text-center"
+                          >
+                            File Requisition
+                          </button>
+                          <button
+                            onClick={() => setRequestingItemId(null)}
+                            className="px-2 py-1 border border-zinc-200 bg-white hover:bg-zinc-50 rounded-lg text-[10px] font-bold text-zinc-500 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
                     ) : (
-                      <button
-                        onClick={() => {
-                          setAdjustingItemId(item.id);
-                        }}
-                        className="text-center w-full bg-zinc-50 hover:bg-zinc-100 text-zinc-600 text-[10px] font-bold py-1.5 rounded-lg border border-zinc-200/50"
-                      >
-                        Correct Stock Count
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => {
+                            setAdjustingItemId(item.id);
+                            setRequestingItemId(null);
+                          }}
+                          className="text-center bg-zinc-50 hover:bg-zinc-100 text-zinc-600 text-[10px] font-bold py-1.5 rounded-lg border border-zinc-200/50 transition-colors cursor-pointer"
+                        >
+                          Correct Count
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            setRequestingItemId(item.id);
+                            setAdjustingItemId(null);
+                            setQuickReqQty(item.quantity <= item.minStockThreshold ? Math.max(50, item.minStockThreshold * 2 - item.quantity) : 50);
+                            setQuickReqPriority(item.quantity <= item.minStockThreshold ? 'High' : 'Medium');
+                          }}
+                          className="text-center bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-black py-1.5 rounded-lg border border-amber-200/50 transition-colors cursor-pointer flex items-center justify-center gap-1"
+                        >
+                          🚨 Req Restock
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -4722,6 +5056,364 @@ export default function StoreManager({
         </div>
       )}
 
+      {/* --- SUB-TAB CONTENT: ATTENDANCE & BIOMETRIC DESK --- */}
+      {activeSubTab === 'attendance' && (
+        <div className="space-y-6 animate-fade-in text-slate-800">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm space-y-6">
+            
+            {/* Header info */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div className="space-y-1">
+                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/60 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider">
+                  Roster Operations & Biometric Security
+                </span>
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Fingerprint className="h-5 w-5 text-emerald-600" />
+                  Staff Attendance & Biometric Verification Desk
+                </h3>
+                <p className="text-slate-500 text-xs">
+                  Maintain daily attendance rosters for branch employees. Utilize capacitive simulation biometrics to safely sign-in staff, or manage check-in registers manually.
+                </p>
+              </div>
+
+              {/* Date Selection */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-1.5 self-start md:self-auto shadow-xs">
+                <span className="text-[10px] font-extrabold uppercase text-slate-400">Roster Date:</span>
+                <input
+                  type="date"
+                  value={attendanceDate}
+                  onChange={(e) => setAttendanceDate(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none border-none p-0 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Quick Metrics */}
+            {(() => {
+              const branchStaff = staff.filter(s => s.assignedStoreId === store.id && s.isActive);
+              const storeAttendance = attendance.filter(r => r.storeId === store.id && r.date === attendanceDate);
+              const presentCount = storeAttendance.filter(r => r.status === 'Present').length;
+              const absentCount = storeAttendance.filter(r => r.status === 'Absent').length;
+              const leaveCount = storeAttendance.filter(r => r.status === 'Leave').length;
+
+              return (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-1.5">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Roster Count</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-black text-slate-800">{branchStaff.length}</span>
+                      <span className="text-[10px] text-slate-500 font-bold">employees</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-50/40 border border-emerald-100 rounded-2xl p-4 space-y-1.5">
+                    <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest block">Present Today</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-black text-emerald-700">{presentCount}</span>
+                      <span className="text-[10px] text-emerald-600 font-bold">checked-in</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-rose-50/40 border border-rose-100 rounded-2xl p-4 space-y-1.5">
+                    <span className="text-[10px] font-extrabold text-rose-600 uppercase tracking-widest block">Absent Today</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-black text-rose-700">{absentCount}</span>
+                      <span className="text-[10px] text-rose-600 font-bold">not logged</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-amber-50/40 border border-amber-100 rounded-2xl p-4 space-y-1.5">
+                    <span className="text-[10px] font-extrabold text-amber-600 uppercase tracking-widest block">On Approved Leave</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-black text-amber-700">{leaveCount}</span>
+                      <span className="text-[10px] text-amber-600 font-bold">out-of-office</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Content Split: Staff Register & Biometric Terminal */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
+              
+              {/* Left Panel: Staff Register Table (Col Span 7) */}
+              <div className="lg:col-span-7 space-y-4">
+                <h4 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                  <UserCheck className="h-4 w-4 text-emerald-600" />
+                  Daily Shift Register
+                </h4>
+
+                <div className="border border-slate-200/80 rounded-2xl overflow-hidden bg-slate-50/20">
+                  <div className="divide-y divide-slate-100">
+                    {(() => {
+                      const branchStaff = staff.filter(s => s.assignedStoreId === store.id && s.isActive);
+                      if (branchStaff.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-slate-400 text-xs font-semibold">
+                            No staff members are currently assigned to this store branch. 
+                            Add staff in the Management Control Panel first.
+                          </div>
+                        );
+                      }
+
+                      return branchStaff.map((member) => {
+                        const record = attendance.find(r => r.staffId === member.id && r.date === attendanceDate);
+                        const status = record?.status || 'Absent';
+                        const inTime = record?.timeIn || '09:00';
+                        const outTime = record?.timeOut || '18:00';
+
+                        return (
+                          <div key={member.id} className="p-4 bg-white hover:bg-slate-50/70 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            {/* Profile Info */}
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-extrabold text-sm text-slate-800">{member.name}</span>
+                                <span className="bg-slate-100 text-slate-600 text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                                  {member.role}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 text-slate-400 text-[10px]">
+                                <span>📱 {member.phone || 'No phone'}</span>
+                                {record && (
+                                  <span className="text-emerald-600 font-semibold">
+                                    ✓ Verified: {new Date(record.lastUpdated).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Verification Options / Controls */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Biometric trigger */}
+                              <button
+                                type="button"
+                                onClick={() => handleTriggerBiometricScan(member)}
+                                disabled={biometricScanState === 'scanning'}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                  biometricStaffId === member.id && biometricScanState === 'scanning'
+                                    ? 'bg-amber-50 border-amber-300 text-amber-700 animate-pulse'
+                                    : status === 'Present'
+                                    ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-800'
+                                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 shadow-2xs'
+                                }`}
+                              >
+                                <Fingerprint className="h-3.5 w-3.5 text-emerald-600" />
+                                {status === 'Present' ? 'Re-scan Biometrics' : 'Biometric Check-In'}
+                              </button>
+
+                              {/* Manual state selection dropdown/buttons */}
+                              <div className="flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200/40">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveManualAttendance(member, 'Present', inTime, outTime)}
+                                  className={`px-2 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
+                                    status === 'Present'
+                                      ? 'bg-emerald-600 text-white shadow-xs'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  Present
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveManualAttendance(member, 'Leave', undefined, undefined)}
+                                  className={`px-2 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
+                                    status === 'Leave'
+                                      ? 'bg-amber-500 text-white shadow-xs'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  Leave
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveManualAttendance(member, 'Absent', undefined, undefined)}
+                                  className={`px-2 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
+                                    status === 'Absent'
+                                      ? 'bg-rose-500 text-white shadow-xs'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  Absent
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* If present, show time-in and time-out inputs */}
+                            {status === 'Present' && (
+                              <div className="flex items-center gap-1.5 md:border-l border-slate-100 md:pl-4 pt-2 md:pt-0">
+                                <div className="space-y-0.5">
+                                  <label className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Time In</label>
+                                  <input
+                                    type="time"
+                                    value={inTime}
+                                    onChange={(e) => handleSaveManualAttendance(member, 'Present', e.target.value, outTime)}
+                                    className="rounded-lg bg-slate-50 border border-slate-200 px-1.5 py-1 text-[11px] font-bold text-slate-700 focus:outline-none"
+                                  />
+                                </div>
+                                <span className="text-slate-300 text-xs font-bold pt-3">→</span>
+                                <div className="space-y-0.5">
+                                  <label className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Time Out</label>
+                                  <input
+                                    type="time"
+                                    value={outTime}
+                                    onChange={(e) => handleSaveManualAttendance(member, 'Present', inTime, e.target.value)}
+                                    className="rounded-lg bg-slate-50 border border-slate-200 px-1.5 py-1 text-[11px] font-bold text-slate-700 focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Panel: Biometric Hardware Console (Col Span 5) */}
+              <div className="lg:col-span-5 flex flex-col items-center justify-start space-y-6">
+                <div className="w-full bg-slate-900 text-slate-100 rounded-3xl border border-slate-800 p-6 flex flex-col items-center justify-center text-center relative overflow-hidden shadow-xl min-h-[380px]">
+                  {/* Holographic matrix background effect */}
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent pointer-events-none"></div>
+                  
+                  {/* Glowing radar target */}
+                  <div className="absolute top-4 right-4 h-2.5 w-2.5 bg-emerald-500 rounded-full animate-ping"></div>
+                  <div className="absolute top-4 right-4 h-2.5 w-2.5 bg-emerald-500 rounded-full"></div>
+
+                  <span className="text-[9px] font-extrabold uppercase tracking-widest text-emerald-400 bg-emerald-950/80 border border-emerald-800/60 px-3 py-1 rounded-full mb-6">
+                    Biometric Scanner Interface v4.8
+                  </span>
+
+                  {biometricStaffId ? (
+                    (() => {
+                      const activeMember = staff.find(s => s.id === biometricStaffId);
+                      return (
+                        <div className="w-full space-y-6 animate-fade-in">
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Currently Registering:</span>
+                            <h5 className="text-base font-black text-white">{activeMember?.name}</h5>
+                            <span className="text-[11px] font-semibold text-emerald-400">{activeMember?.role}</span>
+                          </div>
+
+                          {/* Scanner Animation Frame */}
+                          <div className="relative h-44 w-44 mx-auto rounded-full bg-slate-950 border-2 border-emerald-500/30 flex items-center justify-center shadow-[inset_0_0_20px_rgba(16,185,129,0.15)] overflow-hidden">
+                            {/* Scanning horizontal line */}
+                            {biometricScanState === 'scanning' && (
+                              <div 
+                                className="absolute left-0 right-0 h-1 bg-emerald-400 shadow-[0_0_12px_#34d399] z-10 animate-pulse"
+                                style={{
+                                  top: `${biometricScanProgress}%`,
+                                  transition: 'top 0.2s linear'
+                                }}
+                              />
+                            )}
+
+                            {/* Pulse background waves */}
+                            {biometricScanState === 'scanning' && (
+                              <div className="absolute inset-4 rounded-full border border-emerald-500/10 animate-ping duration-1000"></div>
+                            )}
+
+                            {/* High-quality Fingerprint SVG */}
+                            <svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              viewBox="0 0 24 24" 
+                              fill="none" 
+                              stroke="currentColor" 
+                              strokeWidth="1.2" 
+                              strokeLinecap="round" 
+                              strokeLinejoin="round" 
+                              className={`h-24 w-24 transition-all duration-300 ${
+                                biometricScanState === 'scanning'
+                                  ? 'text-emerald-400 scale-105 filter drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]'
+                                  : biometricScanState === 'success'
+                                  ? 'text-emerald-500 scale-110 filter drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+                                  : 'text-slate-700'
+                              }`}
+                            >
+                              <path d="M12 10a2 2 0 0 0-2 2" />
+                              <path d="M14 14a4 4 0 0 0-4-4" />
+                              <path d="M8 10a6 6 0 0 1 12 0v2a2 2 0 0 1-2 2" />
+                              <path d="M12 2a10 10 0 0 1 10 10V14a6 6 0 0 1-12 0V12a4 4 0 0 1 8 0" />
+                              <path d="M6 12a8 8 0 0 1 16 0V14" />
+                              <path d="M12 22V20" />
+                              <path d="M12 18V16" />
+                              <path d="M16 22V18" />
+                              <path d="M8 22V18" />
+                            </svg>
+
+                            {/* Success Overlay Checkmark */}
+                            {biometricScanState === 'success' && (
+                              <div className="absolute inset-0 bg-emerald-950/85 flex items-center justify-center animate-in zoom-in-75 duration-300">
+                                <CheckCircle2 className="h-16 w-16 text-emerald-400" />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Live Progress Bar */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-xs font-mono font-extrabold text-slate-400">
+                              <span>PROGRESS SCAN:</span>
+                              <span className="text-emerald-400">{biometricScanProgress}%</span>
+                            </div>
+                            <div className="w-full bg-slate-850 h-2 rounded-full overflow-hidden border border-slate-800">
+                              <div 
+                                className="bg-emerald-500 h-full transition-all duration-200"
+                                style={{ width: `${biometricScanProgress}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Log messages console */}
+                          <div className="bg-black/45 border border-slate-800 rounded-xl p-3.5 text-left font-mono text-[10px] space-y-1 text-slate-400 min-h-16">
+                            <div className="text-emerald-500 font-extrabold flex items-center gap-1">
+                              <span className="animate-pulse">●</span> CORE STATUS LOG:
+                            </div>
+                            <div className="text-white leading-relaxed">{biometricMessage}</div>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="space-y-6 max-w-xs mx-auto animate-fade-in">
+                      <div className="h-28 w-28 mx-auto rounded-3xl bg-slate-950 border border-slate-800 flex items-center justify-center shadow-inner relative group animate-pulse">
+                        <div className="absolute inset-0 bg-emerald-500/5 rounded-3xl group-hover:bg-emerald-500/10 transition-all duration-300"></div>
+                        <Fingerprint className="h-14 w-14 text-slate-700 group-hover:text-emerald-600/70 transition-all duration-300" />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <h5 className="text-sm font-extrabold text-white">Biometric Verification Portal</h5>
+                        <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                          Select an active branch staff employee on the left roster to initiate high-fidelity fingerprint scan validation. 
+                        </p>
+                      </div>
+
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-850 rounded-xl text-[10px] text-slate-400 font-mono">
+                        <span>SYS_STATUS:</span>
+                        <span className="text-emerald-500 font-extrabold">SECURE_IDLE</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Info guidance */}
+                <div className="w-full bg-slate-50 rounded-2xl border border-slate-200/80 p-5 space-y-3 text-left">
+                  <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
+                    <span>💡</span>
+                    Branch Attendance Policy
+                  </h4>
+                  <p className="text-[11px] text-slate-500 leading-relaxed font-semibold">
+                    Roster entries are automatically securely backed up and synchronized with the centralized payroll management console. Employees can also view their daily attendance reports on their client dashboard in real-time.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* Minimal Breadcrumb Bar - Placed at the bottom of the page */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-50 border border-slate-200/60 rounded-xl p-3 shadow-sm mt-6">
         <div className="flex items-center justify-between w-full sm:w-auto gap-2.5">
@@ -4911,7 +5603,7 @@ export default function StoreManager({
               ) : (
                 <div className="space-y-4">
                   {/* Customer Info Form */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                     <div className="space-y-1 text-left">
                       <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Customer Identity Name</label>
                       <input
@@ -4938,6 +5630,22 @@ export default function StoreManager({
                           className="w-full rounded-xl bg-slate-50 border border-slate-200 py-2 pl-11 pr-3 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
                         />
                       </div>
+                    </div>
+
+                    <div className="space-y-1 text-left font-sans">
+                      <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Attending Salesperson</label>
+                      <select
+                        value={salespersonName}
+                        onChange={(e) => setSalespersonName(e.target.value)}
+                        className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      >
+                        <option value="">-- None --</option>
+                        {staff && staff.filter(s => s.isActive).map(st => (
+                          <option key={st.id} value={st.name}>
+                            {st.name} ({st.role}) {st.assignedStoreId === store.id ? '📍 Here' : ''}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 
@@ -5214,6 +5922,194 @@ export default function StoreManager({
                   Discard / Keep Active
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- EXTRACTED EMPLOYEE ATTENDANCE PROFILE & CENTRAL SYNC PORTAL --- */}
+      {extractedStaffDetails && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 max-w-xl w-full overflow-hidden shadow-2xl animate-fade-in text-slate-800">
+            {/* Holographic Header */}
+            <div className="bg-gradient-to-r from-emerald-900 via-emerald-950 to-slate-900 text-white p-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 h-32 w-32 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-emerald-500/20 via-transparent to-transparent pointer-events-none"></div>
+              <div className="flex items-center gap-3 relative z-10">
+                <div className="p-2.5 bg-emerald-900/60 rounded-2xl border border-emerald-700/50">
+                  <Fingerprint className="h-6 w-6 text-emerald-400 animate-pulse" />
+                </div>
+                <div>
+                  <span className="bg-emerald-500 text-slate-950 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider">
+                    📡 Central HR Link Active
+                  </span>
+                  <h3 className="text-base font-black uppercase tracking-wider text-emerald-200 mt-1">
+                    Employee Details Extracted successfully
+                  </h3>
+                </div>
+              </div>
+            </div>
+
+            {/* Profile Package & Calculated KPIs */}
+            <div className="p-6 space-y-5">
+              {/* Sync Status / Progress indicator */}
+              <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <span className={`h-2 w-2 rounded-full ${
+                      syncStatus === 'synced' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+                    }`}></span>
+                    Current Action: {
+                      syncStatus === 'extracting' ? 'Extracting biometric signature records...' :
+                      syncStatus === 'ready' ? 'Extracted payload ready for sync' :
+                      syncStatus === 'syncing' ? 'Broadcasting data packets to central ledger...' :
+                      'Ｒｏｓｔｅｒ  ｓｙｎｃｈｒｏｎｉｚｅｄ  ✓'
+                    }
+                  </span>
+                  <span className="text-xs font-mono font-black text-emerald-600">
+                    {syncProgress}%
+                  </span>
+                </div>
+                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                  <div 
+                    className="bg-emerald-600 h-full transition-all duration-300"
+                    style={{ width: `${syncProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Extraction Package Body */}
+              <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-3xs bg-slate-50/20">
+                <div className="bg-slate-50/50 px-4.5 py-3 border-b border-slate-150 flex justify-between items-center">
+                  <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">
+                    📦 Extracted Data Package
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-bold font-mono">
+                    VERIFIED_BY: {extractedStaffDetails.verifiedBy}
+                  </span>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  {/* Basic Profile details */}
+                  <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                    <div className="h-12 w-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center font-extrabold text-lg text-slate-600 bg-gradient-to-br from-slate-100 to-slate-200 shadow-3xs">
+                      👤
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-base font-black text-slate-800">{extractedStaffDetails.member.name}</h4>
+                        <span className="bg-indigo-50 border border-indigo-100 text-indigo-800 text-[9px] font-black px-2 py-0.5 rounded uppercase">
+                          {extractedStaffDetails.member.role}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 font-bold mt-0.5">
+                        📞 {extractedStaffDetails.member.phone} • ID: {extractedStaffDetails.member.id}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Attendance detail */}
+                  <div className="grid grid-cols-2 gap-4 text-xs font-medium border-b border-slate-100 pb-4">
+                    <div>
+                      <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Roster Workday</span>
+                      <span className="font-extrabold text-slate-700 mt-1 block">{extractedStaffDetails.record.date}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Attendance Status</span>
+                      <span className={`inline-flex items-center gap-1 font-extrabold px-2 py-0.5 rounded mt-1 text-[11px] ${
+                        extractedStaffDetails.record.status === 'Present' ? 'bg-emerald-50 text-emerald-800 border border-emerald-150' :
+                        extractedStaffDetails.record.status === 'Leave' ? 'bg-amber-50 text-amber-800 border border-amber-150' :
+                        'bg-rose-50 text-rose-800 border border-rose-150'
+                      }`}>
+                        {extractedStaffDetails.record.status === 'Present' ? '✓ Present' :
+                         extractedStaffDetails.record.status === 'Leave' ? '⚠ Leave' : '✗ Absent'}
+                      </span>
+                    </div>
+                    {extractedStaffDetails.record.status === 'Present' && (
+                      <>
+                        <div>
+                          <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Clock In Time</span>
+                          <span className="font-black text-slate-800 mt-1 block font-mono">{extractedStaffDetails.record.timeIn || '09:00'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Clock Out Time</span>
+                          <span className="font-black text-slate-800 mt-1 block font-mono">{extractedStaffDetails.record.timeOut || '18:00'}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Calculated KPI Details */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                      <span className="text-[8px] font-extrabold text-slate-400 uppercase block leading-none">Attendance Rate</span>
+                      <span className="text-base font-black text-slate-800 block mt-1.5">{extractedStaffDetails.attendanceRate}%</span>
+                      <span className="text-[8px] text-slate-400 font-bold block mt-0.5">({extractedStaffDetails.presentDays} Days present)</span>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                      <span className="text-[8px] font-extrabold text-slate-400 uppercase block leading-none">Days Recorded</span>
+                      <span className="text-base font-black text-slate-800 block mt-1.5">{extractedStaffDetails.presentDays + extractedStaffDetails.leaveDays} Days</span>
+                      <span className="text-[8px] text-slate-400 font-bold block mt-0.5">Roster total</span>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                      <span className="text-[8px] font-extrabold text-slate-400 uppercase block leading-none">Hours Worked</span>
+                      <span className="text-base font-black text-slate-800 block mt-1.5 font-mono">{extractedStaffDetails.hoursWorked} hrs</span>
+                      <span className="text-[8px] text-slate-400 font-bold block mt-0.5">Shift Total</span>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center bg-emerald-50/20 border-emerald-150">
+                      <span className="text-[8px] font-extrabold text-emerald-600 uppercase block leading-none">Est. Shift Pay</span>
+                      <span className="text-base font-black text-emerald-700 block mt-1.5 font-mono">₹{extractedStaffDetails.payout}</span>
+                      <span className="text-[8px] text-emerald-600 font-bold block mt-0.5">Today Payout</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="px-6 py-5 bg-slate-50 border-t border-slate-100 flex gap-2.5">
+              {syncStatus === 'ready' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setExtractedStaffDetails(null)}
+                    className="flex-1 py-3 border border-slate-200 hover:bg-white text-slate-500 rounded-xl text-xs font-bold cursor-pointer transition text-center shadow-3xs"
+                  >
+                    Discard Scan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExecuteCentralSync}
+                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition shadow-sm cursor-pointer text-center flex items-center justify-center gap-1.5"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    Send to Central Module
+                  </button>
+                </>
+              )}
+
+              {syncStatus === 'extracting' && (
+                <div className="w-full text-center py-2 text-slate-400 italic text-xs font-bold flex items-center justify-center gap-1.5">
+                  <span className="h-4 w-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></span>
+                  Extracting complete shift details from local terminal logs...
+                </div>
+              )}
+
+              {syncStatus === 'syncing' && (
+                <div className="w-full text-center py-2 text-slate-400 italic text-xs font-bold flex items-center justify-center gap-1.5">
+                  <span className="h-4 w-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></span>
+                  Transmitting packets... Synchronizing centralized database...
+                </div>
+              )}
+
+              {syncStatus === 'synced' && (
+                <div className="w-full text-center py-2 text-emerald-600 font-black text-xs uppercase flex items-center justify-center gap-1.5">
+                  <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 animate-bounce" />
+                  Successfully synced details with attendance and staff module!
+                </div>
+              )}
             </div>
           </div>
         </div>

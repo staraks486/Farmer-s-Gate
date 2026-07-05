@@ -783,7 +783,7 @@ export default function SupplierManager({
                     onChange={e => setSelectedPOStore(e.target.value)}
                     className="w-full text-xs px-3 py-1.5 bg-slate-50 border border-slate-200 rounded focus:outline-none font-bold text-slate-700"
                   >
-                    {stores.map(st => (
+                    {stores.filter(s => s.isActive).map(st => (
                       <option key={st.id} value={st.id}>
                         {st.name}
                       </option>

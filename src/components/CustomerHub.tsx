@@ -2067,14 +2067,6 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
           <div>
             <span>© 2026 FarmersGate Express • Fresh & Fast</span>
           </div>
-          {changePortal && (
-            <button
-              onClick={() => changePortal('management')}
-              className="text-slate-500 hover:text-emerald-600 transition flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white shadow-3xs cursor-pointer font-black"
-            >
-              🛠️ App Testing: Go to Management Suite
-            </button>
-          )}
         </div>
       </div>
 

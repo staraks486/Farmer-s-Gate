@@ -9,7 +9,11 @@ import {
   ArrowLeft,
   RefreshCw,
   LogOut,
-  Info
+  Info,
+  Users,
+  ExternalLink,
+  Copy,
+  Check
 } from 'lucide-react';
 import { 
   Store, 
@@ -25,7 +29,9 @@ import {
   StorefrontAd,
   SupabaseConfig,
   AppNotification,
-  getUserRole
+  getUserRole,
+  StaffMember,
+  AttendanceRecord
 } from '../types';
 import { 
   subscribeToOrders, 
@@ -68,7 +74,13 @@ import {
   dbDeleteMasterCrop,
   getSupabaseConfig,
   saveSupabaseConfig,
-  dbSyncLocalCache
+  dbSyncLocalCache,
+  dbGetStaffMembers,
+  dbAddStaffMember,
+  dbUpdateStaffMember,
+  dbDeleteStaffMember,
+  dbGetAttendanceRecords,
+  dbSaveAttendanceRecord
 } from '../lib/supabase';
 
 // Component imports
@@ -79,6 +91,7 @@ import SupplierManager from './SupplierManager';
 import AccountsManager from './AccountsManager';
 import AdminPanel from './AdminPanel';
 import ExecutivePortal from './ExecutivePortal';
+import StaffAttendanceManager from './StaffAttendanceManager';
 
 const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   currencySymbol: '₹',
@@ -104,12 +117,13 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
   const defaultTab = allowedTabs[0] || 'dashboard';
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin' | 'staff'>(defaultTab);
 
   useEffect(() => {
     setActiveTab(defaultTab);
   }, [defaultTab]);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
+  const [copiedStoreId, setCopiedStoreId] = useState<string | null>(null);
 
   // Database states
   const [stores, setStores] = useState<Store[]>([]);
@@ -121,6 +135,8 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [masterCrops, setMasterCrops] = useState<MasterCrop[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [storefrontAds, setStorefrontAds] = useState<StorefrontAd[]>([]);
   const [cpanelSettings, setCpanelSettings] = useState<CpanelSettings>(DEFAULT_CPANEL_SETTINGS);
   const [dbConfig, setDbConfig] = useState<SupabaseConfig>({ supabaseUrl: '', supabaseAnonKey: '', isConnected: false });
@@ -146,9 +162,21 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
       const fetchedPOs = await dbGetPurchaseOrders();
       const fetchedCOs = await dbGetCustomerOrders();
       const fetchedCrops = await dbGetMasterCrops();
+      const fetchedStaff = await dbGetStaffMembers();
+      const fetchedAttendance = await dbGetAttendanceRecords();
       const config = getSupabaseConfig();
 
       setStores(fetchedStores);
+      if (isStorePosPortal && fetchedStores.length > 0 && !selectedStore) {
+        const params = new URLSearchParams(window.location.search);
+        const queryStoreId = params.get('storeId');
+        if (queryStoreId) {
+          const match = fetchedStores.find(st => st.id === queryStoreId);
+          if (match) {
+            setSelectedStore(match);
+          }
+        }
+      }
       setSales(fetchedSales);
       setPurchases(fetchedPurchases);
       setInventory(fetchedInventory);
@@ -157,6 +185,8 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
       setPurchaseOrders(fetchedPOs);
       setCustomerOrders(fetchedCOs);
       setMasterCrops(fetchedCrops);
+      setStaff(fetchedStaff);
+      setAttendance(fetchedAttendance);
       setDbConfig(config);
 
       // Load settings and ads from localStorage if exist
@@ -298,6 +328,27 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
     await loadAllData();
   };
 
+  // Staff and Attendance Handlers
+  const handleAddStaff = async (member: StaffMember) => {
+    await dbAddStaffMember(member);
+    await loadAllData();
+  };
+
+  const handleUpdateStaff = async (member: StaffMember) => {
+    await dbUpdateStaffMember(member);
+    await loadAllData();
+  };
+
+  const handleDeleteStaff = async (id: string) => {
+    await dbDeleteStaffMember(id);
+    await loadAllData();
+  };
+
+  const handleSaveAttendance = async (record: AttendanceRecord) => {
+    await dbSaveAttendanceRecord(record);
+    await loadAllData();
+  };
+
   // Suppliers
   const handleAddSupplier = async (s: Supplier) => {
     await dbAddSupplier(s);
@@ -327,6 +378,54 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
 
   const handleDeletePurchaseOrder = async (id: string) => {
     await dbDeletePurchaseOrder(id);
+    await loadAllData();
+  };
+
+  // Customer Orders
+  const handleUpdateCustomerOrder = async (order: CustomerOrder) => {
+    await dbUpdateCustomerOrder(order);
+    await loadAllData();
+  };
+
+  const handleDeleteCustomerOrder = async (id: string) => {
+    await dbDeleteCustomerOrder(id);
+    await loadAllData();
+  };
+
+  const handleFulfillCustomerOrder = async (order: CustomerOrder) => {
+    // 1. Mark order as 'Completed'
+    const updatedOrder: CustomerOrder = {
+      ...order,
+      status: 'Completed'
+    };
+    await dbUpdateCustomerOrder(updatedOrder);
+
+    // 2. Reduce the quantity from store inventory
+    for (const item of order.items) {
+      const existing = inventory.find(inv => inv.storeId === order.storeId && inv.vegetableName === item.vegetableName);
+      if (existing) {
+        const newQty = Math.max(0, Number(existing.quantity) - Number(item.quantity));
+        await dbAddOrUpdateInventoryItem({
+          ...existing,
+          quantity: newQty,
+          lastUpdated: new Date().toISOString()
+        });
+      }
+    }
+
+    // 3. Record a Sale Transaction for each item
+    for (const item of order.items) {
+      await dbAddSale({
+        id: `sale-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        storeId: order.storeId,
+        vegetableName: item.vegetableName,
+        quantity: item.quantity,
+        pricePerKg: item.pricePerKg,
+        totalPrice: item.quantity * item.pricePerKg,
+        saleDate: new Date().toISOString()
+      });
+    }
+
     await loadAllData();
   };
 
@@ -415,6 +514,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
     { id: 'store', name: 'Store POS & Retail', icon: StoreIcon },
     { id: 'suppliers', name: 'Supply Chain POs', icon: Truck },
     { id: 'accounts', name: 'Double Entry Ledger', icon: Receipt },
+    { id: 'staff', name: 'Staff & Attendance', icon: Users },
     { id: 'admin', name: 'HQ System Admin', icon: Sliders },
   ];
 
@@ -497,6 +597,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
               {activeTab === 'store' && 'Manage cash registry registers, manual sales entries, and crop weights.'}
               {activeTab === 'suppliers' && 'Fulfill crop requirements by sending purchase requests directly to mandis.'}
               {activeTab === 'accounts' && 'Profit analysis ledger sheet reflecting cost of goods & miscellaneous bills.'}
+              {activeTab === 'staff' && 'Manage employee rosters, cross-branch shifts, and log daily check-ins.'}
               {activeTab === 'admin' && 'Supabase & database connection parameters control board.'}
             </p>
           </div>
@@ -514,7 +615,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
         {/* Core Screen Router */}
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'dashboard' && (
-            <ExecutivePortal />
+            <ExecutivePortal isAdmin={true} />
           )}
 
           {activeTab === 'headoffice' && (
@@ -553,31 +654,89 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
                 onAddRequirement={handleAddRequirement}
                 onUpdateRequirementStatus={handleUpdateRequirementStatus}
                 onDeleteRequirement={handleDeleteRequirement}
+                onFulfillCustomerOrder={handleFulfillCustomerOrder}
+                onUpdateCustomerOrder={handleUpdateCustomerOrder}
+                onDeleteCustomerOrder={handleDeleteCustomerOrder}
                 cpanelSettings={cpanelSettings}
+                staff={staff}
+                attendance={attendance}
+                onSaveAttendance={handleSaveAttendance}
               />
             ) : (
-              <div className="max-w-xl mx-auto py-12 text-center">
-                <StoreIcon className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+              <div className="max-w-2xl mx-auto py-12 text-center">
+                <StoreIcon className="h-16 w-16 text-slate-300 mx-auto mb-4 animate-bounce" />
                 <h3 className="text-lg font-extrabold text-slate-800 uppercase tracking-tight">Active Retail Branch POS Desk</h3>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-6 leading-relaxed">
-                  Select an active retail outlet from the list below to access its local Point of Sale checkout counter and manual inventory ledgers.
+                  Select an active retail outlet from the list below or open its dedicated sandboxed checkout register directly using its separate direct URL link.
                 </p>
-                <div className="grid grid-cols-1 gap-3 text-left">
-                  {stores.filter(st => st.isActive).map(st => (
-                    <button
-                      key={st.id}
-                      onClick={() => setSelectedStore(st)}
-                      className="w-full p-4 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl transition-all hover:shadow cursor-pointer flex justify-between items-center"
-                    >
-                      <div>
-                        <p className="text-sm font-black text-slate-800">{st.name}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">📍 {st.location}</p>
+                <div className="grid grid-cols-1 gap-4 text-left">
+                  {stores.filter(st => st.isActive).map(st => {
+                    const separateLink = `${window.location.origin}${window.location.pathname}?portal=store_pos&storeId=${st.id}#store_pos`;
+                    return (
+                      <div
+                        key={st.id}
+                        className="w-full p-5 bg-white border border-slate-200/80 rounded-2xl shadow-3xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-xs transition-all bg-gradient-to-r from-white to-slate-50/50"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-slate-800">{st.name}</span>
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" title="Active Branch"></span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 flex items-center gap-1">
+                            <span>📍 {st.location}</span>
+                          </p>
+                          <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-150">
+                              🟢 Ready POS Register
+                            </span>
+                            {st.whatsappNumber && (
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-50 border border-slate-150 px-2 py-0.5 rounded">
+                                📞 {st.whatsappNumber}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStore(st)}
+                            className="flex-1 md:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-[10px] uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-3xs"
+                          >
+                            <span>Select Branch</span>
+                            <span>🏪</span>
+                          </button>
+
+                          <a
+                            href={separateLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 md:flex-none px-4 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 hover:border-slate-300 text-slate-700 font-black text-[10px] uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-1.5 shadow-3xs cursor-pointer"
+                          >
+                            <span>Open POS Register</span>
+                            <ExternalLink className="h-3.5 w-3.5 stroke-[2.5]" />
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(separateLink);
+                              setCopiedStoreId(st.id);
+                              setTimeout(() => setCopiedStoreId(null), 2000);
+                            }}
+                            className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-700 rounded-xl transition cursor-pointer flex items-center justify-center min-w-[38px]"
+                            title="Copy separate direct URL"
+                          >
+                            {copiedStoreId === st.id ? (
+                              <Check className="h-4 w-4 text-emerald-600 stroke-[3]" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
                       </div>
-                      <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1 rounded-lg font-black uppercase">
-                        Select Branch 🏪
-                      </span>
-                    </button>
-                  ))}
+                    );
+                  })}
                   {stores.filter(st => st.isActive).length === 0 && (
                     <div className="text-center py-6 text-slate-400 italic text-xs">
                       No active retail stores are currently online.
@@ -610,6 +769,19 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
               sales={sales}
               purchases={purchases}
               role="Admin"
+            />
+          )}
+
+          {activeTab === 'staff' && (
+            <StaffAttendanceManager 
+              stores={stores}
+              sales={sales}
+              staff={staff}
+              attendance={attendance}
+              onAddStaff={handleAddStaff}
+              onUpdateStaff={handleUpdateStaff}
+              onDeleteStaff={handleDeleteStaff}
+              onSaveAttendance={handleSaveAttendance}
             />
           )}
 

@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Store, Sale, Purchase, InventoryItem, Requirement, SupabaseConfig, Supplier, PurchaseOrder, CustomerOrder, MasterCrop } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, SupabaseConfig, Supplier, PurchaseOrder, CustomerOrder, MasterCrop, StaffMember, AttendanceRecord } from '../types';
 
 // Default master crops/inventory reference
 const DEFAULT_MASTER_CROPS: MasterCrop[] = [
@@ -1403,6 +1403,176 @@ export async function dbDeleteMasterCrop(id: string): Promise<void> {
   const crops = await dbGetMasterCrops();
   const filtered = crops.filter(c => c.id !== id);
   localStorage.setItem('fg_master_crops', JSON.stringify(filtered));
+}
+
+// ==========================================
+// STAFF MEMBERS & ATTENDANCE OPERATIONS
+// ==========================================
+
+export async function dbGetStaffMembers(): Promise<StaffMember[]> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { data, error } = await supabaseInstance.from('staff_members').select('*');
+      if (error) throw error;
+      return data as StaffMember[];
+    } catch (e) {
+      console.warn('Supabase fetch staff members failed, falling back to local storage:', e);
+    }
+  }
+
+  const local = localStorage.getItem('fg_staff_members');
+  if (local) {
+    return JSON.parse(local);
+  }
+  const defaultStaff: StaffMember[] = [
+    { id: 'staff-1', name: 'Ramesh Kumar', role: 'Manager', phone: '9876543210', assignedStoreId: '', isActive: true, createdAt: new Date().toISOString() },
+    { id: 'staff-2', name: 'Suresh Singh', role: 'Staff', phone: '9876543211', assignedStoreId: '', isActive: true, createdAt: new Date().toISOString() },
+    { id: 'staff-3', name: 'Anita Patel', role: 'Salesperson', phone: '9876543212', assignedStoreId: '', isActive: true, createdAt: new Date().toISOString() },
+    { id: 'staff-4', name: 'Vijay Sharma', role: 'Cashier', phone: '9876543213', assignedStoreId: '', isActive: true, createdAt: new Date().toISOString() }
+  ];
+  localStorage.setItem('fg_staff_members', JSON.stringify(defaultStaff));
+  return defaultStaff;
+}
+
+export async function dbAddStaffMember(staff: StaffMember): Promise<StaffMember> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      await ensureDependentEntitiesExist('staff_members', staff);
+      const { data, error } = await supabaseInstance
+        .from('staff_members')
+        .insert([staff])
+        .select()
+        .single();
+      if (error) throw error;
+      return data as StaffMember;
+    } catch (e) {
+      console.warn('Supabase save staff failed, writing to local storage:', e);
+      dbAddUnsyncedOp('staff_members', 'insert', staff);
+    }
+  } else {
+    dbAddUnsyncedOp('staff_members', 'insert', staff);
+  }
+
+  const staffList = await dbGetStaffMembers();
+  staffList.push(staff);
+  localStorage.setItem('fg_staff_members', JSON.stringify(staffList));
+  return staff;
+}
+
+export async function dbUpdateStaffMember(staff: StaffMember): Promise<StaffMember> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      await ensureDependentEntitiesExist('staff_members', staff);
+      const { data, error } = await supabaseInstance
+        .from('staff_members')
+        .update(staff)
+        .eq('id', staff.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as StaffMember;
+    } catch (e) {
+      console.warn('Supabase update staff failed, writing to local storage:', e);
+      dbAddUnsyncedOp('staff_members', 'update', staff);
+    }
+  } else {
+    dbAddUnsyncedOp('staff_members', 'update', staff);
+  }
+
+  const staffList = await dbGetStaffMembers();
+  const idx = staffList.findIndex(s => s.id === staff.id);
+  if (idx !== -1) {
+    staffList[idx] = staff;
+  } else {
+    staffList.push(staff);
+  }
+  localStorage.setItem('fg_staff_members', JSON.stringify(staffList));
+  return staff;
+}
+
+export async function dbDeleteStaffMember(id: string): Promise<void> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { error } = await supabaseInstance
+        .from('staff_members')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return;
+    } catch (e) {
+      console.warn('Supabase delete staff failed, writing to local storage:', e);
+      dbAddUnsyncedOp('staff_members', 'delete', { id });
+    }
+  } else {
+    dbAddUnsyncedOp('staff_members', 'delete', { id });
+  }
+
+  const staffList = await dbGetStaffMembers();
+  const filtered = staffList.filter(s => s.id !== id);
+  localStorage.setItem('fg_staff_members', JSON.stringify(filtered));
+}
+
+export async function dbGetAttendanceRecords(storeId?: string, date?: string): Promise<AttendanceRecord[]> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      let query = supabaseInstance.from('attendance_records').select('*');
+      if (storeId) query = query.eq('storeId', storeId);
+      if (date) query = query.eq('date', date);
+      const { data, error } = await query.order('date', { ascending: false });
+      if (error) throw error;
+      return data as AttendanceRecord[];
+    } catch (e) {
+      console.warn('Supabase fetch attendance records failed, falling back to local storage:', e);
+    }
+  }
+
+  const local = localStorage.getItem('fg_attendance_records');
+  const allRecords: AttendanceRecord[] = local ? JSON.parse(local) : [];
+  let filtered = allRecords;
+  if (storeId) {
+    filtered = filtered.filter(r => r.storeId === storeId);
+  }
+  if (date) {
+    filtered = filtered.filter(r => r.date === date);
+  }
+  return filtered;
+}
+
+export async function dbSaveAttendanceRecord(record: AttendanceRecord): Promise<AttendanceRecord> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      await ensureDependentEntitiesExist('attendance_records', record);
+      const { data, error } = await supabaseInstance
+        .from('attendance_records')
+        .upsert(record)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as AttendanceRecord;
+    } catch (e) {
+      console.warn('Supabase save attendance failed, writing to local storage:', e);
+      dbAddUnsyncedOp('attendance_records', 'insert', record);
+    }
+  } else {
+    dbAddUnsyncedOp('attendance_records', 'insert', record);
+  }
+
+  const local = localStorage.getItem('fg_attendance_records');
+  const allRecords: AttendanceRecord[] = local ? JSON.parse(local) : [];
+  const idx = allRecords.findIndex(r => r.id === record.id || (r.staffId === record.staffId && r.date === record.date));
+  if (idx !== -1) {
+    allRecords[idx] = { ...allRecords[idx], ...record };
+  } else {
+    allRecords.push(record);
+  }
+  localStorage.setItem('fg_attendance_records', JSON.stringify(allRecords));
+  return record;
 }
 
 // Generate the SQL string that user can paste to initialize Supabase database

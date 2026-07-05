@@ -89,7 +89,7 @@ export default function Dashboard({
             className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none cursor-pointer"
           >
             <option value="all">All Stores (Consolidated)</option>
-            {stores.map(store => (
+            {activeStores.map(store => (
               <option key={store.id} value={store.id}>{store.name.replace("Farmer's Gate - ", "")}</option>
             ))}
           </select>
