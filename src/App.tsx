@@ -27,7 +27,7 @@ import {
 import { getUserRole } from './types';
 
 export default function App() {
-  const [activePortal, setActivePortal] = useState<'customer' | 'partner' | 'management' | 'executive'>('customer');
+  const [activePortal, setActivePortal] = useState<'customer' | 'partner' | 'management' | 'executive' | 'store_pos'>('customer');
   const [user, setUser] = useState<FirebaseUser | null>(null);
 
   const [adminEmail, setAdminEmail] = useState('');
@@ -56,6 +56,15 @@ export default function App() {
       return;
     }
 
+    const getRedirectionPortal = (role: any) => {
+      if (activePortal === 'store_pos' || email === 'store_pos@farmersgate.com') {
+        if (['admin', 'store_pos'].includes(role.role)) {
+          return 'store_pos';
+        }
+      }
+      return role.allowedPortals.includes('management') ? 'management' : (role.allowedPortals.includes('partner') ? 'partner' : 'customer');
+    };
+
     try {
       const credential = await signInWithEmailAndPassword(auth, email, pass);
       if (credential.user) {
@@ -64,7 +73,7 @@ export default function App() {
         localStorage.setItem(`fg_phone_${credential.user.uid}`, '+91 99999 99999');
         localStorage.setItem(`fg_address_${credential.user.uid}`, 'FarmersGate Corporate HQ, Sector 1, Bangalore');
         
-        const targetPortal = roleInfo.allowedPortals.includes('management') ? 'management' : (roleInfo.allowedPortals.includes('partner') ? 'partner' : 'customer');
+        const targetPortal = getRedirectionPortal(roleInfo);
         setActivePortal(targetPortal);
         window.location.hash = targetPortal;
       }
@@ -89,7 +98,7 @@ export default function App() {
             localStorage.setItem(`fg_phone_${credential.user.uid}`, '+91 99999 99999');
             localStorage.setItem(`fg_address_${credential.user.uid}`, 'FarmersGate Corporate HQ, Sector 1, Bangalore');
             
-            const targetPortal = roleInfo.allowedPortals.includes('management') ? 'management' : (roleInfo.allowedPortals.includes('partner') ? 'partner' : 'customer');
+            const targetPortal = getRedirectionPortal(roleInfo);
             setActivePortal(targetPortal);
             window.location.hash = targetPortal;
           }
@@ -108,7 +117,7 @@ export default function App() {
           localStorage.setItem(`fg_address_${mockUser.uid}`, 'FarmersGate Corporate HQ, Sector 1, Bangalore');
           
           setUser(mockUser as any);
-          const targetPortal = roleInfo.allowedPortals.includes('management') ? 'management' : (roleInfo.allowedPortals.includes('partner') ? 'partner' : 'customer');
+          const targetPortal = getRedirectionPortal(roleInfo);
           setActivePortal(targetPortal);
           window.location.hash = targetPortal;
         }
@@ -127,7 +136,7 @@ export default function App() {
         localStorage.setItem(`fg_address_${mockUser.uid}`, 'FarmersGate HQ, Sector 1, Bangalore');
         
         setUser(mockUser as any);
-        const targetPortal = roleInfo.allowedPortals.includes('management') ? 'management' : (roleInfo.allowedPortals.includes('partner') ? 'partner' : 'customer');
+        const targetPortal = getRedirectionPortal(roleInfo);
         setActivePortal(targetPortal);
         window.location.hash = targetPortal;
       }
@@ -223,18 +232,25 @@ export default function App() {
       }
 
       setUser(activeUser);
-      // Auto-switch based on roles if they just logged in
+      // Auto-switch based on roles if they just logged in and aren't already on a specific portal/hash
       if (activeUser) {
-        const email = activeUser.email?.toLowerCase();
-        if (email === 'partner@farmersgate.com') {
-          setActivePortal('partner');
-          window.location.hash = 'partner';
-        } else if (email === 'admin@farmersgate.com' || email === 'star.aks486@gmail.com') {
-          setActivePortal('management');
-          window.location.hash = 'management';
-        } else if (email === 'demo_shopper@farmersgate.com') {
-          setActivePortal('customer');
-          window.location.hash = 'customer';
+        const hash = window.location.hash.toLowerCase();
+        const params = new URLSearchParams(window.location.search);
+        const portalParam = params.get('portal')?.toLowerCase();
+        const isCurrentSpecific = ['partner', 'management', 'executive', 'store_pos'].includes(hash.replace('#', '')) || ['partner', 'management', 'executive', 'store_pos'].includes(portalParam || '');
+
+        if (!isCurrentSpecific) {
+          const email = activeUser.email?.toLowerCase();
+          if (email === 'partner@farmersgate.com') {
+            setActivePortal('partner');
+            window.location.hash = 'partner';
+          } else if (email === 'admin@farmersgate.com' || email === 'star.aks486@gmail.com') {
+            setActivePortal('management');
+            window.location.hash = 'management';
+          } else if (email === 'demo_shopper@farmersgate.com') {
+            setActivePortal('customer');
+            window.location.hash = 'customer';
+          }
         }
       }
     });
@@ -248,7 +264,7 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const portalParam = params.get('portal')?.toLowerCase();
 
-      let targetPortal: 'customer' | 'partner' | 'management' | 'executive' | null = null;
+      let targetPortal: 'customer' | 'partner' | 'management' | 'executive' | 'store_pos' | null = null;
 
       if (hash.startsWith('#customer') || portalParam === 'customer') {
         targetPortal = 'customer';
@@ -258,6 +274,8 @@ export default function App() {
         targetPortal = 'management';
       } else if (hash.startsWith('#executive') || portalParam === 'executive') {
         targetPortal = 'executive';
+      } else if (hash.startsWith('#store_pos') || portalParam === 'store_pos') {
+        targetPortal = 'store_pos';
       }
 
       if (targetPortal) {
@@ -274,7 +292,7 @@ export default function App() {
     };
   }, []);
 
-  const changePortal = (portal: 'customer' | 'partner' | 'management' | 'executive') => {
+  const changePortal = (portal: 'customer' | 'partner' | 'management' | 'executive' | 'store_pos') => {
     setActivePortal(portal);
     window.location.hash = portal;
   };
@@ -447,6 +465,17 @@ export default function App() {
               )}
               
               <button 
+                onClick={() => changePortal('store_pos')}
+                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer uppercase flex items-center gap-1 ${
+                  activePortal === 'store_pos' 
+                    ? 'bg-emerald-50 text-slate-950 shadow font-extrabold' 
+                    : 'text-slate-300 hover:bg-emerald-900'
+                }`}
+              >
+                🏪 Store POS
+              </button>
+              
+              <button 
                 onClick={() => changePortal('executive')}
                 className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer uppercase flex items-center gap-1 ${
                   activePortal === 'executive' 
@@ -504,6 +533,104 @@ export default function App() {
             >
               <ExecutivePortal />
             </motion.div>
+          ) : activePortal === 'store_pos' ? (
+            user && ['admin', 'store_pos'].includes(userRole.role) ? (
+              <motion.div
+                key="store-pos-portal"
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                transition={{ duration: 0.18 }}
+                className="flex-1 flex flex-col overflow-hidden"
+              >
+                <ManagementSuite user={user} isStorePosPortal={true} />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="store-pos-auth"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="flex-1 flex items-center justify-center p-6 bg-slate-950 text-white relative overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] bg-[size:3rem_3rem] opacity-30" />
+                
+                <div className="relative z-10 max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-6">
+                  <div className="text-center space-y-2">
+                    <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-950 border border-emerald-500/20 mb-2">
+                      <BarChart3 className="h-6 w-6 text-emerald-400" />
+                    </div>
+                    <h2 className="text-lg font-black uppercase tracking-wider text-white font-sans">Store POS & Retail Desk</h2>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">
+                      Dedicated Branch POS Terminal • Cashier Login
+                    </p>
+                  </div>
+
+                  {adminError && (
+                    <div className="p-3.5 bg-red-950/80 border border-red-800/50 rounded-xl text-red-400 text-xs font-bold">
+                      ⚠ {adminError}
+                    </div>
+                  )}
+
+                  <div className="bg-slate-950 border border-slate-800/80 rounded-2xl p-4 space-y-3">
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">
+                      🔑 Dedicated POS Bypass (Instant Login)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCorporateLogin(undefined, 'store_pos@farmersgate.com')}
+                      className="w-full p-3 bg-pink-600/10 border border-pink-500/25 hover:bg-pink-600/20 text-white rounded-xl text-left cursor-pointer transition-all flex items-center justify-between group"
+                    >
+                      <div>
+                        <span className="text-[10.5px] font-black uppercase tracking-wide block text-pink-400 group-hover:text-pink-300">Enter Cashier Terminal</span>
+                        <span className="text-[8.5px] font-semibold text-slate-400 font-mono block">store_pos@farmersgate.com</span>
+                      </div>
+                      <span className="text-[10px] font-bold bg-pink-950 border border-pink-800 text-pink-400 px-2.5 py-1 rounded-lg uppercase">
+                        Active POS 🏪
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="relative flex py-2 items-center">
+                    <div className="flex-grow border-t border-slate-800"></div>
+                    <span className="flex-shrink mx-4 text-[9px] text-slate-500 font-bold uppercase tracking-wider">Or enter credentials</span>
+                    <div className="flex-grow border-t border-slate-800"></div>
+                  </div>
+
+                  <form onSubmit={(e) => handleCorporateLogin(e, undefined, false)} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9.5px] font-black text-slate-400 block uppercase tracking-wider">Terminal Email</label>
+                      <input 
+                        type="email"
+                        value={adminEmail}
+                        onChange={(e) => setAdminEmail(e.target.value)}
+                        placeholder="store_pos@farmersgate.com"
+                        className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl text-xs text-white placeholder-slate-600 outline-none transition-all font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[9.5px] font-black text-slate-400 block uppercase tracking-wider">Access Token</label>
+                      <input 
+                        type="password"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl text-xs text-white placeholder-slate-600 outline-none transition-all"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={adminLoggingIn}
+                      className="w-full py-3 bg-slate-800 hover:bg-slate-750 active:bg-slate-850 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all border border-slate-700/50 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {adminLoggingIn ? 'Verifying access...' : 'Secure Authorization'}
+                    </button>
+                  </form>
+                </div>
+              </motion.div>
+            )
           ) : activePortal === 'partner' ? (
             user && ['admin', 'staff'].includes(userRole.role) ? (
               <motion.div
@@ -780,7 +907,7 @@ export default function App() {
               >
                 📦 Staff Portal
               </a>
-              <a 
+               <a 
                 href="#management" 
                 onClick={(e) => { e.preventDefault(); changePortal('management'); }}
                 className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
@@ -790,6 +917,17 @@ export default function App() {
                 }`}
               >
                 🏢 Management HQ
+              </a>
+              <a 
+                href="#store_pos" 
+                onClick={(e) => { e.preventDefault(); changePortal('store_pos'); }}
+                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                  activePortal === 'store_pos' 
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                    : 'bg-slate-50 border-slate-150 text-slate-600'
+                }`}
+              >
+                🏪 Store POS
               </a>
               <a 
                 href="#executive" 

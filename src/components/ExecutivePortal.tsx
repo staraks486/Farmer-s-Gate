@@ -153,7 +153,7 @@ export default function ExecutivePortal() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-3">
             {[
               {
                 title: '🛍️ Shopper Store',
@@ -168,6 +168,13 @@ export default function ExecutivePortal() {
                 path: '?portal=partner',
                 key: 'partner',
                 badge: 'Staff Auth'
+              },
+              {
+                title: '🏪 Store POS Station',
+                desc: 'Retail registers, weight billing & checkout',
+                path: '?portal=store_pos',
+                key: 'store_pos',
+                badge: 'Store Auth'
               },
               {
                 title: '🏢 Management HQ',

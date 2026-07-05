@@ -95,13 +95,20 @@ const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   introSpeedSeconds: 4
 };
 
-export default function ManagementSuite({ user }: { user: any }) {
+export default function ManagementSuite({ user, isStorePosPortal }: { user: any; isStorePosPortal?: boolean }) {
   const roleInfo = getUserRole(user?.email);
-  const allowedTabs = roleInfo.allowedTabs || ['dashboard', 'headoffice', 'store', 'suppliers', 'accounts', 'admin'];
+  let allowedTabs = roleInfo.allowedTabs || ['dashboard', 'headoffice', 'store', 'suppliers', 'accounts', 'admin'];
+  if (isStorePosPortal) {
+    allowedTabs = ['store'];
+  }
   const defaultTab = allowedTabs[0] || 'dashboard';
 
   // Navigation
   const [activeTab, setActiveTab] = useState<'dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin'>(defaultTab);
+
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
 
   // Database states
