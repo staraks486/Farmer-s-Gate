@@ -10,11 +10,13 @@ import {
   UserCheck,
   Sprout,
   ArrowRight,
-  Check
+  Check,
+  BarChart3
 } from 'lucide-react';
 import CustomerHub from './components/CustomerHub';
 import PartnerPortal from './components/PartnerPortal';
 import ManagementSuite from './components/ManagementSuite';
+import ExecutivePortal from './components/ExecutivePortal';
 import { auth, seedProductsIfNeeded } from './lib/firebase';
 import { 
   onAuthStateChanged, 
@@ -25,7 +27,7 @@ import {
 import { getUserRole } from './types';
 
 export default function App() {
-  const [activePortal, setActivePortal] = useState<'customer' | 'partner' | 'management'>('customer');
+  const [activePortal, setActivePortal] = useState<'customer' | 'partner' | 'management' | 'executive'>('customer');
   const [user, setUser] = useState<FirebaseUser | null>(null);
 
   const [adminEmail, setAdminEmail] = useState('');
@@ -246,7 +248,7 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const portalParam = params.get('portal')?.toLowerCase();
 
-      let targetPortal: 'customer' | 'partner' | 'management' | null = null;
+      let targetPortal: 'customer' | 'partner' | 'management' | 'executive' | null = null;
 
       if (hash.startsWith('#customer') || portalParam === 'customer') {
         targetPortal = 'customer';
@@ -254,6 +256,8 @@ export default function App() {
         targetPortal = 'partner';
       } else if (hash.startsWith('#management') || portalParam === 'management') {
         targetPortal = 'management';
+      } else if (hash.startsWith('#executive') || portalParam === 'executive') {
+        targetPortal = 'executive';
       }
 
       if (targetPortal) {
@@ -270,7 +274,7 @@ export default function App() {
     };
   }, []);
 
-  const changePortal = (portal: 'customer' | 'partner' | 'management') => {
+  const changePortal = (portal: 'customer' | 'partner' | 'management' | 'executive') => {
     setActivePortal(portal);
     window.location.hash = portal;
   };
@@ -442,6 +446,17 @@ export default function App() {
                 </button>
               )}
               
+              <button 
+                onClick={() => changePortal('executive')}
+                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer uppercase flex items-center gap-1 ${
+                  activePortal === 'executive' 
+                    ? 'bg-emerald-50 text-slate-950 shadow font-extrabold' 
+                    : 'text-slate-300 hover:bg-emerald-900'
+                }`}
+              >
+                <BarChart3 className="h-3 w-3" /> 📡 Executive Module
+              </button>
+              
               {user && (
                 <>
                   <div className="h-4 w-px bg-emerald-800 mx-1 hidden sm:block"></div>
@@ -477,6 +492,17 @@ export default function App() {
               className="flex-1 flex flex-col overflow-hidden"
             >
               <CustomerHub changePortal={changePortal} />
+            </motion.div>
+          ) : activePortal === 'executive' ? (
+            <motion.div
+              key="executive-portal"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              transition={{ duration: 0.18 }}
+              className="flex-1 flex flex-col overflow-hidden"
+            >
+              <ExecutivePortal />
             </motion.div>
           ) : activePortal === 'partner' ? (
             user && ['admin', 'staff'].includes(userRole.role) ? (
@@ -607,6 +633,24 @@ export default function App() {
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">
                     Restricted Access • Corporate Credentials Required
                   </p>
+                </div>
+
+                {/* Executive Dashboard Shortcut (No Login) */}
+                <div className="bg-emerald-950/40 border border-emerald-800/40 p-4 rounded-2xl space-y-2 text-center">
+                  <div className="text-[10px] font-black uppercase text-emerald-400 tracking-wider flex items-center justify-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Unauthenticated Access Available
+                  </div>
+                  <p className="text-[10px] text-slate-300 font-bold leading-normal">
+                    Are you an executive visitor? Monitor all branch POS terminals, inventory status & live feeds without authentication.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => changePortal('executive')}
+                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-[10px] uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    📡 Enter Executive Live Module
+                  </button>
                 </div>
 
                 {adminError && (
@@ -746,6 +790,17 @@ export default function App() {
                 }`}
               >
                 🏢 Management HQ
+              </a>
+              <a 
+                href="#executive" 
+                onClick={(e) => { e.preventDefault(); changePortal('executive'); }}
+                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                  activePortal === 'executive' 
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                    : 'bg-slate-50 border-slate-150 text-slate-600'
+                }`}
+              >
+                📡 Executive Live
               </a>
             </div>
 

@@ -78,6 +78,7 @@ import StoreManager from './StoreManager';
 import SupplierManager from './SupplierManager';
 import AccountsManager from './AccountsManager';
 import AdminPanel from './AdminPanel';
+import ExecutivePortal from './ExecutivePortal';
 
 const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   currencySymbol: '₹',
@@ -506,19 +507,7 @@ export default function ManagementSuite({ user }: { user: any }) {
         {/* Core Screen Router */}
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'dashboard' && (
-            <Dashboard 
-              stores={stores}
-              sales={sales}
-              purchases={purchases}
-              inventory={inventory}
-              role="Admin"
-              onSelectStore={(st) => {
-                setSelectedStore(st);
-                setActiveTab('store');
-              }}
-              firebaseOrders={firebaseOrders}
-              firebaseNotifications={firebaseNotifications}
-            />
+            <ExecutivePortal />
           )}
 
           {activeTab === 'headoffice' && (
@@ -567,7 +556,7 @@ export default function ManagementSuite({ user }: { user: any }) {
                   Select an active retail outlet from the list below to access its local Point of Sale checkout counter and manual inventory ledgers.
                 </p>
                 <div className="grid grid-cols-1 gap-3 text-left">
-                  {stores.map(st => (
+                  {stores.filter(st => st.isActive).map(st => (
                     <button
                       key={st.id}
                       onClick={() => setSelectedStore(st)}
@@ -582,6 +571,11 @@ export default function ManagementSuite({ user }: { user: any }) {
                       </span>
                     </button>
                   ))}
+                  {stores.filter(st => st.isActive).length === 0 && (
+                    <div className="text-center py-6 text-slate-400 italic text-xs">
+                      No active retail stores are currently online.
+                    </div>
+                  )}
                 </div>
               </div>
             )
