@@ -19,6 +19,7 @@ export interface Sale {
   customerName?: string;
   salespersonName?: string;
   saleDate: string;
+  paymentMode?: 'Cash' | 'Card' | 'UPI';
 }
 
 export interface StaffMember {

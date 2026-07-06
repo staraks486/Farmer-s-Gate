@@ -292,6 +292,11 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
     }
   };
 
+  const handleUpdateRequirement = async (req: Requirement) => {
+    await dbUpdateRequirement(req);
+    await loadAllData();
+  };
+
   const handleDeleteRequirement = async (id: string) => {
     await dbDeleteRequirement(id);
     await loadAllData();
@@ -661,6 +666,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
                   onDeletePurchase={handleDeletePurchase}
                   onUpdateInventoryItem={handleUpdateInventoryItem}
                   onAddRequirement={handleAddRequirement}
+                  onUpdateRequirement={handleUpdateRequirement}
                   onUpdateRequirementStatus={handleUpdateRequirementStatus}
                   onDeleteRequirement={handleDeleteRequirement}
                   onFulfillCustomerOrder={handleFulfillCustomerOrder}
@@ -670,6 +676,8 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
                   staff={staff}
                   attendance={attendance}
                   onSaveAttendance={handleSaveAttendance}
+                  onUpdateStaff={handleUpdateStaff}
+                  stores={stores}
                 />
               ) : (
                 /* Beautiful, fully responsive secure branch login PIN register screen */

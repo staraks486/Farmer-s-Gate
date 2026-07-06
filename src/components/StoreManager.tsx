@@ -37,7 +37,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification, StaffMember, AttendanceRecord } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification, StaffMember, AttendanceRecord, AccountEntry } from '../types';
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
 import { subscribeToNotifications } from '../lib/firebase';
 import { QrScanner } from './QrScanner';
@@ -58,12 +58,15 @@ interface StoreManagerProps {
   onDeletePurchase: (id: string) => void;
   onUpdateInventoryItem: (item: InventoryItem) => void;
   onAddRequirement: (req: Requirement) => void;
+  onUpdateRequirement?: (req: Requirement) => void;
   onUpdateRequirementStatus: (id: string, status: 'Pending' | 'Ordered' | 'Fulfilled') => void;
   onDeleteRequirement: (id: string) => void;
   onFulfillCustomerOrder?: (order: CustomerOrder) => void;
   onUpdateCustomerOrder?: (order: CustomerOrder) => void;
   onDeleteCustomerOrder?: (id: string) => void;
   onSaveAttendance?: (record: AttendanceRecord) => Promise<void>;
+  onUpdateStaff?: (member: StaffMember) => Promise<void> | void;
+  stores?: Store[];
   cpanelSettings?: CpanelSettings;
 }
 
@@ -165,16 +168,155 @@ export default function StoreManager({
   onDeletePurchase,
   onUpdateInventoryItem,
   onAddRequirement,
+  onUpdateRequirement,
   onUpdateRequirementStatus,
   onDeleteRequirement,
   onFulfillCustomerOrder,
   onUpdateCustomerOrder,
   onDeleteCustomerOrder,
   onSaveAttendance,
+  onUpdateStaff,
+  stores = [],
   cpanelSettings
 }: StoreManagerProps) {
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
-  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance'>('sale');
+  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report'>('sale');
+  
+  // Store Expenses states
+  const [localExpenses, setLocalExpenses] = useState<AccountEntry[]>([]);
+  const [expenseCategory, setExpenseCategory] = useState<'Rent' | 'Electricity' | 'Wages' | 'Other Expense'>('Other Expense');
+  const [expenseName, setExpenseName] = useState<string>(''); // New field "Expense Name"
+  const [expenseAmount, setExpenseAmount] = useState<string>('');
+  const [expenseDescription, setExpenseDescription] = useState<string>('');
+  const [expenseDate, setExpenseDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [expenseSuccessMsg, setExpenseSuccessMsg] = useState<string>('');
+
+  // Daily Report & Currency Denominator states
+  const [reportDate, setReportDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [denom2000, setDenom2000] = useState<string>('');
+  const [denom500, setDenom500] = useState<string>('');
+  const [denom200, setDenom200] = useState<string>('');
+  const [denom100, setDenom100] = useState<string>('');
+  const [denom50, setDenom50] = useState<string>('');
+  const [denom20, setDenom20] = useState<string>('');
+  const [denom10, setDenom10] = useState<string>('');
+  const [denom5, setDenom5] = useState<string>('');
+  const [denom2, setDenom2] = useState<string>('');
+  const [denom1, setDenom1] = useState<string>('');
+
+  // Editable requirement state
+  const [editingReqId, setEditingReqId] = useState<string | null>(null);
+  const [editingReqQty, setEditingReqQty] = useState<string>('');
+  const [editingReqVegName, setEditingReqVegName] = useState<string>('');
+  const [editingReqPriority, setEditingReqPriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
+  const [editingReqNotes, setEditingReqNotes] = useState<string>('');
+
+  // Edit Staff Member State
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
+
+  // Manual Report States
+  const [isManualReport, setIsManualReport] = useState<boolean>(false);
+  const [manualCashSales, setManualCashSales] = useState<string>('');
+  const [manualUpiSales, setManualUpiSales] = useState<string>('');
+  const [manualCardSales, setManualCardSales] = useState<string>('');
+  const [manualExpenses, setManualExpenses] = useState<string>('');
+
+  // Attendance Sub-Tab Mode ('desk' or 'directory')
+  const [attendanceSubMode, setAttendanceSubMode] = useState<'desk' | 'directory'>('desk');
+
+  // Manual Report Detailed Items State
+  const [manualDetailsList, setManualDetailsList] = useState<{
+    id: string;
+    date: string;
+    type: 'Expense' | 'Purchase';
+    description: string;
+    amount: number;
+  }[]>(() => {
+    const saved = localStorage.getItem('fg_manual_details_list');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return [];
+  });
+
+  const [newManualDetailType, setNewManualDetailType] = useState<'Expense' | 'Purchase'>('Expense');
+  const [newManualDetailDescription, setNewManualDetailDescription] = useState<string>('');
+  const [newManualDetailAmount, setNewManualDetailAmount] = useState<string>('');
+
+  useEffect(() => {
+    localStorage.setItem('fg_manual_details_list', JSON.stringify(manualDetailsList));
+  }, [manualDetailsList]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('fg_accounts_manual');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as AccountEntry[];
+        setLocalExpenses(parsed.filter(e => e.storeId === store.id && e.type === 'Expense'));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [store.id, activeSubTab]);
+
+  const handleAddExpenseLocal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expenseAmount || parseFloat(expenseAmount) <= 0) return;
+
+    const entryDesc = expenseName.trim()
+      ? `${expenseName.trim()}${expenseDescription.trim() ? ' (' + expenseDescription.trim() + ')' : ''}`
+      : expenseDescription.trim() || `${expenseCategory} Expense`;
+
+    const newEntry: AccountEntry = {
+      id: `acc-${Date.now()}`,
+      storeId: store.id,
+      type: 'Expense',
+      category: expenseCategory,
+      amount: parseFloat(expenseAmount),
+      description: entryDesc,
+      entryDate: new Date(expenseDate).toISOString()
+    };
+
+    const saved = localStorage.getItem('fg_accounts_manual');
+    let allEntries: AccountEntry[] = [];
+    if (saved) {
+      try {
+        allEntries = JSON.parse(saved);
+      } catch (e) {
+        allEntries = [];
+      }
+    }
+    const updated = [newEntry, ...allEntries];
+    localStorage.setItem('fg_accounts_manual', JSON.stringify(updated));
+    setLocalExpenses(updated.filter(e => e.storeId === store.id && e.type === 'Expense'));
+
+    setExpenseAmount('');
+    setExpenseName('');
+    setExpenseDescription('');
+    setExpenseSuccessMsg('Expense logged successfully!');
+    setTimeout(() => setExpenseSuccessMsg(''), 3000);
+  };
+
+  const handleDeleteExpenseLocal = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this expense?')) {
+      const saved = localStorage.getItem('fg_accounts_manual');
+      if (saved) {
+        try {
+          const allEntries = JSON.parse(saved) as AccountEntry[];
+          const updated = allEntries.filter(e => e.id !== id);
+          localStorage.setItem('fg_accounts_manual', JSON.stringify(updated));
+          setLocalExpenses(updated.filter(e => e.storeId === store.id && e.type === 'Expense'));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+  };
+
   const [offlineMode, setOfflineMode] = useState<boolean>(dbGetForceOffline());
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Card' | 'UPI'>('Cash');
@@ -1135,7 +1277,8 @@ export default function StoreManager({
         totalPrice: parseFloat(sub.toFixed(2)),
         customerName: posCustomerName.trim() || undefined,
         salespersonName: salespersonName.trim() || undefined,
-        saleDate: new Date().toISOString()
+        saleDate: new Date().toISOString(),
+        paymentMode: paymentMode
       };
       onAddSale(newSale);
     });
@@ -2061,11 +2204,55 @@ export default function StoreManager({
     return `https://wa.me/${store.whatsappNumber || ''}?text=${encoded}`;
   };
 
+  const sendRequirementsInSimpleText = () => {
+    const pendingReqs = storeRequirements.filter(r => r.status !== 'Fulfilled');
+    if (pendingReqs.length === 0) return '';
+
+    let text = `FARMER'S GATE - STOCK REQUIREMENTS\n`;
+    text += `Store: ${store.name}\n`;
+    text += `Date: ${new Date().toLocaleDateString()}\n`;
+    text += `------------------------------------\n`;
+
+    pendingReqs.forEach((r, idx) => {
+      text += `${idx + 1}. ${r.vegetableName}: ${r.quantity} kg (${r.priority} Priority)\n`;
+      if (r.notes) text += `   Note: ${r.notes}\n`;
+    });
+    
+    text += `------------------------------------\n`;
+    text += `Please arrange stock dispatch. Thank you.`;
+
+    const encoded = encodeURIComponent(text);
+    return `https://wa.me/${store.whatsappNumber || ''}?text=${encoded}`;
+  };
+
+  const handleStartRequirementEdit = (req: Requirement) => {
+    setEditingReqId(req.id);
+    setEditingReqVegName(req.vegetableName);
+    setEditingReqQty(req.quantity.toString());
+    setEditingReqPriority(req.priority);
+    setEditingReqNotes(req.notes || '');
+  };
+
+  const handleSaveRequirementEdit = (id: string) => {
+    const existing = storeRequirements.find(r => r.id === id);
+    if (existing && onUpdateRequirement) {
+      const updated: Requirement = {
+        ...existing,
+        vegetableName: editingReqVegName,
+        quantity: parseFloat(editingReqQty) || 0,
+        priority: editingReqPriority,
+        notes: editingReqNotes.trim() || undefined
+      };
+      onUpdateRequirement(updated);
+      setEditingReqId(null);
+    }
+  };
+
   return (
     <div className="space-y-4 animate-fade-in text-slate-900">
       
-      {/* Categories Tabs Menu */}
-      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto scrollbar-none shrink-0">
+      {/* Categories Tabs Menu - Simplified & Adaptive for all devices */}
+      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto scrollbar-none shrink-0 py-1 bg-white/50 backdrop-blur-md sticky top-0 z-10">
         <button
           id="tab-sales"
           onClick={() => setActiveSubTab('sale')}
@@ -2075,8 +2262,8 @@ export default function StoreManager({
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          <TrendingUp className="h-3.5 w-3.5" />
-          ⚡ Express Billing
+          <span>🥦</span>
+          Customer Billing (POS)
         </button>
 
         <button
@@ -2089,7 +2276,7 @@ export default function StoreManager({
           }`}
         >
           <span>📋</span>
-          Sales History & Ledger
+          Sales Records
         </button>
 
         {/* Purchases/Restock hidden for Employees */}
@@ -2103,8 +2290,8 @@ export default function StoreManager({
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
-            <ShoppingBag className="h-3.5 w-3.5" />
-            Purchases & Restocks
+            <span>📦</span>
+            Purchased Stock
           </button>
         )}
 
@@ -2117,8 +2304,8 @@ export default function StoreManager({
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          <Package className="h-3.5 w-3.5" />
-          Store Stock
+          <span>🥕</span>
+          Current Stock
         </button>
 
         <button
@@ -2130,8 +2317,22 @@ export default function StoreManager({
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          <Send className="h-3.5 w-3.5" />
-          Restock Requests ({storeRequirements.filter(r=>r.status!=='Fulfilled').length})
+          <span>✉️</span>
+          Order Stock ({storeRequirements.filter(r=>r.status!=='Fulfilled').length})
+        </button>
+
+        {/* Shop Expenses tab - NEW and easy to understand */}
+        <button
+          id="tab-expenses"
+          onClick={() => setActiveSubTab('expenses')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+            activeSubTab === 'expenses'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <span>💰</span>
+          Shop Expenses
         </button>
 
         {/* Customer Orders tab */}
@@ -2144,7 +2345,7 @@ export default function StoreManager({
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          <span>📦</span>
+          <span>🛍️</span>
           Customer Orders ({customerOrders.filter(co => co.storeId === store.id && co.status !== 'Completed' && co.status !== 'Cancelled').length})
         </button>
 
@@ -2158,8 +2359,8 @@ export default function StoreManager({
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          <Info className="h-3.5 w-3.5" />
-          Branch Information
+          <span>ℹ️</span>
+          Shop Info
         </button>
 
         {/* QR Code tab */}
@@ -2172,8 +2373,8 @@ export default function StoreManager({
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          <QrCode className="h-3.5 w-3.5" />
-          Store QR Codes
+          <span>📱</span>
+          QR Codes
         </button>
 
         {/* Attendance & Biometrics Tab */}
@@ -2186,8 +2387,22 @@ export default function StoreManager({
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          <Fingerprint className="h-3.5 w-3.5 text-emerald-600" />
-          Fingerprint & Attendance
+          <span>👥</span>
+          Staff Attendance
+        </button>
+
+        {/* Daily Closing Report & Cash Calculator Tab */}
+        <button
+          id="tab-report"
+          onClick={() => setActiveSubTab('report')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+            activeSubTab === 'report'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <span>📊</span>
+          Daily Report & Cash
         </button>
       </div>
 
@@ -3996,80 +4211,175 @@ export default function StoreManager({
               </div>
 
               {storeRequirements.filter(r => r.status !== 'Fulfilled').length > 0 && (
-                <a
-                  href={sendAllRequirementsOnWhatsApp()}
-                  target="_blank"
-                  referrerPolicy="no-referrer"
-                  className="flex items-center gap-1 bg-[#25D366] hover:bg-[#20ba5a] text-[11px] font-bold text-white px-2.5 py-1.5 rounded-lg shadow-sm"
-                >
-                  <PhoneCall className="h-3.5 w-3.5" />
-                  Send Full List WhatsApp
-                </a>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={sendAllRequirementsOnWhatsApp()}
+                    target="_blank"
+                    referrerPolicy="no-referrer"
+                    className="flex items-center gap-1 bg-[#25D366] hover:bg-[#20ba5a] text-[10px] sm:text-[11px] font-bold text-white px-2.5 py-1.5 rounded-lg shadow-sm"
+                  >
+                    <PhoneCall className="h-3.5 w-3.5" />
+                    Send (Rich Markdown)
+                  </a>
+                  <a
+                    href={sendRequirementsInSimpleText()}
+                    target="_blank"
+                    referrerPolicy="no-referrer"
+                    className="flex items-center gap-1 bg-zinc-800 hover:bg-zinc-700 text-[10px] sm:text-[11px] font-bold text-white px-2.5 py-1.5 rounded-lg shadow-sm"
+                  >
+                    <span>💬</span>
+                    Send (Simple Plain Text)
+                  </a>
+                </div>
               )}
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {storeRequirements.filter(r => r.status !== 'Fulfilled').map(req => (
                 <div key={req.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3.5 rounded-xl border border-zinc-100 gap-3 hover:bg-zinc-50/50 transition-colors">
-                  <div className="flex items-start gap-3">
-                    <span className={`inline-block rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
-                      req.priority === 'High' 
-                        ? 'bg-red-100 text-red-700' 
-                        : req.priority === 'Medium' 
-                        ? 'bg-amber-100 text-amber-700' 
-                        : 'bg-zinc-100 text-zinc-600'
-                    }`}>
-                      {req.priority}
-                    </span>
-                    <div>
-                      <h4 className="text-xs font-bold text-zinc-800">{req.quantity}kg of {req.vegetableName}</h4>
-                      {req.notes && (
-                        <p className="text-[10px] text-zinc-500 mt-1 italic">"{req.notes}"</p>
-                      )}
-                      <p className="text-[9px] text-zinc-400 mt-1">
-                        Status: <strong className={req.status === 'Fulfilled' ? 'text-emerald-600' : 'text-zinc-600'}>{req.status}</strong> • Filed {new Date(req.createdAt).toLocaleDateString()}
-                      </p>
+                  {editingReqId === req.id ? (
+                    <div className="p-3 bg-emerald-50/30 border border-emerald-300 rounded-xl space-y-3 w-full animate-fade-in text-left">
+                      <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">✏️ Edit Requisition Item</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-[9px] font-bold text-zinc-500 uppercase mb-0.5">Item Name</label>
+                          <select
+                            value={editingReqVegName}
+                            onChange={(e) => setEditingReqVegName(e.target.value)}
+                            className="w-full text-xs font-semibold text-zinc-700 bg-white border border-zinc-200 rounded-lg p-1.5 focus:outline-none"
+                          >
+                            {PREDEFINED_REQS.map(item => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[9px] font-bold text-zinc-500 uppercase mb-0.5">Qty (kg)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.1"
+                            value={editingReqQty}
+                            onChange={(e) => setEditingReqQty(e.target.value)}
+                            className="w-full text-xs font-semibold text-zinc-800 bg-white border border-zinc-200 rounded-lg p-1.5 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[9px] font-bold text-zinc-500 uppercase mb-0.5">Priority</label>
+                          <select
+                            value={editingReqPriority}
+                            onChange={(e) => setEditingReqPriority(e.target.value as any)}
+                            className="w-full text-xs font-semibold text-zinc-700 bg-white border border-zinc-200 rounded-lg p-1.5 focus:outline-none"
+                          >
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High">High</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[9px] font-bold text-zinc-500 uppercase mb-0.5">Notes</label>
+                        <input
+                          type="text"
+                          placeholder="Additional dispatch comments..."
+                          value={editingReqNotes}
+                          onChange={(e) => setEditingReqNotes(e.target.value)}
+                          className="w-full text-xs font-medium text-zinc-850 bg-white border border-zinc-200 rounded-lg p-1.5 px-2 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="flex justify-end gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveRequirementEdit(req.id)}
+                          className="px-3 py-1 text-[10px] font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md transition-colors cursor-pointer"
+                        >
+                          Save Changes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingReqId(null)}
+                          className="px-3 py-1 text-[10px] font-extrabold text-zinc-500 bg-white border border-zinc-200 hover:bg-zinc-50 rounded-md transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-3">
+                        <span className={`inline-block rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
+                          req.priority === 'High' 
+                            ? 'bg-red-100 text-red-700' 
+                            : req.priority === 'Medium' 
+                            ? 'bg-amber-100 text-amber-700' 
+                            : 'bg-zinc-100 text-zinc-600'
+                        }`}>
+                          {req.priority}
+                        </span>
+                        <div>
+                          <h4 className="text-xs font-bold text-zinc-800">{req.quantity}kg of {req.vegetableName}</h4>
+                          {req.notes && (
+                            <p className="text-[10px] text-zinc-500 mt-1 italic">"{req.notes}"</p>
+                          )}
+                          <p className="text-[9px] text-zinc-400 mt-1">
+                            Status: <strong className={req.status === 'Fulfilled' ? 'text-emerald-600' : 'text-zinc-600'}>{req.status}</strong> • Filed {new Date(req.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
 
-                  {/* Actions line */}
-                  <div className="flex items-center gap-2 self-end sm:self-center">
-                    {req.status === 'Pending' && (
-                      <button
-                        onClick={() => onUpdateRequirementStatus(req.id, 'Ordered')}
-                        className="text-[10px] font-bold px-2 py-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 cursor-pointer"
-                      >
-                        Order
-                      </button>
-                    )}
-                    {req.status === 'Ordered' && (
-                      <button
-                        onClick={() => onUpdateRequirementStatus(req.id, 'Fulfilled')}
-                        className="text-[10px] font-bold px-2 py-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 cursor-pointer"
-                      >
-                        Fulfill
-                      </button>
-                    )}
-                    
-                    {/* Send Single Requisition on WhatsApp */}
-                    <a
-                      href={getWhatsAppStoreLink(req)}
-                      target="_blank"
-                      referrerPolicy="no-referrer"
-                      className="p-1 rounded text-[#25D366] hover:bg-emerald-50 cursor-pointer"
-                      title="Send this requirement on WhatsApp"
-                    >
-                      <PhoneCall className="h-4 w-4" />
-                    </a>
+                      {/* Actions line */}
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        {req.status === 'Pending' && (
+                          <button
+                            onClick={() => onUpdateRequirementStatus(req.id, 'Ordered')}
+                            className="text-[10px] font-bold px-2 py-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 cursor-pointer"
+                          >
+                            Order
+                          </button>
+                        )}
+                        {req.status === 'Ordered' && (
+                          <button
+                            onClick={() => onUpdateRequirementStatus(req.id, 'Fulfilled')}
+                            className="text-[10px] font-bold px-2 py-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 cursor-pointer"
+                          >
+                            Fulfill
+                          </button>
+                        )}
 
-                    <button
-                      onClick={() => onDeleteRequirement(req.id)}
-                      className="p-1 rounded text-red-500 hover:bg-red-50 cursor-pointer"
-                      title="Delete requirement"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+                        {/* Inline edit trigger */}
+                        <button
+                          onClick={() => handleStartRequirementEdit(req)}
+                          className="p-1 rounded text-zinc-500 hover:bg-zinc-100 cursor-pointer"
+                          title="Edit requirement details"
+                        >
+                          <span>✏️</span>
+                        </button>
+                        
+                        {/* Send Single Requisition on WhatsApp */}
+                        <a
+                          href={getWhatsAppStoreLink(req)}
+                          target="_blank"
+                          referrerPolicy="no-referrer"
+                          className="p-1 rounded text-[#25D366] hover:bg-emerald-50 cursor-pointer"
+                          title="Send this requirement on WhatsApp"
+                        >
+                          <PhoneCall className="h-4 w-4" />
+                        </a>
+
+                        <button
+                          onClick={() => onDeleteRequirement(req.id)}
+                          className="p-1 rounded text-red-500 hover:bg-red-50 cursor-pointer"
+                          title="Delete requirement"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
 
@@ -5056,8 +5366,620 @@ export default function StoreManager({
         </div>
       )}
 
-      {/* --- SUB-TAB CONTENT: ATTENDANCE & BIOMETRIC DESK --- */}
+      {/* --- SUB-TAB CONTENT: STAFF DIRECTORY & LOCATIONS --- */}
       {activeSubTab === 'attendance' && (
+        <div className="space-y-6 animate-fade-in text-slate-800 text-left">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm space-y-6">
+            
+            {/* Header info */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div className="space-y-1">
+                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/60 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider">
+                  Staff Operations
+                </span>
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <span>👥</span>
+                  {attendanceSubMode === 'desk' ? "Branch Staff Attendance Desk" : "All Stores Staff Directory"}
+                </h3>
+                <p className="text-slate-500 text-xs">
+                  {attendanceSubMode === 'desk' 
+                    ? "Manage daily check-ins, biometric scans, and leave registers for staff members assigned to this store."
+                    : "View employee profiles and assignments across all retail branches. Other branch staff are read-only."}
+                </p>
+              </div>
+
+              {/* Sub Mode Toggle Button Group */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 self-start md:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setAttendanceSubMode('desk')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    attendanceSubMode === 'desk' ? 'bg-white text-slate-800 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  📋 Attendance Desk
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceSubMode('directory')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    attendanceSubMode === 'directory' ? 'bg-white text-slate-800 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  👥 Staff Directory
+                </button>
+              </div>
+            </div>
+
+            {/* Attendance Desk Mode */}
+            {attendanceSubMode === 'desk' && (
+              <div className="space-y-6 animate-fade-in text-slate-800">
+                {/* Roster Date Selection & Metrics */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-1.5 shadow-xs">
+                    <span className="text-[10px] font-extrabold uppercase text-slate-400">Roster Date:</span>
+                    <input
+                      type="date"
+                      value={attendanceDate}
+                      onChange={(e) => setAttendanceDate(e.target.value)}
+                      className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none border-none p-0 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Metrics */}
+                {(() => {
+                  const branchStaff = staff.filter(s => s.assignedStoreId === store.id && s.isActive);
+                  const storeAttendance = attendance.filter(r => r.storeId === store.id && r.date === attendanceDate);
+                  const presentCount = storeAttendance.filter(r => r.status === 'Present').length;
+                  const absentCount = storeAttendance.filter(r => r.status === 'Absent').length;
+                  const leaveCount = storeAttendance.filter(r => r.status === 'Leave').length;
+
+                  return (
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-1.5">
+                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Branch Staff</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black text-slate-800">{branchStaff.length}</span>
+                          <span className="text-[10px] text-slate-500 font-bold">on roster</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-emerald-50/40 border border-emerald-100 rounded-2xl p-4 space-y-1.5">
+                        <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest block">Present Today</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black text-emerald-700">{presentCount}</span>
+                          <span className="text-[10px] text-emerald-600 font-bold font-mono">active</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-rose-50/40 border border-rose-100 rounded-2xl p-4 space-y-1.5">
+                        <span className="text-[10px] font-extrabold text-rose-600 uppercase tracking-widest block">Absent Today</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black text-rose-700">{absentCount}</span>
+                          <span className="text-[10px] text-rose-600 font-bold">unlogged</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-amber-50/40 border border-amber-100 rounded-2xl p-4 space-y-1.5">
+                        <span className="text-[10px] font-extrabold text-amber-600 uppercase tracking-widest block">On Leave</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black text-amber-700">{leaveCount}</span>
+                          <span className="text-[10px] text-amber-600 font-bold">off-duty</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Content Split: Staff Register & Biometric Terminal */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
+                  
+                  {/* Left Panel: Staff Register Table */}
+                  <div className="lg:col-span-7 space-y-4">
+                    <h4 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                      <UserCheck className="h-4 w-4 text-emerald-600" />
+                      Roster Check-In list (Current Store Only)
+                    </h4>
+
+                    <div className="border border-slate-200/80 rounded-2xl overflow-hidden bg-slate-50/20">
+                      <div className="divide-y divide-slate-100">
+                        {(() => {
+                          const branchStaff = staff.filter(s => s.assignedStoreId === store.id && s.isActive);
+                          if (branchStaff.length === 0) {
+                            return (
+                              <div className="p-8 text-center text-slate-400 text-xs font-semibold">
+                                No staff members are currently assigned to this store branch.
+                                Assign employees to this store in the Directory tab or the Admin panel.
+                              </div>
+                            );
+                          }
+
+                          return branchStaff.map((member) => {
+                            const record = attendance.find(r => r.staffId === member.id && r.date === attendanceDate);
+                            const status = record?.status || 'Absent';
+                            const inTime = record?.timeIn || '09:00';
+                            const outTime = record?.timeOut || '18:00';
+
+                            return (
+                              <div key={member.id} className="p-4 bg-white hover:bg-slate-50/70 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                {/* Profile Info */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-extrabold text-sm text-slate-800">{member.name}</span>
+                                    <span className="bg-slate-100 text-slate-600 text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                                      {member.role}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-slate-400 text-[10px]">
+                                    <span>📱 {member.phone || 'No phone'}</span>
+                                    {record && (
+                                      <span className="text-emerald-600 font-semibold">
+                                        ✓ Verified: {new Date(record.lastUpdated).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Verification Options / Controls */}
+                                <div className="flex flex-wrap items-center gap-3">
+                                  {/* Primary Check-In / Check-Out Buttons */}
+                                  <div className="flex items-center gap-2">
+                                    {status !== 'Present' ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const now = new Date();
+                                          const currentTime = now.toTimeString().split(' ')[0].substring(0, 5);
+                                          handleSaveManualAttendance(member, 'Present', currentTime, '18:00');
+                                        }}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                      >
+                                        <span>👉</span> Check-In
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const now = new Date();
+                                          const currentTime = now.toTimeString().split(' ')[0].substring(0, 5);
+                                          handleSaveManualAttendance(member, 'Present', inTime, currentTime);
+                                        }}
+                                        className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                      >
+                                        <span>👈</span> Check-Out
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {/* Biometric trigger */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTriggerBiometricScan(member)}
+                                    disabled={biometricScanState === 'scanning'}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                      biometricStaffId === member.id && biometricScanState === 'scanning'
+                                        ? 'bg-amber-50 border-amber-300 text-amber-700 animate-pulse'
+                                        : status === 'Present'
+                                        ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-800'
+                                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 shadow-2xs'
+                                    }`}
+                                  >
+                                    <Fingerprint className="h-3.5 w-3.5 text-emerald-600" />
+                                    {status === 'Present' ? 'Re-scan Biometrics' : 'Biometric Check-In'}
+                                  </button>
+
+                                  {/* Manual state selection */}
+                                  <div className="flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200/40">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveManualAttendance(member, 'Present', inTime, outTime)}
+                                      className={`px-2 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
+                                        status === 'Present'
+                                          ? 'bg-emerald-600 text-white shadow-xs'
+                                          : 'text-slate-500 hover:text-slate-800'
+                                      }`}
+                                    >
+                                      Present
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveManualAttendance(member, 'Leave', undefined, undefined)}
+                                      className={`px-2 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
+                                        status === 'Leave'
+                                          ? 'bg-amber-500 text-white shadow-xs'
+                                          : 'text-slate-500 hover:text-slate-800'
+                                      }`}
+                                    >
+                                      Leave
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveManualAttendance(member, 'Absent', undefined, undefined)}
+                                      className={`px-2 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
+                                        status === 'Absent'
+                                          ? 'bg-rose-500 text-white shadow-xs'
+                                          : 'text-slate-500 hover:text-slate-800'
+                                      }`}
+                                    >
+                                      Absent
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Present times inputs */}
+                                {status === 'Present' && (
+                                  <div className="flex items-center gap-1.5 md:border-l border-slate-100 md:pl-4 pt-2 md:pt-0">
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Time In</span>
+                                      <input
+                                        type="time"
+                                        value={inTime}
+                                        onChange={(e) => handleSaveManualAttendance(member, 'Present', e.target.value, outTime)}
+                                        className="rounded-lg bg-slate-50 border border-slate-200 px-1.5 py-1 text-[11px] font-bold text-slate-700 focus:outline-none"
+                                      />
+                                    </div>
+                                    <span className="text-slate-300 text-xs font-bold pt-3">→</span>
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Time Out</span>
+                                      <input
+                                        type="time"
+                                        value={outTime}
+                                        onChange={(e) => handleSaveManualAttendance(member, 'Present', inTime, e.target.value)}
+                                        className="rounded-lg bg-slate-50 border border-slate-200 px-1.5 py-1 text-[11px] font-bold text-slate-700 focus:outline-none"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Panel: Biometric Hardware Console */}
+                  <div className="lg:col-span-5 flex flex-col items-center justify-start space-y-6">
+                    <div className="w-full bg-slate-900 text-slate-100 rounded-3xl border border-slate-800 p-6 flex flex-col items-center justify-center text-center relative overflow-hidden shadow-xl min-h-[380px]">
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent pointer-events-none"></div>
+                      <div className="absolute top-4 right-4 h-2.5 w-2.5 bg-emerald-500 rounded-full animate-ping"></div>
+                      <div className="absolute top-4 right-4 h-2.5 w-2.5 bg-emerald-500 rounded-full"></div>
+
+                      <span className="text-[9px] font-extrabold uppercase tracking-widest text-emerald-400 bg-emerald-950/80 border border-emerald-800/60 px-3 py-1 rounded-full mb-6">
+                        Biometric Scanner Interface v4.8
+                      </span>
+
+                      {biometricStaffId ? (
+                        (() => {
+                          const activeMember = staff.find(s => s.id === biometricStaffId);
+                          return (
+                            <div className="w-full space-y-6 animate-fade-in">
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Currently Registering:</span>
+                                <h5 className="text-base font-black text-white">{activeMember?.name}</h5>
+                                <span className="text-[11px] font-semibold text-emerald-400">{activeMember?.role}</span>
+                              </div>
+
+                              <div className="relative h-44 w-44 mx-auto rounded-full bg-slate-950 border-2 border-emerald-500/30 flex items-center justify-center shadow-[inset_0_0_20px_rgba(16,185,129,0.15)] overflow-hidden">
+                                {biometricScanState === 'scanning' && (
+                                  <div 
+                                    className="absolute left-0 right-0 h-1 bg-emerald-400 shadow-[0_0_12px_#34d399] z-10 animate-pulse"
+                                    style={{
+                                      top: `${biometricScanProgress}%`,
+                                      transition: 'top 0.2s linear'
+                                    }}
+                                  />
+                                )}
+
+                                {biometricScanState === 'scanning' && (
+                                  <div className="absolute inset-4 rounded-full border border-emerald-500/10 animate-ping duration-1000"></div>
+                                )}
+
+                                <svg 
+                                  xmlns="http://www.w3.org/2000/svg" 
+                                  viewBox="0 0 24 24" 
+                                  fill="none" 
+                                  stroke="currentColor" 
+                                  strokeWidth="1.2" 
+                                  strokeLinecap="round" 
+                                  strokeLinejoin="round" 
+                                  className={`h-24 w-24 transition-all duration-300 ${
+                                    biometricScanState === 'scanning'
+                                      ? 'text-emerald-400 scale-105 filter drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]'
+                                      : biometricScanState === 'success'
+                                      ? 'text-emerald-500 scale-110 filter drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+                                      : 'text-slate-700'
+                                  }`}
+                                >
+                                  <path d="M12 10a2 2 0 0 0-2 2" />
+                                  <path d="M14 14a4 4 0 0 0-4-4" />
+                                  <path d="M8 10a6 6 0 0 1 12 0v2a2 2 0 0 1-2 2" />
+                                  <path d="M12 2a10 10 0 0 1 10 10V14a6 6 0 0 1-12 0V12a4 4 0 0 1 8 0" />
+                                  <path d="M6 12a8 8 0 0 1 16 0V14" />
+                                  <path d="M12 22V20" />
+                                  <path d="M12 18V16" />
+                                  <path d="M16 22V18" />
+                                  <path d="M8 22V18" />
+                                </svg>
+
+                                {biometricScanState === 'success' && (
+                                  <div className="absolute inset-0 bg-emerald-950/85 flex items-center justify-center animate-in zoom-in-75 duration-300">
+                                    <CheckCircle2 className="h-16 w-16 text-emerald-400" />
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-xs font-mono font-extrabold text-slate-400">
+                                  <span>PROGRESS SCAN:</span>
+                                  <span className="text-emerald-400">{biometricScanProgress}%</span>
+                                </div>
+                                <div className="w-full bg-slate-850 h-2 rounded-full overflow-hidden border border-slate-800">
+                                  <div 
+                                    className="bg-emerald-500 h-full transition-all duration-200"
+                                    style={{ width: `${biometricScanProgress}%` }}
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="bg-black/45 border border-slate-800 rounded-xl p-3.5 text-left font-mono text-[10px] space-y-1 text-slate-400 min-h-16">
+                                <div className="text-emerald-500 font-extrabold flex items-center gap-1">
+                                  <span className="animate-pulse">●</span> CORE STATUS LOG:
+                                </div>
+                                <div className="text-white leading-relaxed">{biometricMessage}</div>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <div className="space-y-6 max-w-xs mx-auto animate-fade-in">
+                          <div className="h-28 w-28 mx-auto rounded-3xl bg-slate-950 border border-slate-800 flex items-center justify-center shadow-inner relative group animate-pulse">
+                            <div className="absolute inset-0 bg-emerald-500/5 rounded-3xl group-hover:bg-emerald-500/10 transition-all duration-300"></div>
+                            <Fingerprint className="h-14 w-14 text-slate-700 group-hover:text-emerald-600/70 transition-all duration-300" />
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <h5 className="text-sm font-extrabold text-white">Biometric Verification Portal</h5>
+                            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                              Select an active staff employee on the left roster to initiate biometric check-in.
+                            </p>
+                          </div>
+
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-850 rounded-xl text-[10px] text-slate-400 font-mono">
+                            <span>SYS_STATUS:</span>
+                            <span className="text-emerald-500 font-extrabold">SECURE_IDLE</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Staff Directory Mode (Lists all staff, other branch staff read-only) */}
+            {attendanceSubMode === 'directory' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in text-left">
+                {staff.map((member) => {
+                  const assignedStore = stores.find(st => st.id === member.assignedStoreId);
+                  const storeName = assignedStore ? assignedStore.name : 'Unassigned Branch';
+                  const storeLoc = assignedStore?.location || 'Unknown Location';
+                  const isCurrentStoreStaff = member.assignedStoreId === store.id;
+
+                  return (
+                    <div key={member.id} className={`bg-white border rounded-2xl p-5 shadow-xs transition-all relative group flex flex-col justify-between ${
+                      isCurrentStoreStaff ? 'border-emerald-200 hover:border-emerald-300 hover:shadow-xs' : 'border-slate-100 opacity-80'
+                    }`}>
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`h-10 w-10 rounded-full flex items-center justify-center font-black text-sm ${
+                              isCurrentStoreStaff 
+                                ? 'bg-emerald-50 border border-emerald-100 text-emerald-700' 
+                                : 'bg-slate-50 border border-slate-100 text-slate-500'
+                            }`}>
+                              {member.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <h4 className="font-extrabold text-sm text-slate-800">{member.name}</h4>
+                                {!member.isActive && (
+                                  <span className="bg-rose-50 text-rose-700 border border-rose-100 border-none text-[8px] font-black uppercase px-1.5 py-0.5 rounded-sm">
+                                    Inactive
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`inline-block mt-0.5 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                member.role === 'Manager' 
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                  : member.role === 'Cashier'
+                                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                                  : member.role === 'Salesperson'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                                  : 'bg-slate-50 text-slate-700 border border-slate-100'
+                              }`}>
+                                {member.role}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Read-Only Badge for other store staff */}
+                          {!isCurrentStoreStaff && (
+                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 border border-slate-200 px-2 py-1 rounded-md flex items-center gap-1">
+                              🔒 View-Only
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Store / Location details */}
+                        <div className="pt-2.5 border-t border-slate-100 space-y-1.5 text-xs">
+                          <div className="flex items-center gap-1.5 text-slate-500 font-semibold">
+                            <span className="text-sm">📍</span>
+                            <div>
+                              <span className="text-slate-800 font-bold block text-xs">{storeName}</span>
+                              <span className="text-[10px] text-slate-400 font-medium block">{storeLoc}</span>
+                            </div>
+                          </div>
+                          {member.phone && (
+                            <div className="flex items-center gap-1.5 text-slate-400 font-semibold text-[11px] pt-1">
+                              <span>📞</span>
+                              <span>{member.phone}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Edit button (Only shown if member is of this store) */}
+                      <div className="mt-4 pt-3 border-t border-slate-100/60 flex justify-end min-h-[38px]">
+                        {isCurrentStoreStaff ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditingStaff(member)}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                          >
+                            <Edit2 className="h-3 w-3" />
+                            Edit Staff & Location
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium italic block py-1">
+                            Cannot manage other branch staff
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {staff.length === 0 && (
+                  <div className="col-span-full py-12 text-center text-slate-400 text-xs font-semibold">
+                    No staff members found in the records.
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+
+          {/* Modal / Dialog Backdrop overlay */}
+          {editingStaff && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden text-left">
+                {/* Modal Header */}
+                <div className="bg-gradient-to-r from-emerald-950 to-slate-950 text-white p-5 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-emerald-400">Edit Employee Profile</h3>
+                    <p className="text-[11px] text-slate-300 font-semibold mt-0.5">Modify role, phone, and store assignment</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingStaff(null)}
+                    className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer transition-all"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Modal Form */}
+                <form 
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!editingStaff) return;
+                    if (onUpdateStaff) {
+                      await onUpdateStaff(editingStaff);
+                    }
+                    setEditingStaff(null);
+                  }}
+                  className="p-6 space-y-4"
+                >
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Employee Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editingStaff.name}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, name: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 py-2.5 px-3.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Contact Phone</label>
+                    <input
+                      type="text"
+                      required
+                      value={editingStaff.phone}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, phone: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 py-2.5 px-3.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Role</label>
+                      <select
+                        value={editingStaff.role}
+                        onChange={(e) => setEditingStaff({ ...editingStaff, role: e.target.value as any })}
+                        className="w-full rounded-xl border border-slate-200 py-2.5 px-3 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                      >
+                        <option value="Manager">Manager</option>
+                        <option value="Cashier">Cashier</option>
+                        <option value="Salesperson">Salesperson</option>
+                        <option value="Staff">Staff</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Status</label>
+                      <select
+                        value={editingStaff.isActive ? 'Active' : 'Inactive'}
+                        onChange={(e) => setEditingStaff({ ...editingStaff, isActive: e.target.value === 'Active' })}
+                        className="w-full rounded-xl border border-slate-200 py-2.5 px-3 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive/Archived</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Assigned Store Branch</label>
+                    <select
+                      value={editingStaff.assignedStoreId}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, assignedStoreId: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 py-2.5 px-3 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                    >
+                      {stores.map(st => (
+                        <option key={st.id} value={st.id}>{st.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingStaff(null)}
+                      className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl cursor-pointer shadow-xs transition-all"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Legacy Biometrics Section Disabled */}
+      {false && (
         <div className="space-y-6 animate-fade-in text-slate-800">
           <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm space-y-6">
             
@@ -5183,7 +6105,36 @@ export default function StoreManager({
                             </div>
 
                             {/* Verification Options / Controls */}
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-3">
+                              {/* Primary Check-In / Check-Out Buttons */}
+                              <div className="flex items-center gap-2">
+                                {status !== 'Present' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const now = new Date();
+                                      const currentTime = now.toTimeString().split(' ')[0].substring(0, 5); // "HH:MM"
+                                      handleSaveManualAttendance(member, 'Present', currentTime, '18:00');
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <span>👉</span> Check-In
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const now = new Date();
+                                      const currentTime = now.toTimeString().split(' ')[0].substring(0, 5); // "HH:MM"
+                                      handleSaveManualAttendance(member, 'Present', inTime, currentTime);
+                                    }}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <span>👈</span> Check-Out
+                                  </button>
+                                )}
+                              </div>
+
                               {/* Biometric trigger */}
                               <button
                                 type="button"
@@ -6114,6 +7065,864 @@ export default function StoreManager({
           </div>
         </div>
       )}
+
+      {/* --- SUB-TAB CONTENT: SHOP EXPENSES (New simple & practical expense tracker) --- */}
+      {activeSubTab === 'expenses' && (
+        <div className="space-y-6 animate-fade-in text-left">
+          {/* Quick Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl bg-amber-50 border border-amber-150 flex items-center justify-center text-xl text-amber-600 shrink-0">
+                💡
+              </div>
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Shop Running Bills</span>
+                <span className="text-xl font-black text-slate-800 block mt-0.5">
+                  {currencySymbol}{localExpenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
+                </span>
+                <span className="text-[9px] text-slate-400 font-bold">Wages, rent, power & other bills</span>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl bg-blue-50 border border-blue-150 flex items-center justify-center text-xl text-blue-600 shrink-0">
+                📦
+              </div>
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Stock Procurement Costs</span>
+                <span className="text-xl font-black text-slate-800 block mt-0.5">
+                  {currencySymbol}{purchases.filter(p => p.storeId === store.id).reduce((sum, p) => sum + p.totalCost, 0).toLocaleString()}
+                </span>
+                <span className="text-[9px] text-slate-400 font-bold">Total spent buying farm stock</span>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-800 rounded-2xl p-4 shadow-md flex items-center gap-4 text-white">
+              <div className="h-12 w-12 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-xl text-emerald-400 shrink-0">
+                💰
+              </div>
+              <div>
+                <span className="text-[10px] font-black text-slate-300 uppercase tracking-wider block">Grand Total Spent</span>
+                <span className="text-xl font-black text-white block mt-0.5">
+                  {currencySymbol}{(localExpenses.reduce((sum, e) => sum + e.amount, 0) + purchases.filter(p => p.storeId === store.id).reduce((sum, p) => sum + p.totalCost, 0)).toLocaleString()}
+                </span>
+                <span className="text-[9px] text-slate-300 font-bold">Combined small business expenses</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Log New Expense Form */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 h-fit">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+                  <span>✍️</span> Log Daily Bill / Expense
+                </h3>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Keep track of every rupee spent running the shop.</p>
+              </div>
+
+              {expenseSuccessMsg && (
+                <div className="bg-emerald-50 text-emerald-800 text-[11px] font-bold p-2.5 rounded-xl border border-emerald-150 animate-pulse">
+                  ✓ {expenseSuccessMsg}
+                </div>
+              )}
+
+              <form onSubmit={handleAddExpenseLocal} className="space-y-3.5">
+                <div>
+                  <label htmlFor="exp-category" className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    Expense Type
+                  </label>
+                  <select
+                    id="exp-category"
+                    value={expenseCategory}
+                    onChange={(e) => setExpenseCategory(e.target.value as any)}
+                    className="w-full rounded-xl border border-slate-200 py-2 px-3 text-xs font-bold text-slate-700 bg-slate-50/50 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                  >
+                    <option value="Wages">Wages & Salaries</option>
+                    <option value="Electricity">Electricity & Power</option>
+                    <option value="Rent">Shop Rent</option>
+                    <option value="Other Expense">Other (Tea, Snacks, Cleaning, Repair)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="exp-name" className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    Expense Name *
+                  </label>
+                  <input
+                    id="exp-name"
+                    type="text"
+                    required
+                    placeholder="e.g. Samosa & Chai, July Rent, Electricity"
+                    value={expenseName}
+                    onChange={(e) => setExpenseName(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 py-2 px-3 text-xs font-bold text-slate-800 bg-slate-50/50 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="exp-amount" className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    Amount Spent ({currencySymbol})
+                  </label>
+                  <input
+                    id="exp-amount"
+                    type="number"
+                    min="1"
+                    placeholder="Enter amount"
+                    required
+                    value={expenseAmount}
+                    onChange={(e) => setExpenseAmount(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 py-2 px-3 text-xs font-bold text-slate-800 bg-slate-50/50 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="exp-date" className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    Expense Date
+                  </label>
+                  <input
+                    id="exp-date"
+                    type="date"
+                    required
+                    value={expenseDate}
+                    onChange={(e) => setExpenseDate(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 py-2 px-3 text-xs font-bold text-slate-800 bg-slate-50/50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="exp-desc" className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    Short Description / Notes
+                  </label>
+                  <textarea
+                    id="exp-desc"
+                    rows={2}
+                    placeholder="e.g., Bought tea & samosas for helpers"
+                    value={expenseDescription}
+                    onChange={(e) => setExpenseDescription(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 py-2 px-3 text-xs font-bold text-slate-800 bg-slate-50/50 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow-sm cursor-pointer"
+                >
+                  Save Expense
+                </button>
+              </form>
+            </div>
+
+            {/* Expenses Records */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+                      <span>🧾</span> Shop Bills & Daily Expenses
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">List of running bills recorded by shop manager.</p>
+                  </div>
+                  <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2.5 py-1 rounded-full uppercase">
+                    {localExpenses.length} Records
+                  </span>
+                </div>
+
+                {localExpenses.length === 0 ? (
+                  <div className="text-center py-8 bg-slate-50/50 border border-dashed border-slate-200 rounded-xl space-y-2">
+                    <span className="text-2xl block">💡</span>
+                    <h4 className="text-xs font-extrabold text-slate-600">No expenses logged yet</h4>
+                    <p className="text-[10px] text-slate-400 max-w-[240px] mx-auto font-medium">Use the form on the left to add your first shop bill, helper salary, or rental expense.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50/80 border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                          <th className="py-2.5 px-3">Date</th>
+                          <th className="py-2.5 px-3">Type</th>
+                          <th className="py-2.5 px-3">Description</th>
+                          <th className="py-2.5 px-3 text-right">Amount</th>
+                          <th className="py-2.5 px-3 text-center">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {localExpenses.map((exp) => (
+                          <tr key={exp.id} className="hover:bg-slate-50/50 transition">
+                            <td className="py-2.5 px-3 font-medium text-slate-500 whitespace-nowrap">
+                              {new Date(exp.entryDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short' })}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className={`inline-block text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
+                                exp.category === 'Wages' ? 'bg-indigo-50 text-indigo-700' :
+                                exp.category === 'Electricity' ? 'bg-amber-50 text-amber-700' :
+                                exp.category === 'Rent' ? 'bg-purple-50 text-purple-700' :
+                                'bg-slate-100 text-slate-600'
+                              }`}>
+                                {exp.category === 'Other Expense' ? 'Other' : exp.category}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-bold text-slate-700 max-w-[180px] truncate" title={exp.description}>
+                              {exp.description}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-black text-slate-900 font-mono">
+                              {currencySymbol}{exp.amount.toLocaleString()}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteExpenseLocal(exp.id)}
+                                className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-md transition-colors"
+                                title="Delete expense"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Automatic Stock Purchase Expenses list */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <span>🥦</span> Stock Purchase Log (Auto-generated)
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Purchases are automatically logged when stock is received from the central warehouse or mandi.</p>
+                </div>
+
+                {purchases.filter(p => p.storeId === store.id).length === 0 ? (
+                  <div className="text-center py-6 text-[11px] text-slate-400 italic">
+                    No crop stock procurement history found for this store.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-100 max-h-[220px] overflow-y-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50/80 border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-wider sticky top-0">
+                          <th className="py-2.5 px-3">Date</th>
+                          <th className="py-2.5 px-3">Crop Name</th>
+                          <th className="py-2.5 px-3 text-center">Qty Bought</th>
+                          <th className="py-2.5 px-3 text-right">Total Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {purchases.filter(p => p.storeId === store.id).slice(0, 10).map((pur) => (
+                          <tr key={pur.id} className="hover:bg-slate-50/50 transition">
+                            <td className="py-2.5 px-3 font-medium text-slate-500 whitespace-nowrap">
+                              {new Date(pur.purchaseDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short' })}
+                            </td>
+                            <td className="py-2.5 px-3 font-bold text-slate-800 capitalize">
+                              {pur.vegetableName.toLowerCase()}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-bold text-slate-600">
+                              {pur.quantity} kg
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-black text-emerald-600 font-mono">
+                              {currencySymbol}{pur.totalCost.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- SUB-TAB CONTENT: DAILY REPORT & CASH NOTE CALCULATOR --- */}
+      {activeSubTab === 'report' && (() => {
+        const selectedDateStr = reportDate;
+        const salesOnDate = sales.filter(s => s.saleDate && s.saleDate.substring(0, 10) === selectedDateStr);
+        const cashSales = isManualReport
+          ? (parseFloat(manualCashSales) || 0)
+          : salesOnDate.filter(s => s.paymentMode === 'Cash' || !s.paymentMode).reduce((sum, s) => sum + s.totalPrice, 0);
+        const cardSales = isManualReport
+          ? (parseFloat(manualCardSales) || 0)
+          : salesOnDate.filter(s => s.paymentMode === 'Card').reduce((sum, s) => sum + s.totalPrice, 0);
+        const upiSales = isManualReport
+          ? (parseFloat(manualUpiSales) || 0)
+          : salesOnDate.filter(s => s.paymentMode === 'UPI').reduce((sum, s) => sum + s.totalPrice, 0);
+        const totalSalesAmount = cashSales + cardSales + upiSales;
+
+        const expensesOnDate = localExpenses.filter(e => e.entryDate && e.entryDate.substring(0, 10) === selectedDateStr);
+        const purchasesOnDate = purchases.filter(p => p.storeId === store.id && p.purchaseDate && p.purchaseDate.substring(0, 10) === selectedDateStr);
+
+        // Filter manual details lists
+        const manualDetailsOnDate = manualDetailsList.filter(d => d.date === selectedDateStr);
+        const manualExpensesOnDate = manualDetailsOnDate.filter(d => d.type === 'Expense');
+        const manualPurchasesOnDate = manualDetailsOnDate.filter(d => d.type === 'Purchase');
+
+        const totalExpensesOnDate = isManualReport
+          ? (manualExpensesOnDate.reduce((sum, e) => sum + e.amount, 0) + (parseFloat(manualExpenses) || 0))
+          : expensesOnDate.reduce((sum, e) => sum + e.amount, 0);
+
+        const totalPurchasesOnDate = isManualReport
+          ? manualPurchasesOnDate.reduce((sum, p) => sum + p.amount, 0)
+          : purchasesOnDate.reduce((sum, p) => sum + p.totalCost, 0);
+
+        const q500 = parseInt(denom500) || 0;
+        const q200 = parseInt(denom200) || 0;
+        const q100 = parseInt(denom100) || 0;
+        const q50 = parseInt(denom50) || 0;
+        const q20 = parseInt(denom20) || 0;
+        const q10 = parseInt(denom10) || 0;
+        const q5 = parseInt(denom5) || 0;
+        const q2 = parseInt(denom2) || 0;
+        const q1 = parseInt(denom1) || 0;
+
+        const v500 = q500 * 500;
+        const v200 = q200 * 200;
+        const v100 = q100 * 100;
+        const v50 = q50 * 50;
+        const v20 = q20 * 20;
+        const v10 = q10 * 10;
+        const v5 = q5 * 5;
+        const v2 = q2 * 2;
+        const v1 = q1 * 1;
+
+        const cashCalculatorTotal = v500 + v200 + v100 + v50 + v20 + v10 + v5 + v2 + v1;
+        const cashDifference = cashCalculatorTotal - cashSales;
+
+        const getWhatsAppReportLink = () => {
+          let text = `*FARMER'S GATE - DAILY CLOSING REPORT*\n`;
+          text += `Store: *${store.name}*\n`;
+          text += `Date: ${new Date(reportDate).toLocaleDateString()}\n`;
+          text += `----------------------------------\n`;
+          text += `💰 *SALES REVENUE SUMMARY*:\n`;
+          text += `• Cash Sales: ₹${cashSales.toLocaleString()}\n`;
+          text += `• UPI / PhonePe Sales: ₹${upiSales.toLocaleString()}\n`;
+          text += `• Card / Swiping Sales: ₹${cardSales.toLocaleString()}\n`;
+          text += `• *Total Sales*: *₹${totalSalesAmount.toLocaleString()}*\n\n`;
+
+          text += `📉 *STORE EXPENSES & PROCUREMENT*:\n`;
+          text += `• Total Expenses: ₹${totalExpensesOnDate.toLocaleString()}\n`;
+          if (isManualReport) {
+            if (manualExpensesOnDate.length > 0) {
+              manualExpensesOnDate.forEach(e => {
+                text += `  - [Expense] ${e.description}: ₹${e.amount.toLocaleString()}\n`;
+              });
+            }
+          } else {
+            if (expensesOnDate.length > 0) {
+              expensesOnDate.forEach(e => {
+                text += `  - ${e.description}: ₹${e.amount.toLocaleString()}\n`;
+              });
+            }
+          }
+
+          text += `• Total Stock Purchases: ₹${totalPurchasesOnDate.toLocaleString()}\n`;
+          if (isManualReport) {
+            if (manualPurchasesOnDate.length > 0) {
+              manualPurchasesOnDate.forEach(p => {
+                text += `  - [Purchase] ${p.description}: ₹${p.amount.toLocaleString()}\n`;
+              });
+            }
+          } else {
+            if (purchasesOnDate.length > 0) {
+              purchasesOnDate.forEach(p => {
+                text += `  - [Purchase] Order #${p.id.substring(0, 6)}: ₹${p.totalCost.toLocaleString()}\n`;
+              });
+            }
+          }
+
+          text += `\n💵 *CASH DRAWER RECONCILIATION*:\n`;
+          text += `• Expected Cash: ₹${cashSales.toLocaleString()}\n`;
+          text += `• Actual Cash Counted: ₹${cashCalculatorTotal.toLocaleString()}\n`;
+          const diffText = cashDifference === 0 
+            ? `✓ Perfectly Matched!` 
+            : cashDifference > 0 
+            ? `Surplus: +₹${cashDifference.toLocaleString()}` 
+            : `Mismatch/Deficit: -₹${Math.abs(cashDifference).toLocaleString()}`;
+          text += `• Difference Status: ${diffText}\n`;
+          text += `----------------------------------\n`;
+          text += `Report compiled by Store Terminal.`;
+
+          return `https://wa.me/${store.whatsappNumber || ''}?text=${encodeURIComponent(text)}`;
+        };
+
+        const clearDenominators = () => {
+          setDenom2000('');
+          setDenom500('');
+          setDenom200('');
+          setDenom100('');
+          setDenom50('');
+          setDenom20('');
+          setDenom10('');
+          setDenom5('');
+          setDenom2('');
+          setDenom1('');
+        };
+
+        return (
+          <div className="space-y-6 animate-fade-in text-left">
+            {/* Header with Date Picker */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 text-left">
+              <div>
+                <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                  <span>📊</span> Daily Store Report & Closing
+                </h2>
+                <p className="text-xs text-slate-400 font-semibold mt-0.5">Track daily cash receipts, UPI/Card sales, store expenses, and reconcile cash box.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                {/* Manual Report Toggle Button Group */}
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setIsManualReport(false)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      !isManualReport ? 'bg-white text-slate-800 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    📊 Auto POS
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsManualReport(true)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      isManualReport ? 'bg-white text-slate-800 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    ✍️ Manual Entry
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 shadow-xs">
+                  <span className="text-[10px] font-black uppercase text-slate-400">Date:</span>
+                  <input
+                    type="date"
+                    value={reportDate}
+                    onChange={(e) => setReportDate(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none border-none p-0 cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Manual Entry Form Inputs */}
+            {isManualReport && (
+              <div className="bg-emerald-50/40 border border-emerald-100 rounded-2xl p-5 shadow-xs space-y-5 animate-fade-in text-left">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">✍️</span>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-800">Manual Closing Report Inputs</h3>
+                    <p className="text-[10px] text-slate-500 font-medium">Enter sales and base figures manually for {new Date(reportDate).toLocaleDateString()}.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Manual Cash Sales (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={manualCashSales}
+                      onChange={(e) => setManualCashSales(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 py-2.5 px-3.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Manual UPI Sales (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={manualUpiSales}
+                      onChange={(e) => setManualUpiSales(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 py-2.5 px-3.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Manual Card Sales (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={manualCardSales}
+                      onChange={(e) => setManualCardSales(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 py-2.5 px-3.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Uncategorized Base Expense (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={manualExpenses}
+                      onChange={(e) => setManualExpenses(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 py-2.5 px-3.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Detailed Manual Expense & Purchase Add Section */}
+                <div className="pt-4 border-t border-emerald-100/60 space-y-3.5">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 block">
+                      Detailed Expense & Purchase Ledger (Itemized Breakdown)
+                    </h4>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Add specific expenses or farm purchases to categorize and break down manually.</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-white/70 p-4 rounded-xl border border-emerald-100/40">
+                    <div className="md:col-span-3 space-y-1">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Type</label>
+                      <select
+                        value={newManualDetailType}
+                        onChange={(e) => setNewManualDetailType(e.target.value as 'Expense' | 'Purchase')}
+                        className="w-full rounded-lg border border-slate-200 py-2 px-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white cursor-pointer"
+                      >
+                        <option value="Expense">📉 Expense (Tea, Wages, Rent, etc.)</option>
+                        <option value="Purchase">📦 Purchase (Stock Procurement / Veggies)</option>
+                      </select>
+                    </div>
+
+                    <div className="md:col-span-5 space-y-1">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Description / Details</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Tomato wholesale purchase, Chai & snack bill, Staff wages"
+                        value={newManualDetailDescription}
+                        onChange={(e) => setNewManualDetailDescription(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 py-2 px-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                      />
+                    </div>
+
+                    <div className="md:col-span-3 space-y-1">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Amount (₹)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="0"
+                        value={newManualDetailAmount}
+                        onChange={(e) => setNewManualDetailAmount(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 py-2 px-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                      />
+                    </div>
+
+                    <div className="md:col-span-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newManualDetailDescription.trim() || !newManualDetailAmount) return;
+                          const amount = parseFloat(newManualDetailAmount);
+                          if (isNaN(amount) || amount <= 0) return;
+
+                          const newItem = {
+                            id: Math.random().toString(36).substring(2, 9),
+                            date: selectedDateStr,
+                            type: newManualDetailType,
+                            description: newManualDetailDescription.trim(),
+                            amount: amount
+                          };
+
+                          setManualDetailsList(prev => [...prev, newItem]);
+                          setNewManualDetailDescription('');
+                          setNewManualDetailAmount('');
+                        }}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center"
+                      >
+                        ➕ Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Added Items List (with easy delete) */}
+                  {manualDetailsOnDate.length > 0 && (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-[9px] text-slate-400 font-black uppercase">
+                          <tr>
+                            <th className="px-3.5 py-2">Type</th>
+                            <th className="px-3.5 py-2">Description</th>
+                            <th className="px-3.5 py-2 text-right">Amount</th>
+                            <th className="px-3.5 py-2 text-center w-12">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {manualDetailsOnDate.map(item => (
+                            <tr key={item.id} className="hover:bg-slate-50/40">
+                              <td className="px-3.5 py-2">
+                                <span className={`inline-block text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${
+                                  item.type === 'Expense' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-blue-50 text-blue-700 border border-blue-100'
+                                }`}>
+                                  {item.type}
+                                </span>
+                              </td>
+                              <td className="px-3.5 py-2 font-bold text-slate-700">{item.description}</td>
+                              <td className="px-3.5 py-2 font-extrabold text-slate-800 text-right font-mono">₹{item.amount.toLocaleString()}</td>
+                              <td className="px-3.5 py-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setManualDetailsList(prev => prev.filter(x => x.id !== item.id));
+                                  }}
+                                  className="text-rose-500 hover:text-rose-700 transition cursor-pointer text-xs"
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Section: Sales & Expense Dashboard */}
+              <div className="lg:col-span-2 space-y-6">
+                
+                {/* Visual Sales Category Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">💵 Cash Sales</span>
+                    <span className="text-2xl font-black text-slate-800 block mt-1 font-mono">
+                      {currencySymbol}{cashSales.toLocaleString()}
+                    </span>
+                    <span className="text-[9px] text-emerald-600 font-bold block mt-1">✓ Expected in drawer</span>
+                    <div className="absolute right-3 bottom-3 text-2xl opacity-15">💵</div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">📱 UPI / QR Sales</span>
+                    <span className="text-2xl font-black text-slate-800 block mt-1 font-mono">
+                      {currencySymbol}{upiSales.toLocaleString()}
+                    </span>
+                    <span className="text-[9px] text-indigo-600 font-bold block mt-1">✓ Digital direct to bank</span>
+                    <div className="absolute right-3 bottom-3 text-2xl opacity-15">📱</div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">💳 Card Sales</span>
+                    <span className="text-2xl font-black text-slate-800 block mt-1 font-mono">
+                      {currencySymbol}{cardSales.toLocaleString()}
+                    </span>
+                    <span className="text-[9px] text-purple-600 font-bold block mt-1">✓ POS swipe machine</span>
+                    <div className="absolute right-3 bottom-3 text-2xl opacity-15">💳</div>
+                  </div>
+                </div>
+
+                {/* Combined Totals & Reconciliation Summary */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+                  <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Financial Overview</h3>
+                  
+                  <div className="divide-y divide-slate-100">
+                    <div className="py-3 flex justify-between items-center">
+                      <span className="text-xs text-slate-500 font-bold">Total Sales Count</span>
+                      <span className="text-xs font-black text-slate-800">{salesOnDate.length} Bills Filed</span>
+                    </div>
+
+                    <div className="py-3 flex justify-between items-center">
+                      <span className="text-xs text-slate-500 font-bold">Total Gross Sales Revenue</span>
+                      <span className="text-xs font-black text-slate-900 font-mono text-base">
+                        {currencySymbol}{totalSalesAmount.toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div className="py-3 flex justify-between items-center">
+                      <span className="text-xs text-slate-500 font-bold">Logged Daily Expenses</span>
+                      <span className="text-xs font-black text-rose-600 font-mono">
+                        -{currencySymbol}{totalExpensesOnDate.toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div className="py-3 flex justify-between items-center">
+                      <span className="text-xs text-slate-500 font-bold">Stock Purchases / Procurement</span>
+                      <span className="text-xs font-black text-blue-600 font-mono">
+                        -{currencySymbol}{totalPurchasesOnDate.toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div className="py-3 flex justify-between items-center">
+                      <span className="text-xs text-slate-500 font-bold">Net Sales Margin (Revenue - Expenses - Purchases)</span>
+                      {(() => {
+                        const netMargin = totalSalesAmount - totalExpensesOnDate - totalPurchasesOnDate;
+                        return (
+                          <span className={`text-xs font-black font-mono text-base ${netMargin >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {netMargin >= 0 ? '+' : ''}{currencySymbol}{netMargin.toLocaleString()}
+                          </span>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="py-4 mt-1 bg-slate-50/50 border border-slate-150 rounded-xl px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-extrabold text-slate-700">Cash Drawer Reconciliation</h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Comparison between recorded Cash Sales and actual notes counted in the cash drawer.</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-black uppercase text-slate-400 block">Drawer Balance Status</span>
+                        {cashDifference === 0 ? (
+                          <span className="text-emerald-600 font-black text-xs flex items-center justify-end gap-1 mt-0.5">
+                            <span>✓</span> Perfectly Matched!
+                          </span>
+                        ) : cashDifference > 0 ? (
+                          <span className="text-emerald-700 font-black text-xs flex items-center justify-end gap-1 mt-0.5">
+                            <span>⚡</span> Surplus: +{currencySymbol}{cashDifference.toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="text-rose-600 font-black text-xs flex items-center justify-end gap-1 mt-0.5 animate-pulse">
+                            <span>⚠️</span> Shortfall: -{currencySymbol}{Math.abs(cashDifference).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* WhatsApp send button */}
+                  <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-3">
+                    <a
+                      href={getWhatsAppReportLink()}
+                      target="_blank"
+                      referrerPolicy="no-referrer"
+                      className="flex-1 bg-[#25D366] hover:bg-[#20ba5a] text-white font-extrabold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                    >
+                      <span>💬</span> Send Closing Report on WhatsApp
+                    </a>
+                  </div>
+                </div>
+
+                {/* List of expenses for the day */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">
+                      {isManualReport ? "Manual Details for Date" : "Expenses & Purchases Details"}
+                    </h3>
+                    <span className="bg-slate-100 text-slate-600 text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase">
+                      {isManualReport ? manualDetailsOnDate.length : (expensesOnDate.length + purchasesOnDate.length)} logs
+                    </span>
+                  </div>
+
+                  {isManualReport ? (
+                    manualDetailsOnDate.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic py-2 text-center">No manual expenses/purchases recorded on this date.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {manualDetailsOnDate.map(d => (
+                          <div key={d.id} className="p-2.5 rounded-xl border border-slate-100 flex items-center justify-between text-xs hover:bg-slate-50/50">
+                            <div>
+                              <span className="font-extrabold text-slate-700 block">{d.description}</span>
+                              <span className={`inline-block mt-0.5 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${
+                                d.type === 'Expense' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-blue-50 text-blue-700 border border-blue-100'
+                              }`}>
+                                {d.type}
+                              </span>
+                            </div>
+                            <span className={`font-extrabold font-mono ${d.type === 'Expense' ? 'text-rose-600' : 'text-blue-600'}`}>
+                              -{currencySymbol}{d.amount.toLocaleString()}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    <div>
+                      {expensesOnDate.length === 0 && purchasesOnDate.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic py-2 text-center">No auto expenses or purchases recorded on this date.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {expensesOnDate.map(e => (
+                            <div key={e.id} className="p-2.5 rounded-xl border border-slate-100 flex items-center justify-between text-xs hover:bg-slate-50/50">
+                              <div>
+                                <span className="font-extrabold text-slate-700 block">{e.description}</span>
+                                <span className="text-[9px] text-slate-400 font-bold capitalize">{e.category}</span>
+                              </div>
+                              <span className="font-extrabold text-rose-600 font-mono">-{currencySymbol}{e.amount.toLocaleString()}</span>
+                            </div>
+                          ))}
+                          {purchasesOnDate.map(p => (
+                            <div key={p.id} className="p-2.5 rounded-xl border border-slate-100 flex items-center justify-between text-xs hover:bg-slate-50/50">
+                              <div>
+                                <span className="font-extrabold text-slate-700 block">Stock Procurement: Order #{p.id.substring(0, 6)}</span>
+                                <span className="text-[9px] text-blue-500 font-bold capitalize">Farmer Wholesale</span>
+                              </div>
+                              <span className="font-extrabold text-blue-600 font-mono">-{currencySymbol}{p.totalCost.toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Section: Currency Denominator Calculator */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 h-fit">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+                      <span>💵</span> Cash Note Calculator
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Count notes and calculate total cash easily.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearDenominators}
+                    className="text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-150 transition-all"
+                  >
+                    Clear All
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {[500, 200, 100, 50, 20, 10, 5, 2, 1].map(note => {
+                    const valMap = {
+                      500: { state: denom500, setter: setDenom500, calc: v500 },
+                      200: { state: denom200, setter: setDenom200, calc: v200 },
+                      100: { state: denom100, setter: setDenom100, calc: v100 },
+                      50: { state: denom50, setter: setDenom50, calc: v50 },
+                      20: { state: denom20, setter: setDenom20, calc: v20 },
+                      10: { state: denom10, setter: setDenom10, calc: v10 },
+                      5: { state: denom5, setter: setDenom5, calc: v5 },
+                      2: { state: denom2, setter: setDenom2, calc: v2 },
+                      1: { state: denom1, setter: setDenom1, calc: v1 }
+                    };
+                    const item = valMap[note as keyof typeof valMap];
+                    return (
+                      <div key={note} className="flex items-center justify-between gap-3 text-xs py-1 border-b border-dashed border-slate-50">
+                        <span className="font-extrabold text-slate-500 w-10">₹{note}</span>
+                        <span className="text-slate-400">×</span>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={item.state}
+                          onChange={(e) => item.setter(e.target.value)}
+                          className="w-16 rounded-lg border border-slate-200 py-1 px-1.5 text-center text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <span className="text-slate-300">=</span>
+                        <span className="font-black text-slate-700 font-mono text-right w-20">
+                          {currencySymbol}{item.calc.toLocaleString()}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Total notes counted */}
+                <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Counted Total Cash</span>
+                  <span className="text-lg font-black text-emerald-600 font-mono">
+                    {currencySymbol}{cashCalculatorTotal.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* --- QUICK ADD BOTTOM SHEET FOR MOBILE --- */}
       {isQuickAddOpen && (
