@@ -48,8 +48,10 @@ import {
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
-import { getVegEmoji, availableCoupons } from './customer/customerData';
+import { getVegEmoji, availableCoupons, initialReviews, CommunityReview } from './customer/customerData';
 import RecipeGuide from './customer/RecipeGuide';
+import InteractiveMap from './customer/InteractiveMap';
+import ReviewsWall from './customer/ReviewsWall';
 
 export default function CustomerHub({ changePortal }: { changePortal?: (portal: 'customer' | 'partner' | 'management') => void }) {
   const [activeTab, setActiveTab] = useState<'shop' | 'track' | 'profile'>('shop');
@@ -93,6 +95,22 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
   
   // Pre-seed static wallet balance for simulation/gamification
   const [walletBalance, setWalletBalance] = useState(150.00);
+
+  // Interactive Reviews & Map states
+  const [socialReviews, setSocialReviews] = useState<CommunityReview[]>(initialReviews);
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+
+  const handleAddReview = (newReview: CommunityReview) => {
+    setSocialReviews(prev => [newReview, ...prev]);
+  };
+
+  const handleSelectMapAddress = (address: string) => {
+    setCustomAddress(address);
+    if (user) {
+      localStorage.setItem(`fg_address_${user.uid}`, address);
+    }
+    setAuthAddress(address);
+  };
 
   // Customer's order history state (synced via Firestore)
   const [customerOrders, setCustomerOrders] = useState<FirebaseOrder[]>([]);
@@ -754,9 +772,13 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
                   FASTEST
                 </span>
               </div>
-              <p className="text-[10.5px] font-bold text-slate-500 uppercase tracking-tight flex items-center gap-1">
-                📍 {customAddress || 'Green Meadows, Sector 4, Bangalore'} <span className="text-purple-600 font-extrabold text-[8px]">▼</span>
-              </p>
+              <button 
+                onClick={() => setIsMapModalOpen(true)}
+                className="text-[10.5px] font-bold text-slate-500 hover:text-purple-600 uppercase tracking-tight flex items-center gap-1 cursor-pointer text-left bg-transparent border-none p-0 outline-none group"
+                title="Click to open Interactive Range Map Simulator"
+              >
+                📍 {customAddress || 'Green Meadows, Sector 4, Bangalore'} <span className="text-purple-600 font-extrabold text-[8.5px] group-hover:translate-y-0.5 transition-transform">▼ (Change Delivery Pin)</span>
+              </button>
             </div>
           </div>
 
@@ -1121,6 +1143,33 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
                       </motion.div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Interactive option: Community Trust & Ratings Wall */}
+              {selectedCategory !== 'Recipes' && (
+                <div className="pt-8 animate-fade-in border-t border-slate-200">
+                  <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-3xl p-5 text-white mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div>
+                      <span className="text-[9px] bg-emerald-800 text-emerald-200 border border-emerald-700 px-2.5 py-1 rounded-full uppercase tracking-wider font-extrabold shadow-sm">
+                        ⚡ Shopper Interaction
+                      </span>
+                      <h4 className="text-base font-black uppercase tracking-tight mt-2 flex items-center gap-1.5">
+                        Interactive Community Trust Wall
+                      </h4>
+                      <p className="text-xs text-emerald-100 font-medium leading-normal mt-1">
+                        See real-time feedback and checkout ratings posted live by nearby customers. Click below to add yours!
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-3xl animate-bounce-subtle">💬</span>
+                    </div>
+                  </div>
+                  <ReviewsWall 
+                    socialReviews={socialReviews} 
+                    onAddReview={handleAddReview} 
+                    canWriteReview={true} 
+                  />
                 </div>
               )}
             </div>
@@ -1761,6 +1810,53 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
         )}
 
       </div>
+
+      {/* 🗺️ Interactive GPS Map Range Modal */}
+      <AnimatePresence>
+        {isMapModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-slate-900 text-white border border-slate-800 rounded-3xl p-6 shadow-2xl max-w-lg w-full relative space-y-6 text-left animate-scale-in"
+            >
+              {/* Close Button */}
+              <button 
+                type="button"
+                onClick={() => setIsMapModalOpen(false)}
+                className="absolute top-4 right-4 h-8 w-8 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 hover:text-white rounded-full flex items-center justify-center font-black cursor-pointer text-xs transition-colors"
+              >
+                ✕
+              </button>
+
+              <div className="space-y-1">
+                <h3 className="text-sm font-black uppercase tracking-tight text-white flex items-center gap-2">
+                  🗺️ GPS Dark-Store Delivery Simulator
+                </h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  Check if your sector is within our 10-minute instant dispatch range
+                </p>
+              </div>
+
+              <InteractiveMap 
+                currentAddress={customAddress} 
+                onSelectAddress={handleSelectMapAddress} 
+              />
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMapModalOpen(false)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-emerald-950"
+                >
+                  Confirm Selection
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* 🔐 Custom Auth Modal (Login / Create Account) */}
       <AnimatePresence>
