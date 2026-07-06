@@ -32,6 +32,13 @@ export interface StaffMember {
   createdAt: string;
 }
 
+export interface AttendancePunch {
+  id: string;
+  type: 'In' | 'Out';
+  time: string; // HH:MM
+  timestamp: string; // ISO string
+}
+
 export interface AttendanceRecord {
   id: string;
   staffId: string;
@@ -43,6 +50,7 @@ export interface AttendanceRecord {
   timeIn?: string; // HH:MM
   timeOut?: string; // HH:MM
   lastUpdated: string;
+  punches?: AttendancePunch[];
 }
 
 export interface Purchase {

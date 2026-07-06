@@ -5,7 +5,7 @@ import {
   FileSpreadsheet, Star, Sparkles, UserCheck, CheckCircle2, AlertCircle, XCircle,
   IndianRupee, Download
 } from 'lucide-react';
-import { Store, Sale, StaffMember, AttendanceRecord } from '../types';
+import { Store, Sale, StaffMember, AttendanceRecord, AttendancePunch } from '../types';
 
 interface StaffAttendanceManagerProps {
   stores: Store[];
@@ -53,6 +53,34 @@ export default function StaffAttendanceManager({
   // Detailed Employee Paycard/Details Modal state
   const [selectedDetailsStaffId, setSelectedDetailsStaffId] = useState<string | null>(null);
 
+  const calculateHoursFromRecord = (record: AttendanceRecord): number => {
+    if (record.status !== 'Present') return 0;
+    const punches = record.punches || [];
+    if (punches.length > 0) {
+      let totalMinutes = 0;
+      let activeInTime: string | null = null;
+      for (const p of punches) {
+        if (p.type === 'In') {
+          activeInTime = p.time;
+        } else if (p.type === 'Out' && activeInTime) {
+          const [inH, inM] = activeInTime.split(':').map(Number);
+          const [outH, outM] = p.time.split(':').map(Number);
+          const diffMin = (outH * 60 + outM) - (inH * 60 + inM);
+          if (diffMin > 0) {
+            totalMinutes += diffMin;
+          }
+          activeInTime = null;
+        }
+      }
+      return totalMinutes / 60;
+    }
+    const inTime = record.timeIn || '09:00';
+    const outTime = record.timeOut || '18:00';
+    const [inH, inM] = inTime.split(':').map(Number);
+    const [outH, outM] = outTime.split(':').map(Number);
+    return Math.max(0, (outH + outM / 60) - (inH + inM / 60));
+  };
+
   // Daily store specific aggregate stats calculations
   const todayStoreStats = useMemo(() => {
     const storeStaff = staff.filter(st => st.assignedStoreId === selectedStoreId && st.isActive);
@@ -70,12 +98,7 @@ export default function StaffAttendanceManager({
       const st = storeStaff.find(s => s.id === record.staffId);
       if (!st) return;
       
-      const inTime = record.timeIn || '09:00';
-      const outTime = record.timeOut || '18:00';
-      const [inH, inM] = inTime.split(':').map(Number);
-      const [outH, outM] = outTime.split(':').map(Number);
-      const hours = Math.max(0, (outH + outM / 60) - (inH + inM / 60));
-      
+      const hours = calculateHoursFromRecord(record);
       totalHoursLogged += hours;
       
       const rateMap = { Manager: 250, Cashier: 180, Staff: 120, Salesperson: 150 };
@@ -86,6 +109,8 @@ export default function StaffAttendanceManager({
       const pay = (std * hourlyRate) + (ot * hourlyRate * 1.5) + 100; // includes 100 allowance
       totalEstWages += pay;
       
+      const inTime = record.timeIn || '09:00';
+      const [inH, inM] = inTime.split(':').map(Number);
       const isLate = inH > 9 || (inH === 9 && inM > 0);
       if (!isLate) onTimeCount++;
     });
@@ -130,11 +155,7 @@ export default function StaffAttendanceManager({
       let isLate = false;
 
       if (record.status === 'Present') {
-        const inTime = record.timeIn || '09:00';
-        const outTime = record.timeOut || '18:00';
-        const [inH, inM] = inTime.split(':').map(Number);
-        const [outH, outM] = outTime.split(':').map(Number);
-        hours = Math.max(0, (outH + outM / 60) - (inH + inM / 60));
+        hours = calculateHoursFromRecord(record);
         
         std = Math.min(8, hours);
         ot = Math.max(0, hours - 8);
@@ -143,6 +164,8 @@ export default function StaffAttendanceManager({
         standardHours += std;
         overtimeHours += ot;
 
+        const inTime = record.timeIn || '09:00';
+        const [inH, inM] = inTime.split(':').map(Number);
         isLate = inH > 9 || (inH === 9 && inM > 0);
         if (!isLate) {
           punctualityCount++;

@@ -34,10 +34,11 @@ import {
   ExternalLink,
   Printer,
   Fingerprint,
-  UserCheck
+  UserCheck,
+  Users
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification, StaffMember, AttendanceRecord, AccountEntry } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification, StaffMember, AttendanceRecord, AccountEntry, AttendancePunch } from '../types';
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
 import { subscribeToNotifications } from '../lib/firebase';
 import { QrScanner } from './QrScanner';
@@ -344,6 +345,32 @@ export default function StoreManager({
   const [syncStatus, setSyncStatus] = useState<'idle' | 'extracting' | 'ready' | 'syncing' | 'synced'>('idle');
   const [syncProgress, setSyncProgress] = useState<number>(0);
 
+  const getStaffPunchState = (record: AttendanceRecord | undefined) => {
+    if (!record || record.status !== 'Present') {
+      return { isCheckedIn: false, lastPunchType: null, punches: [] as AttendancePunch[] };
+    }
+    const punches = record.punches || [];
+    if (punches.length > 0) {
+      const lastPunch = punches[punches.length - 1];
+      return {
+        isCheckedIn: lastPunch.type === 'In',
+        lastPunchType: lastPunch.type,
+        punches
+      };
+    }
+    // Fallback to legacy single timeIn/timeOut fields
+    if (record.timeIn && !record.timeOut) {
+      return { isCheckedIn: true, lastPunchType: 'In', punches: [{ id: 'legacy-in', type: 'In', time: record.timeIn, timestamp: record.lastUpdated }] };
+    }
+    if (record.timeIn && record.timeOut) {
+      return { isCheckedIn: false, lastPunchType: 'Out', punches: [
+        { id: 'legacy-in', type: 'In', time: record.timeIn, timestamp: record.lastUpdated },
+        { id: 'legacy-out', type: 'Out', time: record.timeOut, timestamp: record.lastUpdated }
+      ] };
+    }
+    return { isCheckedIn: false, lastPunchType: null, punches: [] as AttendancePunch[] };
+  };
+
   const triggerEmployeeDetailsExtraction = (
     member: StaffMember, 
     record: AttendanceRecord, 
@@ -359,11 +386,31 @@ export default function StoreManager({
     // Calculate hours worked (Standard hours = 8.0)
     let hoursWorked = 0;
     if (record.status === 'Present') {
-      const inTime = record.timeIn || '09:00';
-      const outTime = record.timeOut || '18:00';
-      const [inH, inM] = inTime.split(':').map(Number);
-      const [outH, outM] = outTime.split(':').map(Number);
-      hoursWorked = Math.max(0, (outH + outM / 60) - (inH + inM / 60));
+      const punches = record.punches || [];
+      if (punches.length > 0) {
+        let totalMinutes = 0;
+        let activeInTime: string | null = null;
+        for (const p of punches) {
+          if (p.type === 'In') {
+            activeInTime = p.time;
+          } else if (p.type === 'Out' && activeInTime) {
+            const [inH, inM] = activeInTime.split(':').map(Number);
+            const [outH, outM] = p.time.split(':').map(Number);
+            const diffMin = (outH * 60 + outM) - (inH * 60 + inM);
+            if (diffMin > 0) {
+              totalMinutes += diffMin;
+            }
+            activeInTime = null;
+          }
+        }
+        hoursWorked = totalMinutes / 60;
+      } else {
+        const inTime = record.timeIn || '09:00';
+        const outTime = record.timeOut || '18:00';
+        const [inH, inM] = inTime.split(':').map(Number);
+        const [outH, outM] = outTime.split(':').map(Number);
+        hoursWorked = Math.max(0, (outH + outM / 60) - (inH + inM / 60));
+      }
     }
 
     // Role-based pay calculation
@@ -490,6 +537,10 @@ export default function StoreManager({
   };
 
   const handleTriggerBiometricScan = (member: StaffMember) => {
+    if (member.assignedStoreId !== store.id) {
+      alert(`Error: Biometric attendance can only be performed at the employee's respected store (${stores.find(st => st.id === member.assignedStoreId)?.name || 'their assigned store'}).`);
+      return;
+    }
     if (biometricScanState === 'scanning') return;
     
     setBiometricStaffId(member.id);
@@ -575,6 +626,21 @@ export default function StoreManager({
             (r) => r.staffId === member.id && r.date === attendanceDate
           );
           
+          const punchState = getStaffPunchState(existing);
+          const nextType: 'In' | 'Out' = punchState.isCheckedIn ? 'Out' : 'In';
+          
+          const newPunch: AttendancePunch = {
+            id: `punch_${Date.now()}`,
+            type: nextType,
+            time: curTime,
+            timestamp: new Date().toISOString()
+          };
+          
+          const updatedPunches = [...(existing?.punches || []), newPunch];
+          
+          let finalTimeIn = existing?.timeIn || curTime;
+          let finalTimeOut = nextType === 'Out' ? curTime : undefined;
+          
           const record: AttendanceRecord = {
             id: existing?.id || `att_${Date.now()}_${member.id}`,
             staffId: member.id,
@@ -583,9 +649,10 @@ export default function StoreManager({
             storeId: store.id,
             date: attendanceDate,
             status: 'Present',
-            timeIn: existing?.timeIn || curTime,
-            timeOut: existing?.timeOut || undefined,
-            lastUpdated: new Date().toISOString()
+            timeIn: finalTimeIn,
+            timeOut: finalTimeOut,
+            lastUpdated: new Date().toISOString(),
+            punches: updatedPunches
           };
           
           triggerEmployeeDetailsExtraction(member, record, 'Biometrics v4.8');
@@ -600,16 +667,45 @@ export default function StoreManager({
       }
     }, 200);
   };
-
+ 
   const handleSaveManualAttendance = async (
     member: StaffMember,
     status: 'Present' | 'Leave' | 'Absent',
     timeIn?: string,
-    timeOut?: string
+    timeOut?: string,
+    punches?: AttendancePunch[]
   ) => {
+    if (member.assignedStoreId !== store.id) {
+      alert(`Error: Staff attendance can only be performed by the manager of their respected store (${stores.find(st => st.id === member.assignedStoreId)?.name || 'their assigned store'}).`);
+      return;
+    }
+
     const existing = attendance.find(
       (r) => r.staffId === member.id && r.date === attendanceDate
     );
+    
+    let finalPunches = punches || existing?.punches || [];
+    
+    if (status !== 'Present') {
+      finalPunches = [];
+    } else if (finalPunches.length === 0 && status === 'Present') {
+      finalPunches = [
+        {
+          id: `punch_init_${Date.now()}`,
+          type: 'In',
+          time: timeIn || '09:00',
+          timestamp: new Date().toISOString()
+        }
+      ];
+      if (timeOut) {
+        finalPunches.push({
+          id: `punch_init_out_${Date.now()}`,
+          type: 'Out',
+          time: timeOut,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
     
     const record: AttendanceRecord = {
       id: existing?.id || `att_${Date.now()}_${member.id}`,
@@ -620,8 +716,9 @@ export default function StoreManager({
       date: attendanceDate,
       status,
       timeIn: status === 'Present' ? (timeIn || '09:00') : undefined,
-      timeOut: status === 'Present' ? (timeOut || '18:00') : undefined,
-      lastUpdated: new Date().toISOString()
+      timeOut: status === 'Present' ? (timeOut || undefined) : undefined,
+      lastUpdated: new Date().toISOString(),
+      punches: finalPunches
     };
     
     triggerEmployeeDetailsExtraction(member, record, 'Manual POS Register');
@@ -5753,6 +5850,131 @@ export default function StoreManager({
                         </div>
                       )}
                     </div>
+                  </div>
+                </div>
+
+                {/* Section: Other Stores' Staff (Read-Only) */}
+                <div className="pt-8 border-t border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                      <Users className="h-4 w-4 text-indigo-500" />
+                      Other Stores' Staff (Read-Only Directory)
+                    </h4>
+                    <span className="text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-700 font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                      Cross-Branch Views
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {(() => {
+                      const otherStaff = staff.filter(s => s.assignedStoreId !== store.id && s.isActive);
+                      if (otherStaff.length === 0) {
+                        return (
+                          <div className="col-span-full py-6 text-center text-slate-400 text-xs font-semibold bg-slate-50 border border-slate-100 rounded-2xl">
+                            No other active staff found in other store branches.
+                          </div>
+                        );
+                      }
+
+                      return otherStaff.map((member) => {
+                        const record = attendance.find(r => r.staffId === member.id && r.date === attendanceDate);
+                        const status = record?.status || 'Absent';
+                        const inTime = record?.timeIn || '09:00';
+                        const outTime = record?.timeOut || '18:00';
+                        const assignedStore = stores.find(st => st.id === member.assignedStoreId);
+                        const storeName = assignedStore ? assignedStore.name : 'Other Branch';
+                        
+                        const punchState = getStaffPunchState(record);
+
+                        return (
+                          <div 
+                            key={member.id} 
+                            className="bg-slate-50/50 border border-slate-200/65 rounded-2xl p-4 flex flex-col justify-between hover:border-slate-300 transition-all text-left relative group"
+                          >
+                            <div className="space-y-3.5">
+                              {/* Header: Name, Role, Store */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="h-9 w-9 rounded-full bg-slate-200 border border-slate-350 flex items-center justify-center font-black text-xs text-slate-600">
+                                    {member.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <h5 className="font-extrabold text-sm text-slate-800 leading-snug">{member.name}</h5>
+                                    <span className="text-[10px] text-slate-500 font-bold">{member.role}</span>
+                                  </div>
+                                </div>
+                                <span className="text-[8px] font-black uppercase tracking-wider bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-slate-400">
+                                  🔒 View-Only
+                                </span>
+                              </div>
+
+                              {/* Details Section */}
+                              <div className="space-y-2 text-xs pt-1 border-t border-slate-150/50">
+                                <div className="flex items-center gap-1.5 text-slate-500">
+                                  <span className="text-sm">📍</span>
+                                  <span className="font-bold text-slate-700">{storeName}</span>
+                                </div>
+                                {member.phone && (
+                                  <div className="flex items-center gap-1.5 text-slate-500">
+                                    <span>📞</span>
+                                    <span>{member.phone}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Status Display */}
+                              <div className="pt-2 border-t border-slate-150/50 flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">Attendance:</span>
+                                <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                                  status === 'Present'
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                    : status === 'Leave'
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                    : 'bg-rose-50 text-rose-700 border border-rose-100'
+                                }`}>
+                                  {status}
+                                </span>
+                              </div>
+
+                              {/* Punches or times details */}
+                              {status === 'Present' && (
+                                <div className="bg-white/80 border border-slate-200/40 rounded-xl p-2.5 space-y-1.5">
+                                  <div className="flex items-center justify-between text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">
+                                    <span>Punch Sessions:</span>
+                                    <span className="text-emerald-600">✓ Active</span>
+                                  </div>
+                                  {punchState.punches && punchState.punches.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {punchState.punches.map((p, idx) => (
+                                        <span 
+                                          key={p.id || idx} 
+                                          className={`text-[9px] font-bold font-mono px-1.5 py-0.5 rounded ${
+                                            p.type === 'In' 
+                                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                          }`}
+                                        >
+                                          {p.type}: {p.time}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-[10px] font-mono font-bold text-slate-600">
+                                      {inTime} → {outTime}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Disabled/Explanation info for managers */}
+                            <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-center text-[10px] text-slate-400 italic font-medium">
+                              Respected store manager must perform attendance
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               </div>
