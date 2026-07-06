@@ -672,8 +672,7 @@ export default function StoreManager({
     member: StaffMember,
     status: 'Present' | 'Leave' | 'Absent',
     timeIn?: string,
-    timeOut?: string,
-    punches?: AttendancePunch[]
+    timeOut?: string
   ) => {
     if (member.assignedStoreId !== store.id) {
       alert(`Error: Staff attendance can only be performed by the manager of their respected store (${stores.find(st => st.id === member.assignedStoreId)?.name || 'their assigned store'}).`);
@@ -684,29 +683,6 @@ export default function StoreManager({
       (r) => r.staffId === member.id && r.date === attendanceDate
     );
     
-    let finalPunches = punches || existing?.punches || [];
-    
-    if (status !== 'Present') {
-      finalPunches = [];
-    } else if (finalPunches.length === 0 && status === 'Present') {
-      finalPunches = [
-        {
-          id: `punch_init_${Date.now()}`,
-          type: 'In',
-          time: timeIn || '09:00',
-          timestamp: new Date().toISOString()
-        }
-      ];
-      if (timeOut) {
-        finalPunches.push({
-          id: `punch_init_out_${Date.now()}`,
-          type: 'Out',
-          time: timeOut,
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-    
     const record: AttendanceRecord = {
       id: existing?.id || `att_${Date.now()}_${member.id}`,
       staffId: member.id,
@@ -715,13 +691,15 @@ export default function StoreManager({
       storeId: store.id,
       date: attendanceDate,
       status,
-      timeIn: status === 'Present' ? (timeIn || '09:00') : undefined,
-      timeOut: status === 'Present' ? (timeOut || undefined) : undefined,
+      timeIn: status === 'Present' ? (timeIn || existing?.timeIn || '09:00') : undefined,
+      timeOut: status === 'Present' ? (timeOut || existing?.timeOut || undefined) : undefined,
       lastUpdated: new Date().toISOString(),
-      punches: finalPunches
+      punches: []
     };
     
-    triggerEmployeeDetailsExtraction(member, record, 'Manual POS Register');
+    if (onSaveAttendance) {
+      await onSaveAttendance(record);
+    }
   };
 
   const handleToggleOfflineMode = () => {
@@ -5529,8 +5507,8 @@ export default function StoreManager({
                   const branchStaff = staff.filter(s => s.assignedStoreId === store.id && s.isActive);
                   const storeAttendance = attendance.filter(r => r.storeId === store.id && r.date === attendanceDate);
                   const presentCount = storeAttendance.filter(r => r.status === 'Present').length;
-                  const absentCount = storeAttendance.filter(r => r.status === 'Absent').length;
                   const leaveCount = storeAttendance.filter(r => r.status === 'Leave').length;
+                  const absentCount = branchStaff.length - presentCount - leaveCount;
 
                   return (
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -5538,7 +5516,7 @@ export default function StoreManager({
                         <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Branch Staff</span>
                         <div className="flex items-baseline gap-1.5">
                           <span className="text-2xl font-black text-slate-800">{branchStaff.length}</span>
-                          <span className="text-[10px] text-slate-500 font-bold">on roster</span>
+                          <span className="text-[10px] text-slate-500 font-bold">assigned</span>
                         </div>
                       </div>
 
@@ -5546,15 +5524,15 @@ export default function StoreManager({
                         <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest block">Present Today</span>
                         <div className="flex items-baseline gap-1.5">
                           <span className="text-2xl font-black text-emerald-700">{presentCount}</span>
-                          <span className="text-[10px] text-emerald-600 font-bold font-mono">active</span>
+                          <span className="text-[10px] text-emerald-600 font-bold">checked in</span>
                         </div>
                       </div>
 
                       <div className="bg-rose-50/40 border border-rose-100 rounded-2xl p-4 space-y-1.5">
                         <span className="text-[10px] font-extrabold text-rose-600 uppercase tracking-widest block">Absent Today</span>
                         <div className="flex items-baseline gap-1.5">
-                          <span className="text-2xl font-black text-rose-700">{absentCount}</span>
-                          <span className="text-[10px] text-rose-600 font-bold">unlogged</span>
+                          <span className="text-2xl font-black text-rose-700">{Math.max(0, absentCount)}</span>
+                          <span className="text-[10px] text-rose-600 font-bold">pending/absent</span>
                         </div>
                       </div>
 
@@ -5562,153 +5540,131 @@ export default function StoreManager({
                         <span className="text-[10px] font-extrabold text-amber-600 uppercase tracking-widest block">On Leave</span>
                         <div className="flex items-baseline gap-1.5">
                           <span className="text-2xl font-black text-amber-700">{leaveCount}</span>
-                          <span className="text-[10px] text-amber-600 font-bold">off-duty</span>
+                          <span className="text-[10px] text-amber-600 font-bold">approved</span>
                         </div>
                       </div>
                     </div>
                   );
                 })()}
 
-                {/* Content Split: Staff Register & Biometric Terminal */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
-                  
-                  {/* Left Panel: Staff Register Table */}
-                  <div className="lg:col-span-7 space-y-4">
-                    <h4 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
-                      <UserCheck className="h-4 w-4 text-emerald-600" />
-                      Roster Check-In list (Current Store Only)
-                    </h4>
+                {/* Staff Register - Full Width */}
+                <div className="space-y-4 pt-2">
+                  <h4 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                    <UserCheck className="h-4 w-4 text-emerald-600" />
+                    Roster Check-In List (Current Store Only)
+                  </h4>
 
-                    <div className="border border-slate-200/80 rounded-2xl overflow-hidden bg-slate-50/20">
-                      <div className="divide-y divide-slate-100">
-                        {(() => {
-                          const branchStaff = staff.filter(s => s.assignedStoreId === store.id && s.isActive);
-                          if (branchStaff.length === 0) {
-                            return (
-                              <div className="p-8 text-center text-slate-400 text-xs font-semibold">
-                                No staff members are currently assigned to this store branch.
-                                Assign employees to this store in the Directory tab or the Admin panel.
-                              </div>
-                            );
-                          }
+                  <div className="border border-slate-200/80 rounded-2xl overflow-hidden bg-slate-50/20">
+                    <div className="divide-y divide-slate-100">
+                      {(() => {
+                        const branchStaff = staff.filter(s => s.assignedStoreId === store.id && s.isActive);
+                        if (branchStaff.length === 0) {
+                          return (
+                            <div className="p-8 text-center text-slate-400 text-xs font-semibold">
+                              No active staff members are currently mapped/assigned to this store branch.
+                              Use the Directory tab to re-assign/map employees to this store.
+                            </div>
+                          );
+                        }
 
-                          return branchStaff.map((member) => {
-                            const record = attendance.find(r => r.staffId === member.id && r.date === attendanceDate);
-                            const status = record?.status || 'Absent';
-                            const inTime = record?.timeIn || '09:00';
-                            const outTime = record?.timeOut || '18:00';
+                        return branchStaff.map((member) => {
+                          const record = attendance.find(r => r.staffId === member.id && r.date === attendanceDate);
+                          const status = record?.status || 'Absent';
+                          const inTime = record?.timeIn || '09:00';
+                          const outTime = record?.timeOut || '18:00';
 
-                            return (
-                              <div key={member.id} className="p-4 bg-white hover:bg-slate-50/70 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                {/* Profile Info */}
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-extrabold text-sm text-slate-800">{member.name}</span>
-                                    <span className="bg-slate-100 text-slate-600 text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full">
-                                      {member.role}
+                          return (
+                            <div key={member.id} className="p-4 bg-white hover:bg-slate-50/70 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 text-left">
+                              {/* Profile Info */}
+                              <div className="space-y-1 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-extrabold text-sm text-slate-800">{member.name}</span>
+                                  <span className="bg-slate-100 text-slate-600 text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                                    {member.role}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 text-slate-400 text-[10px]">
+                                  <span>📱 {member.phone || 'No phone'}</span>
+                                  {record && (
+                                    <span className="text-emerald-600 font-semibold">
+                                      ✓ Recorded: {new Date(record.lastUpdated).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                     </span>
-                                  </div>
-                                  <div className="flex items-center gap-3 text-slate-400 text-[10px]">
-                                    <span>📱 {member.phone || 'No phone'}</span>
-                                    {record && (
-                                      <span className="text-emerald-600 font-semibold">
-                                        ✓ Verified: {new Date(record.lastUpdated).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                      </span>
-                                    )}
-                                  </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Simple Check-In / Check-Out Controls */}
+                              <div className="flex flex-wrap items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                  {status !== 'Present' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const now = new Date();
+                                        const currentTime = now.toTimeString().split(' ')[0].substring(0, 5);
+                                        handleSaveManualAttendance(member, 'Present', currentTime, undefined);
+                                      }}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      Check-In
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const now = new Date();
+                                        const currentTime = now.toTimeString().split(' ')[0].substring(0, 5);
+                                        handleSaveManualAttendance(member, 'Present', inTime, currentTime);
+                                      }}
+                                      className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      Check-Out
+                                    </button>
+                                  )}
                                 </div>
 
-                                {/* Verification Options / Controls */}
-                                <div className="flex flex-wrap items-center gap-3">
-                                  {/* Primary Check-In / Check-Out Buttons */}
-                                  <div className="flex items-center gap-2">
-                                    {status !== 'Present' ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const now = new Date();
-                                          const currentTime = now.toTimeString().split(' ')[0].substring(0, 5);
-                                          handleSaveManualAttendance(member, 'Present', currentTime, '18:00');
-                                        }}
-                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
-                                      >
-                                        <span>👉</span> Check-In
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const now = new Date();
-                                          const currentTime = now.toTimeString().split(' ')[0].substring(0, 5);
-                                          handleSaveManualAttendance(member, 'Present', inTime, currentTime);
-                                        }}
-                                        className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
-                                      >
-                                        <span>👈</span> Check-Out
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  {/* Biometric trigger */}
+                                {/* Direct Manual Toggle */}
+                                <div className="flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200/40">
                                   <button
                                     type="button"
-                                    onClick={() => handleTriggerBiometricScan(member)}
-                                    disabled={biometricScanState === 'scanning'}
-                                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                                      biometricStaffId === member.id && biometricScanState === 'scanning'
-                                        ? 'bg-amber-50 border-amber-300 text-amber-700 animate-pulse'
-                                        : status === 'Present'
-                                        ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-800'
-                                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 shadow-2xs'
+                                    onClick={() => handleSaveManualAttendance(member, 'Present', inTime, outTime)}
+                                    className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
+                                      status === 'Present'
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'text-slate-500 hover:text-slate-800'
                                     }`}
                                   >
-                                    <Fingerprint className="h-3.5 w-3.5 text-emerald-600" />
-                                    {status === 'Present' ? 'Re-scan Biometrics' : 'Biometric Check-In'}
+                                    Present
                                   </button>
-
-                                  {/* Manual state selection */}
-                                  <div className="flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200/40">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSaveManualAttendance(member, 'Present', inTime, outTime)}
-                                      className={`px-2 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
-                                        status === 'Present'
-                                          ? 'bg-emerald-600 text-white shadow-xs'
-                                          : 'text-slate-500 hover:text-slate-800'
-                                      }`}
-                                    >
-                                      Present
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSaveManualAttendance(member, 'Leave', undefined, undefined)}
-                                      className={`px-2 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
-                                        status === 'Leave'
-                                          ? 'bg-amber-500 text-white shadow-xs'
-                                          : 'text-slate-500 hover:text-slate-800'
-                                      }`}
-                                    >
-                                      Leave
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSaveManualAttendance(member, 'Absent', undefined, undefined)}
-                                      className={`px-2 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
-                                        status === 'Absent'
-                                          ? 'bg-rose-500 text-white shadow-xs'
-                                          : 'text-slate-500 hover:text-slate-800'
-                                      }`}
-                                    >
-                                      Absent
-                                    </button>
-                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveManualAttendance(member, 'Leave', undefined, undefined)}
+                                    className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
+                                      status === 'Leave'
+                                        ? 'bg-amber-500 text-white shadow-xs'
+                                        : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                  >
+                                    Leave
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveManualAttendance(member, 'Absent', undefined, undefined)}
+                                    className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition-all cursor-pointer ${
+                                      status === 'Absent'
+                                        ? 'bg-rose-500 text-white shadow-xs'
+                                        : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                  >
+                                    Absent
+                                  </button>
                                 </div>
 
-                                {/* Present times inputs */}
+                                {/* Present Time Inputs */}
                                 {status === 'Present' && (
-                                  <div className="flex items-center gap-1.5 md:border-l border-slate-100 md:pl-4 pt-2 md:pt-0">
+                                  <div className="flex items-center gap-1.5 border-l border-slate-150 pl-4">
                                     <div className="space-y-0.5">
-                                      <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Time In</span>
+                                      <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">In</span>
                                       <input
                                         type="time"
                                         value={inTime}
@@ -5718,7 +5674,7 @@ export default function StoreManager({
                                     </div>
                                     <span className="text-slate-300 text-xs font-bold pt-3">→</span>
                                     <div className="space-y-0.5">
-                                      <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Time Out</span>
+                                      <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Out</span>
                                       <input
                                         type="time"
                                         value={outTime}
@@ -5729,252 +5685,11 @@ export default function StoreManager({
                                   </div>
                                 )}
                               </div>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Panel: Biometric Hardware Console */}
-                  <div className="lg:col-span-5 flex flex-col items-center justify-start space-y-6">
-                    <div className="w-full bg-slate-900 text-slate-100 rounded-3xl border border-slate-800 p-6 flex flex-col items-center justify-center text-center relative overflow-hidden shadow-xl min-h-[380px]">
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent pointer-events-none"></div>
-                      <div className="absolute top-4 right-4 h-2.5 w-2.5 bg-emerald-500 rounded-full animate-ping"></div>
-                      <div className="absolute top-4 right-4 h-2.5 w-2.5 bg-emerald-500 rounded-full"></div>
-
-                      <span className="text-[9px] font-extrabold uppercase tracking-widest text-emerald-400 bg-emerald-950/80 border border-emerald-800/60 px-3 py-1 rounded-full mb-6">
-                        Biometric Scanner Interface v4.8
-                      </span>
-
-                      {biometricStaffId ? (
-                        (() => {
-                          const activeMember = staff.find(s => s.id === biometricStaffId);
-                          return (
-                            <div className="w-full space-y-6 animate-fade-in">
-                              <div className="space-y-1">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Currently Registering:</span>
-                                <h5 className="text-base font-black text-white">{activeMember?.name}</h5>
-                                <span className="text-[11px] font-semibold text-emerald-400">{activeMember?.role}</span>
-                              </div>
-
-                              <div className="relative h-44 w-44 mx-auto rounded-full bg-slate-950 border-2 border-emerald-500/30 flex items-center justify-center shadow-[inset_0_0_20px_rgba(16,185,129,0.15)] overflow-hidden">
-                                {biometricScanState === 'scanning' && (
-                                  <div 
-                                    className="absolute left-0 right-0 h-1 bg-emerald-400 shadow-[0_0_12px_#34d399] z-10 animate-pulse"
-                                    style={{
-                                      top: `${biometricScanProgress}%`,
-                                      transition: 'top 0.2s linear'
-                                    }}
-                                  />
-                                )}
-
-                                {biometricScanState === 'scanning' && (
-                                  <div className="absolute inset-4 rounded-full border border-emerald-500/10 animate-ping duration-1000"></div>
-                                )}
-
-                                <svg 
-                                  xmlns="http://www.w3.org/2000/svg" 
-                                  viewBox="0 0 24 24" 
-                                  fill="none" 
-                                  stroke="currentColor" 
-                                  strokeWidth="1.2" 
-                                  strokeLinecap="round" 
-                                  strokeLinejoin="round" 
-                                  className={`h-24 w-24 transition-all duration-300 ${
-                                    biometricScanState === 'scanning'
-                                      ? 'text-emerald-400 scale-105 filter drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]'
-                                      : biometricScanState === 'success'
-                                      ? 'text-emerald-500 scale-110 filter drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]'
-                                      : 'text-slate-700'
-                                  }`}
-                                >
-                                  <path d="M12 10a2 2 0 0 0-2 2" />
-                                  <path d="M14 14a4 4 0 0 0-4-4" />
-                                  <path d="M8 10a6 6 0 0 1 12 0v2a2 2 0 0 1-2 2" />
-                                  <path d="M12 2a10 10 0 0 1 10 10V14a6 6 0 0 1-12 0V12a4 4 0 0 1 8 0" />
-                                  <path d="M6 12a8 8 0 0 1 16 0V14" />
-                                  <path d="M12 22V20" />
-                                  <path d="M12 18V16" />
-                                  <path d="M16 22V18" />
-                                  <path d="M8 22V18" />
-                                </svg>
-
-                                {biometricScanState === 'success' && (
-                                  <div className="absolute inset-0 bg-emerald-950/85 flex items-center justify-center animate-in zoom-in-75 duration-300">
-                                    <CheckCircle2 className="h-16 w-16 text-emerald-400" />
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-xs font-mono font-extrabold text-slate-400">
-                                  <span>PROGRESS SCAN:</span>
-                                  <span className="text-emerald-400">{biometricScanProgress}%</span>
-                                </div>
-                                <div className="w-full bg-slate-850 h-2 rounded-full overflow-hidden border border-slate-800">
-                                  <div 
-                                    className="bg-emerald-500 h-full transition-all duration-200"
-                                    style={{ width: `${biometricScanProgress}%` }}
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="bg-black/45 border border-slate-800 rounded-xl p-3.5 text-left font-mono text-[10px] space-y-1 text-slate-400 min-h-16">
-                                <div className="text-emerald-500 font-extrabold flex items-center gap-1">
-                                  <span className="animate-pulse">●</span> CORE STATUS LOG:
-                                </div>
-                                <div className="text-white leading-relaxed">{biometricMessage}</div>
-                              </div>
                             </div>
                           );
-                        })()
-                      ) : (
-                        <div className="space-y-6 max-w-xs mx-auto animate-fade-in">
-                          <div className="h-28 w-28 mx-auto rounded-3xl bg-slate-950 border border-slate-800 flex items-center justify-center shadow-inner relative group animate-pulse">
-                            <div className="absolute inset-0 bg-emerald-500/5 rounded-3xl group-hover:bg-emerald-500/10 transition-all duration-300"></div>
-                            <Fingerprint className="h-14 w-14 text-slate-700 group-hover:text-emerald-600/70 transition-all duration-300" />
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <h5 className="text-sm font-extrabold text-white">Biometric Verification Portal</h5>
-                            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                              Select an active staff employee on the left roster to initiate biometric check-in.
-                            </p>
-                          </div>
-
-                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-850 rounded-xl text-[10px] text-slate-400 font-mono">
-                            <span>SYS_STATUS:</span>
-                            <span className="text-emerald-500 font-extrabold">SECURE_IDLE</span>
-                          </div>
-                        </div>
-                      )}
+                        });
+                      })()}
                     </div>
-                  </div>
-                </div>
-
-                {/* Section: Other Stores' Staff (Read-Only) */}
-                <div className="pt-8 border-t border-slate-200 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
-                      <Users className="h-4 w-4 text-indigo-500" />
-                      Other Stores' Staff (Read-Only Directory)
-                    </h4>
-                    <span className="text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-700 font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wider">
-                      Cross-Branch Views
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {(() => {
-                      const otherStaff = staff.filter(s => s.assignedStoreId !== store.id && s.isActive);
-                      if (otherStaff.length === 0) {
-                        return (
-                          <div className="col-span-full py-6 text-center text-slate-400 text-xs font-semibold bg-slate-50 border border-slate-100 rounded-2xl">
-                            No other active staff found in other store branches.
-                          </div>
-                        );
-                      }
-
-                      return otherStaff.map((member) => {
-                        const record = attendance.find(r => r.staffId === member.id && r.date === attendanceDate);
-                        const status = record?.status || 'Absent';
-                        const inTime = record?.timeIn || '09:00';
-                        const outTime = record?.timeOut || '18:00';
-                        const assignedStore = stores.find(st => st.id === member.assignedStoreId);
-                        const storeName = assignedStore ? assignedStore.name : 'Other Branch';
-                        
-                        const punchState = getStaffPunchState(record);
-
-                        return (
-                          <div 
-                            key={member.id} 
-                            className="bg-slate-50/50 border border-slate-200/65 rounded-2xl p-4 flex flex-col justify-between hover:border-slate-300 transition-all text-left relative group"
-                          >
-                            <div className="space-y-3.5">
-                              {/* Header: Name, Role, Store */}
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="h-9 w-9 rounded-full bg-slate-200 border border-slate-350 flex items-center justify-center font-black text-xs text-slate-600">
-                                    {member.name.charAt(0).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <h5 className="font-extrabold text-sm text-slate-800 leading-snug">{member.name}</h5>
-                                    <span className="text-[10px] text-slate-500 font-bold">{member.role}</span>
-                                  </div>
-                                </div>
-                                <span className="text-[8px] font-black uppercase tracking-wider bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-slate-400">
-                                  🔒 View-Only
-                                </span>
-                              </div>
-
-                              {/* Details Section */}
-                              <div className="space-y-2 text-xs pt-1 border-t border-slate-150/50">
-                                <div className="flex items-center gap-1.5 text-slate-500">
-                                  <span className="text-sm">📍</span>
-                                  <span className="font-bold text-slate-700">{storeName}</span>
-                                </div>
-                                {member.phone && (
-                                  <div className="flex items-center gap-1.5 text-slate-500">
-                                    <span>📞</span>
-                                    <span>{member.phone}</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Status Display */}
-                              <div className="pt-2 border-t border-slate-150/50 flex flex-wrap items-center justify-between gap-2">
-                                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">Attendance:</span>
-                                <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
-                                  status === 'Present'
-                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                    : status === 'Leave'
-                                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                    : 'bg-rose-50 text-rose-700 border border-rose-100'
-                                }`}>
-                                  {status}
-                                </span>
-                              </div>
-
-                              {/* Punches or times details */}
-                              {status === 'Present' && (
-                                <div className="bg-white/80 border border-slate-200/40 rounded-xl p-2.5 space-y-1.5">
-                                  <div className="flex items-center justify-between text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">
-                                    <span>Punch Sessions:</span>
-                                    <span className="text-emerald-600">✓ Active</span>
-                                  </div>
-                                  {punchState.punches && punchState.punches.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1">
-                                      {punchState.punches.map((p, idx) => (
-                                        <span 
-                                          key={p.id || idx} 
-                                          className={`text-[9px] font-bold font-mono px-1.5 py-0.5 rounded ${
-                                            p.type === 'In' 
-                                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                                              : 'bg-slate-100 text-slate-600 border border-slate-200'
-                                          }`}
-                                        >
-                                          {p.type}: {p.time}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-[10px] font-mono font-bold text-slate-600">
-                                      {inTime} → {outTime}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            
-                            {/* Disabled/Explanation info for managers */}
-                            <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-center text-[10px] text-slate-400 italic font-medium">
-                              Respected store manager must perform attendance
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()}
                   </div>
                 </div>
               </div>
