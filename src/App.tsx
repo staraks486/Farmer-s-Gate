@@ -144,7 +144,7 @@ export default function App() {
       setAdminLoggingIn(false);
     }
   };
-  const [showIntro, setShowIntro] = useState(false);
+  const [showIntro, setShowIntro] = useState(true);
   const [progress, setProgress] = useState(0);
   const [statusIndex, setStatusIndex] = useState(0);
 
@@ -460,7 +460,7 @@ export default function App() {
                       : 'text-slate-300 hover:bg-emerald-900'
                   }`}
                 >
-                  <Briefcase className="h-3 w-3" /> 🏢 Management Suite
+                  <Briefcase className="h-3 w-3" /> 🏢 HQ Operations Hub
                 </button>
               )}
               
@@ -756,7 +756,7 @@ export default function App() {
                   <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-950 border border-emerald-500/20 mb-2">
                     <Briefcase className="h-6 w-6 text-emerald-400" />
                   </div>
-                  <h2 className="text-lg font-black uppercase tracking-wider text-white">Management Suite</h2>
+                  <h2 className="text-lg font-black uppercase tracking-wider text-white">HQ Operations Hub</h2>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">
                     Restricted Access • Corporate Credentials Required
                   </p>
