@@ -264,7 +264,8 @@ export default function HeadOffice({
     { name: "Koramangala Store", lat: 12.9279, lng: 77.6271, color: "bg-purple-50 border-purple-200 text-purple-700" },
     { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824, color: "bg-amber-50 border-amber-200 text-amber-700" },
     { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806, color: "bg-orange-50 border-orange-200 text-orange-700" },
-    { name: "Hebbal Store", lat: 13.0354, lng: 77.5988, color: "bg-rose-50 border-rose-200 text-rose-700" }
+    { name: "Hebbal Store", lat: 13.0354, lng: 77.5988, color: "bg-rose-50 border-rose-200 text-rose-700" },
+    { name: "Patiala Store", lat: 30.3398, lng: 76.3869, color: "bg-emerald-50 border-emerald-200 text-emerald-700" }
   ];
 
   const fetchRealGps = () => {

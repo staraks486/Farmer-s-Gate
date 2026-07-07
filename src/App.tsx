@@ -101,7 +101,8 @@ export default function App() {
               { name: "Koramangala Store", lat: 12.9279, lng: 77.6271 },
               { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824 },
               { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806 },
-              { name: "Hebbal Store", lat: 13.0354, lng: 77.5988 }
+              { name: "Hebbal Store", lat: 13.0354, lng: 77.5988 },
+              { name: "Patiala Store", lat: 30.3398, lng: 76.3869 }
             ];
 
             const radius = settings.allowedLocalRadiusKm || 10;
@@ -148,7 +149,8 @@ export default function App() {
           { name: "Koramangala Store", lat: 12.9279, lng: 77.6271 },
           { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824 },
           { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806 },
-          { name: "Hebbal Store", lat: 13.0354, lng: 77.5988 }
+          { name: "Hebbal Store", lat: 13.0354, lng: 77.5988 },
+          { name: "Patiala Store", lat: 30.3398, lng: 76.3869 }
         ];
 
         const radius = settings.allowedLocalRadiusKm || 10;
@@ -519,7 +521,6 @@ export default function App() {
               transition={{ delay: 0.1, duration: 0.5 }}
               className="mb-8 flex flex-col items-center"
             >
-              <FarmersGateLogo variant="monogram" className="scale-125 mb-4 shadow-[0_0_15px_rgba(16,185,129,0.3)] rounded-full" />
               <FarmersGateLogo variant="light" className="scale-125 my-2" />
               <p className="text-[9px] font-black uppercase tracking-[0.25em] text-emerald-400 mt-4">
                 Enterprise Retail & Supply Ecosystem

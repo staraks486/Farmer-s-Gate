@@ -134,6 +134,22 @@ const INDIAN_CITIES_MAP_CONFIGS: CityConfig[] = [
       { name: 'Gariahat South Market Crossing', lat: 22.5200, lng: 88.3700 },
       { name: 'Howrah Bridge Terminus', lat: 22.5850, lng: 88.3400 }
     ]
+  },
+  {
+    name: 'Patiala',
+    code: 'PAT',
+    icon: '🌾',
+    latMin: 30.2500,
+    latMax: 30.4500,
+    lngMin: 76.2500,
+    lngMax: 76.4500,
+    landmarks: [
+      { name: 'Bhupindra Road Mall', lat: 30.3398, lng: 76.3869 },
+      { name: 'Qila Mubarak Fort', lat: 30.3292, lng: 76.4014 },
+      { name: 'Dukh Niwan Sahib Gurudwara', lat: 30.3444, lng: 76.3861 },
+      { name: 'Patiala Railway Station', lat: 30.3350, lng: 76.3980 },
+      { name: 'Thapar Institute Campus', lat: 30.3564, lng: 76.3647 }
+    ]
   }
 ];
 

@@ -2154,7 +2154,8 @@ export default function AdminPanel({
                   { name: 'Bengaluru Hub', details: { headOfficeName: 'FarmersGate South HQ - Bangalore Hub', headOfficeLocation: '100 Feet Rd, Indiranagar, Bengaluru, Karnataka 560038', headOfficeLat: 12.9716, headOfficeLng: 77.5946, activeCity: 'Bengaluru' } },
                   { name: 'Mumbai Hub', details: { headOfficeName: 'FarmersGate West HQ - Bandra Hub', headOfficeLocation: 'Linking Road, Bandra West, Mumbai, Maharashtra 400050', headOfficeLat: 19.0596, headOfficeLng: 72.8295, activeCity: 'Mumbai' } },
                   { name: 'Delhi Hub', details: { headOfficeName: 'FarmersGate North HQ - Connaught Hub', headOfficeLocation: 'Connaught Circle, New Delhi, Delhi 110001', headOfficeLat: 28.6304, headOfficeLng: 77.2177, activeCity: 'New Delhi' } },
-                  { name: 'Hyderabad Hub', details: { headOfficeName: 'FarmersGate Central Deccan HQ - HITEC Hub', headOfficeLocation: 'Road No 36, Jubilee Hills, Hyderabad, Telangana 500081', headOfficeLat: 17.4483, headOfficeLng: 78.3741, activeCity: 'Hyderabad' } }
+                  { name: 'Hyderabad Hub', details: { headOfficeName: 'FarmersGate Central Deccan HQ - HITEC Hub', headOfficeLocation: 'Road No 36, Jubilee Hills, Hyderabad, Telangana 500081', headOfficeLat: 17.4483, headOfficeLng: 78.3741, activeCity: 'Hyderabad' } },
+                  { name: 'Patiala Hub', details: { headOfficeName: 'FarmersGate Punjab HQ - Patiala Hub', headOfficeLocation: 'Bhupindra Road, Patiala, Punjab 147001', headOfficeLat: 30.3398, headOfficeLng: 76.3869, activeCity: 'Patiala' } }
                 ].map((preset) => (
                   <button
                     key={preset.name}
