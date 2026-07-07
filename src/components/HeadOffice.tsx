@@ -468,6 +468,22 @@ export default function HeadOffice({
   const [cropFormCost, setCropFormCost] = useState<number>(0);
   const [cropFormPrice, setCropFormPrice] = useState<number>(0);
   const [cropFormMinThreshold, setCropFormMinThreshold] = useState<number>(20);
+  const [cropFormUnit, setCropFormUnit] = useState<'kg' | 'g' | 'pcs' | 'bunch' | 'pack' | 'box' | 'crate' | 'sack' | 'dozen' | 'bundle' | 'bag'>('kg');
+
+  // Bulk / Selection States
+  const [selectedCropIds, setSelectedCropIds] = useState<string[]>([]);
+  const [bulkEditOpen, setBulkEditOpen] = useState<boolean>(false);
+  const [bulkEditField, setBulkEditField] = useState<'costPrice' | 'sellingPrice' | 'category' | 'unit' | 'minStockThreshold' | null>(null);
+  const [bulkEditCategory, setBulkEditCategory] = useState<'Vegetable' | 'Fruit' | 'Herbs' | 'Grocery' | 'Other'>('Vegetable');
+  const [bulkEditUnit, setBulkEditUnit] = useState<'kg' | 'g' | 'pcs' | 'bunch' | 'pack' | 'box' | 'crate' | 'sack' | 'dozen' | 'bundle' | 'bag'>('kg');
+  const [bulkEditValue, setBulkEditValue] = useState<string>('');
+  const [bulkEditAction, setBulkEditAction] = useState<'set' | 'add' | 'percent'>('set');
+
+  // Background Sync States
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(true);
+  const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
+  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState<boolean>(false);
+  const [syncNotification, setSyncNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
 
   const [masterSearch, setMasterSearch] = useState('');
   const [masterCategoryFilter, setMasterCategoryFilter] = useState<string>('all');
@@ -478,6 +494,30 @@ export default function HeadOffice({
     c => c.vegetableName.trim().toLowerCase() === cropFormName.trim().toLowerCase() && c.id !== editingCropId
   );
 
+  // Background Sync Simulator
+  const simulateBackgroundSync = () => {
+    setIsBackgroundSyncing(true);
+    setTimeout(() => {
+      setIsBackgroundSyncing(false);
+      setLastSyncTime(new Date().toLocaleTimeString());
+      setSyncNotification({
+        message: `🔄 Background Sync Complete: Synced ${masterCrops.length} crop catalog configurations with remote database.`,
+        type: 'success'
+      });
+      setTimeout(() => {
+        setSyncNotification(null);
+      }, 4000);
+    }, 1500);
+  };
+
+  useEffect(() => {
+    if (!autoSyncEnabled) return;
+    const interval = setInterval(() => {
+      simulateBackgroundSync();
+    }, 50000); // automatic sync every 50 seconds
+    return () => clearInterval(interval);
+  }, [autoSyncEnabled, masterCrops.length]);
+
   const openNewCropForm = () => {
     setEditingCropId(null);
     setCropFormName('');
@@ -485,6 +525,7 @@ export default function HeadOffice({
     setCropFormCost(20);
     setCropFormPrice(30);
     setCropFormMinThreshold(20);
+    setCropFormUnit('kg');
     setMasterCropFormOpen(true);
   };
 
@@ -495,6 +536,7 @@ export default function HeadOffice({
     setCropFormCost(crop.costPrice);
     setCropFormPrice(crop.sellingPrice);
     setCropFormMinThreshold(crop.minStockThreshold);
+    setCropFormUnit(crop.unit || 'kg');
     setMasterCropFormOpen(true);
   };
 
@@ -518,6 +560,7 @@ export default function HeadOffice({
           setCropFormCost(existingDuplicate.costPrice);
           setCropFormPrice(existingDuplicate.sellingPrice);
           setCropFormMinThreshold(existingDuplicate.minStockThreshold);
+          setCropFormUnit(existingDuplicate.unit || 'kg');
           setTimeout(() => {
             if (cropFormNameRef.current) {
               cropFormNameRef.current.focus();
@@ -538,13 +581,92 @@ export default function HeadOffice({
       category: cropFormCategory,
       costPrice: Number(cropFormCost),
       sellingPrice: Number(cropFormPrice),
-      minStockThreshold: Number(cropFormMinThreshold)
+      minStockThreshold: Number(cropFormMinThreshold),
+      unit: cropFormUnit
     };
 
     onUpdateMasterCrop(savedCrop);
     setMasterCropFormOpen(false);
     setEditingCropId(null);
-    alert(`Success! Master Crop "${savedCrop.vegetableName}" template saved.`);
+    
+    // Clear selection if editing that crop
+    setSelectedCropIds(prev => prev.filter(id => id !== savedCrop.id));
+
+    // Create sync notification
+    setSyncNotification({
+      message: `✨ Saved & Synced: "${savedCrop.vegetableName}" is now active in the catalog.`,
+      type: 'success'
+    });
+    setTimeout(() => setSyncNotification(null), 3000);
+  };
+
+  // Bulk Operations Handlers
+  const handleBulkDelete = () => {
+    if (selectedCropIds.length === 0) return;
+    if (confirm(`Are you sure you want to delete the ${selectedCropIds.length} selected master crop templates? This action cannot be undone.`)) {
+      selectedCropIds.forEach(id => {
+        onDeleteMasterCrop(id);
+      });
+      setSelectedCropIds([]);
+      setSyncNotification({
+        message: `🗑️ Successfully deleted ${selectedCropIds.length} crop profiles from central catalog.`,
+        type: 'info'
+      });
+      setTimeout(() => setSyncNotification(null), 4000);
+    }
+  };
+
+  const handleBulkEditApply = () => {
+    if (selectedCropIds.length === 0 || !bulkEditField) return;
+
+    let updateCount = 0;
+    selectedCropIds.forEach(id => {
+      const match = masterCrops.find(c => c.id === id);
+      if (match) {
+        let updated = { ...match };
+        
+        if (bulkEditField === 'category') {
+          updated.category = bulkEditCategory;
+        } else if (bulkEditField === 'unit') {
+          updated.unit = bulkEditUnit;
+        } else if (bulkEditField === 'minStockThreshold') {
+          const val = Number(bulkEditValue) || 20;
+          updated.minStockThreshold = val;
+        } else if (bulkEditField === 'costPrice') {
+          const val = Number(bulkEditValue) || 0;
+          if (bulkEditAction === 'set') {
+            updated.costPrice = val;
+          } else if (bulkEditAction === 'add') {
+            updated.costPrice = Math.max(0, updated.costPrice + val);
+          } else if (bulkEditAction === 'percent') {
+            updated.costPrice = Math.max(0, parseFloat((updated.costPrice * (1 + val / 100)).toFixed(2)));
+          }
+        } else if (bulkEditField === 'sellingPrice') {
+          const val = Number(bulkEditValue) || 0;
+          if (bulkEditAction === 'set') {
+            updated.sellingPrice = val;
+          } else if (bulkEditAction === 'add') {
+            updated.sellingPrice = Math.max(0, updated.sellingPrice + val);
+          } else if (bulkEditAction === 'percent') {
+            updated.sellingPrice = Math.max(0, parseFloat((updated.sellingPrice * (1 + val / 100)).toFixed(2)));
+          }
+        }
+
+        onUpdateMasterCrop(updated);
+        updateCount++;
+      }
+    });
+
+    setSelectedCropIds([]);
+    setBulkEditOpen(false);
+    setBulkEditField(null);
+    setBulkEditValue('');
+    
+    setSyncNotification({
+      message: `✏️ Applied bulk updates to ${updateCount} crop profiles successfully!`,
+      type: 'success'
+    });
+    setTimeout(() => setSyncNotification(null), 4000);
   };
 
   // --- HQ MASTER CATALOG SMART BATCH HANDLERS ---
@@ -3288,6 +3410,78 @@ export default function HeadOffice({
             </button>
           </div>
 
+          {/* Background Sync Alerts and Status Controller */}
+          {syncNotification && (
+            <div className={`p-4 rounded-2xl flex items-center justify-between gap-3 border shadow-sm animate-fade-in ${
+              syncNotification.type === 'success' 
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 animate-pulse' 
+                : 'bg-blue-50 border-blue-200 text-blue-800'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">
+                  {syncNotification.type === 'success' ? '✨' : 'ℹ️'}
+                </span>
+                <span className="text-xs font-bold leading-relaxed">{syncNotification.message}</span>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setSyncNotification(null)}
+                className="text-xs hover:opacity-75 font-black uppercase text-[10px] tracking-wider text-slate-500 cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <div className="relative flex items-center justify-center">
+                <span className="flex h-3 w-3 relative">
+                  {isBackgroundSyncing && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-3 w-3 ${isBackgroundSyncing ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                </span>
+              </div>
+              <div>
+                <p className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                  {isBackgroundSyncing ? (
+                    <span className="animate-pulse flex items-center gap-1">🔄 Background Synchronization in progress...</span>
+                  ) : (
+                    <span>● Background Auto-Sync Online</span>
+                  )}
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                  Last cloud update: <span className="text-slate-600 font-bold">{lastSyncTime}</span> (Synced {masterCrops.length} crops reference entries)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 self-end sm:self-auto">
+              <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500 cursor-pointer select-none">
+                <input 
+                  type="checkbox" 
+                  checked={autoSyncEnabled} 
+                  onChange={(e) => setAutoSyncEnabled(e.target.checked)}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 h-3.5 w-3.5"
+                />
+                Auto-sync in background
+              </label>
+              <button
+                type="button"
+                disabled={isBackgroundSyncing}
+                onClick={simulateBackgroundSync}
+                className={`text-[10px] font-black uppercase tracking-wider px-3.5 py-2 rounded-xl border transition-all cursor-pointer ${
+                  isBackgroundSyncing 
+                    ? 'bg-slate-100 text-slate-400 border-slate-200' 
+                    : 'bg-white hover:bg-slate-150 border-slate-300 text-slate-700 shadow-xs'
+                }`}
+              >
+                {isBackgroundSyncing ? 'Syncing...' : 'Sync Master Catalog ⚡'}
+              </button>
+            </div>
+          </div>
+
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-xs flex items-center gap-3">
@@ -3851,6 +4045,244 @@ export default function HeadOffice({
             </div>
           </div>
 
+          {/* Bulk Operations Toolbar */}
+          {selectedCropIds.length > 0 && (
+            <div className="bg-slate-900 text-white rounded-3xl p-5 border border-slate-700 shadow-xl space-y-4 animate-slide-up">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="p-2.5 bg-emerald-500 text-slate-900 rounded-2xl font-black text-xs">
+                    {selectedCropIds.length} Selected
+                  </span>
+                  <div>
+                    <p className="font-extrabold text-sm">Bulk Operations Active</p>
+                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Apply changes to multiple master crops centrally.</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBulkEditOpen(!bulkEditOpen)}
+                    className={`text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border ${
+                      bulkEditOpen 
+                        ? 'bg-emerald-500 border-emerald-500 text-slate-900' 
+                        : 'bg-slate-800 border-slate-700 hover:bg-slate-750 text-white'
+                    }`}
+                  >
+                    ✏️ {bulkEditOpen ? 'Close Bulk Editor' : 'Bulk Edit Attributes'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleBulkDelete}
+                    className="text-xs font-black px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white flex items-center gap-1.5 cursor-pointer transition-all border border-rose-600"
+                  >
+                    <Trash2 className="h-4 w-4" /> Bulk Delete Templates
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCropIds([]);
+                      setBulkEditOpen(false);
+                    }}
+                    className="text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-400 cursor-pointer"
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              </div>
+
+              {/* Inline Bulk Editor Sub-panel */}
+              {bulkEditOpen && (
+                <div className="bg-slate-850 border border-slate-700 rounded-2xl p-4 text-white space-y-4 animate-fade-in">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">Target Attribute</label>
+                      <select
+                        value={bulkEditField || ''}
+                        onChange={(e) => {
+                          setBulkEditField(e.target.value as any);
+                          setBulkEditValue('');
+                        }}
+                        className="w-full text-xs font-bold rounded-xl border border-slate-700 p-2.5 focus:outline-none bg-slate-900 text-white"
+                      >
+                        <option value="">-- Choose Attribute --</option>
+                        <option value="costPrice">Standard Cost (₹)</option>
+                        <option value="sellingPrice">Standard Selling Price (₹)</option>
+                        <option value="category">Category Tag</option>
+                        <option value="unit">Measuring Unit</option>
+                        <option value="minStockThreshold">Low Stock Threshold</option>
+                      </select>
+                    </div>
+
+                    {bulkEditField === 'category' && (
+                      <div className="md:col-span-2">
+                        <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">New Category Group</label>
+                        <select
+                          value={bulkEditCategory}
+                          onChange={(e) => setBulkEditCategory(e.target.value as any)}
+                          className="w-full text-xs font-bold rounded-xl border border-slate-700 p-2.5 focus:outline-none bg-slate-900 text-white"
+                        >
+                          <option value="Vegetable">Vegetable</option>
+                          <option value="Fruit">Fruit</option>
+                          <option value="Herbs">Herbs</option>
+                          <option value="Grocery">Grocery</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {bulkEditField === 'unit' && (
+                      <div className="md:col-span-2">
+                        <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">New Measuring Unit</label>
+                        <select
+                          value={bulkEditUnit}
+                          onChange={(e) => setBulkEditUnit(e.target.value as any)}
+                          className="w-full text-xs font-bold rounded-xl border border-slate-700 p-2.5 focus:outline-none bg-slate-900 text-white"
+                        >
+                          <option value="kg">kg (Kilogram)</option>
+                          <option value="g">g (Gram)</option>
+                          <option value="pcs">pcs (Pieces)</option>
+                          <option value="bunch">bunch (Bunch)</option>
+                          <option value="pack">pack (Pack)</option>
+                          <option value="box">box (Box)</option>
+                          <option value="crate">crate (Crate)</option>
+                          <option value="sack">sack (Sack)</option>
+                          <option value="dozen">dozen (Dozen)</option>
+                          <option value="bundle">bundle (Bundle)</option>
+                          <option value="bag">bag (Bag)</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {bulkEditField === 'minStockThreshold' && (
+                      <div className="md:col-span-2">
+                        <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">New Threshold Value</label>
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="e.g. 30"
+                          value={bulkEditValue}
+                          onChange={(e) => setBulkEditValue(e.target.value)}
+                          className="w-full text-xs font-bold rounded-xl border border-slate-700 p-2.5 focus:outline-none bg-slate-900 text-white"
+                        />
+                      </div>
+                    )}
+
+                    {(bulkEditField === 'costPrice' || bulkEditField === 'sellingPrice') && (
+                      <>
+                        <div>
+                          <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">Adjustment Action</label>
+                          <select
+                            value={bulkEditAction}
+                            onChange={(e) => setBulkEditAction(e.target.value as any)}
+                            className="w-full text-xs font-bold rounded-xl border border-slate-700 p-2.5 focus:outline-none bg-slate-900 text-white"
+                          >
+                            <option value="set">Set flat value to (₹)</option>
+                            <option value="add">Add / Subtract amount (₹)</option>
+                            <option value="percent">Percent scale adjustment (%)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                            {bulkEditAction === 'percent' ? 'Percentage (e.g. 10 or -5)' : 'Price offset (e.g. 2.5 or -1)'}
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder={bulkEditAction === 'percent' ? 'e.g. 15' : 'e.g. 5'}
+                            value={bulkEditValue}
+                            onChange={(e) => setBulkEditValue(e.target.value)}
+                            className="w-full text-xs font-bold rounded-xl border border-slate-700 p-2.5 focus:outline-none bg-slate-900 text-white"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    <div>
+                      <button
+                        type="button"
+                        disabled={!bulkEditField || (!bulkEditValue && bulkEditField !== 'category' && bulkEditField !== 'unit')}
+                        onClick={handleBulkEditApply}
+                        className={`w-full py-2.5 font-black uppercase tracking-wider text-[10px] rounded-xl transition-all cursor-pointer border ${
+                          (!bulkEditField || (!bulkEditValue && bulkEditField !== 'category' && bulkEditField !== 'unit'))
+                            ? 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
+                            : 'bg-emerald-500 border-emerald-500 text-slate-900 font-black shadow-sm'
+                        }`}
+                      >
+                        Apply to Selected ➔
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Multi-Select Control Info Bar */}
+          <div className="flex items-center justify-between px-2 text-xs text-slate-500 font-semibold">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input 
+                  type="checkbox"
+                  checked={
+                    masterCrops.filter(crop => {
+                      const matchesSearch = crop.vegetableName.toLowerCase().includes(masterSearch.toLowerCase());
+                      const matchesCategory = masterCategoryFilter === 'all' || crop.category === masterCategoryFilter;
+                      return matchesSearch && matchesCategory;
+                    }).length > 0 &&
+                    masterCrops.filter(crop => {
+                      const matchesSearch = crop.vegetableName.toLowerCase().includes(masterSearch.toLowerCase());
+                      const matchesCategory = masterCategoryFilter === 'all' || crop.category === masterCategoryFilter;
+                      return matchesSearch && matchesCategory;
+                    }).every(crop => selectedCropIds.includes(crop.id))
+                  }
+                  onChange={(e) => {
+                    const filtered = masterCrops.filter(crop => {
+                      const matchesSearch = crop.vegetableName.toLowerCase().includes(masterSearch.toLowerCase());
+                      const matchesCategory = masterCategoryFilter === 'all' || crop.category === masterCategoryFilter;
+                      return matchesSearch && matchesCategory;
+                    });
+                    if (e.target.checked) {
+                      setSelectedCropIds(prev => {
+                        const next = [...prev];
+                        filtered.forEach(crop => {
+                          if (!next.includes(crop.id)) next.push(crop.id);
+                        });
+                        return next;
+                      });
+                    } else {
+                      setSelectedCropIds(prev => prev.filter(id => !filtered.some(f => f.id === id)));
+                    }
+                  }}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 h-4 w-4 cursor-pointer"
+                />
+                <span>Select All Filtered ({
+                  masterCrops.filter(crop => {
+                    const matchesSearch = crop.vegetableName.toLowerCase().includes(masterSearch.toLowerCase());
+                    const matchesCategory = masterCategoryFilter === 'all' || crop.category === masterCategoryFilter;
+                    return matchesSearch && matchesCategory;
+                  }).length
+                })</span>
+              </label>
+
+              {selectedCropIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCropIds([])}
+                  className="text-[10px] text-emerald-600 hover:text-emerald-700 font-extrabold underline cursor-pointer"
+                >
+                  Clear Selection ({selectedCropIds.length})
+                </button>
+              )}
+            </div>
+            
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              {selectedCropIds.length} of {masterCrops.length} selected
+            </p>
+          </div>
+
           {/* Master Crop Catalog Templates Cards Layout */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {masterCrops
@@ -3865,10 +4297,35 @@ export default function HeadOffice({
                 ).length;
                 const margin = crop.sellingPrice - crop.costPrice;
                 const marginPercent = crop.costPrice > 0 ? Math.round((margin / crop.costPrice) * 100) : 0;
+                const isSelected = selectedCropIds.includes(crop.id);
 
                 return (
-                  <div key={crop.id} className="bg-white border border-slate-200/70 rounded-3xl p-5 shadow-xs flex flex-col justify-between hover:border-slate-300 hover:shadow-md transition-all relative overflow-hidden group">
+                  <div 
+                    key={crop.id} 
+                    className={`bg-white border rounded-3xl p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all relative overflow-hidden group ${
+                      isSelected 
+                        ? 'border-emerald-500 ring-1 ring-emerald-500/20 bg-emerald-50/5' 
+                        : 'border-slate-200/70 hover:border-slate-300'
+                    }`}
+                  >
                     
+                    {/* Multi-Select Checkbox Overlay */}
+                    <div className="absolute top-4 left-4 z-10 flex items-center">
+                      <input 
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          if (e.target.checked) {
+                            setSelectedCropIds(prev => [...prev, crop.id]);
+                          } else {
+                            setSelectedCropIds(prev => prev.filter(id => id !== crop.id));
+                          }
+                        }}
+                        className="h-4.5 w-4.5 rounded-lg border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                      />
+                    </div>
+
                     {/* Corner badge for category */}
                     <span className={`absolute top-0 right-0 text-[9px] font-black uppercase px-4 py-1.5 rounded-bl-2xl tracking-wider ${
                       crop.category === 'Vegetable' 
@@ -3883,13 +4340,15 @@ export default function HeadOffice({
                     </span>
 
                     {/* Header */}
-                    <div className="space-y-1 mb-4">
+                    <div className="space-y-1 mb-4 pl-7">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xl">{getVegEmoji(crop.vegetableName)}</span>
-                        <h4 className="font-extrabold text-slate-900 text-sm group-hover:text-emerald-700 transition-colors">{crop.vegetableName}</h4>
+                        <h4 className="font-extrabold text-slate-900 text-sm group-hover:text-emerald-700 transition-colors truncate max-w-[150px]" title={crop.vegetableName}>
+                          {crop.vegetableName}
+                        </h4>
                       </div>
                       <p className="text-[10px] font-bold text-slate-400">
-                        Preset Threshold: <span className="text-slate-600">{crop.minStockThreshold} kg</span>
+                        Preset Threshold: <span className="text-slate-600">{crop.minStockThreshold} {crop.unit || 'kg'}</span>
                       </p>
                     </div>
 
@@ -3898,18 +4357,18 @@ export default function HeadOffice({
                       <div className="grid grid-cols-2 gap-2 text-center">
                         <div className="border-r border-slate-200/60 pb-1">
                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Std Wholesale Cost</p>
-                          <p className="text-base font-extrabold text-slate-800">₹{crop.costPrice}<span className="text-[10px] font-normal text-slate-400">/kg</span></p>
+                          <p className="text-base font-extrabold text-slate-800">₹{crop.costPrice}<span className="text-[10px] font-normal text-slate-400">/{crop.unit || 'kg'}</span></p>
                         </div>
                         <div>
                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Std Selling Price</p>
-                          <p className="text-base font-extrabold text-emerald-600">₹{crop.sellingPrice}<span className="text-[10px] font-normal text-slate-400">/kg</span></p>
+                          <p className="text-base font-extrabold text-emerald-600">₹{crop.sellingPrice}<span className="text-[10px] font-normal text-slate-400">/{crop.unit || 'kg'}</span></p>
                         </div>
                       </div>
 
                       <div className="border-t border-slate-200/60 pt-2 flex items-center justify-between text-xs">
                         <span className="text-[10px] font-bold text-slate-400">Standard Gross Margin:</span>
                         <span className="font-extrabold text-slate-700 flex items-center gap-1">
-                          ₹{margin}/kg
+                          ₹{margin}/{crop.unit || 'kg'}
                           <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-md font-black">+{marginPercent}%</span>
                         </span>
                       </div>

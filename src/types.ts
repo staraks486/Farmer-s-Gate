@@ -180,6 +180,7 @@ export interface MasterCrop {
   sellingPrice: number;
   category: 'Vegetable' | 'Fruit' | 'Herbs' | 'Grocery' | 'Other';
   minStockThreshold: number;
+  unit?: 'kg' | 'g' | 'pcs' | 'bunch' | 'pack' | 'box' | 'crate' | 'sack' | 'dozen' | 'bundle' | 'bag';
 }
 
 export interface AppNotification {
