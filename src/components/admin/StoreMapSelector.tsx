@@ -84,6 +84,56 @@ const INDIAN_CITIES_MAP_CONFIGS: CityConfig[] = [
       { name: 'Begumpet Airport Zone', lat: 17.4400, lng: 78.4600 },
       { name: 'Charminar Heritage Plaza', lat: 17.3616, lng: 78.4747 }
     ]
+  },
+  {
+    name: 'Chennai',
+    code: 'MAA',
+    icon: '☕',
+    latMin: 12.9000,
+    latMax: 13.1500,
+    lngMin: 80.1500,
+    lngMax: 80.3000,
+    landmarks: [
+      { name: 'T. Nagar Usman Road', lat: 13.0405, lng: 80.2337 },
+      { name: 'Adyar Besant Nagar Beach', lat: 13.0003, lng: 80.2667 },
+      { name: 'Nungambakkam High Road', lat: 13.0600, lng: 80.2400 },
+      { name: 'Velachery Phoenix Mall', lat: 12.9900, lng: 80.2200 },
+      { name: 'Anna Nagar West Depot', lat: 13.0850, lng: 80.2100 },
+      { name: 'Mylapore Kapaleeshwarar Temple', lat: 13.0333, lng: 80.2700 }
+    ]
+  },
+  {
+    name: 'Pune',
+    code: 'PNQ',
+    icon: '⛰️',
+    latMin: 18.4500,
+    latMax: 18.6500,
+    lngMin: 73.7500,
+    lngMax: 73.9500,
+    landmarks: [
+      { name: 'Koregaon Park North Main Rd', lat: 18.5362, lng: 73.8930 },
+      { name: 'Kalyani Nagar Jogger\'s Park', lat: 18.5460, lng: 73.9050 },
+      { name: 'Kothrud Ideal Colony', lat: 18.5080, lng: 73.8150 },
+      { name: 'Hinjawadi Phase 1 InfoTech', lat: 18.5900, lng: 73.7400 },
+      { name: 'Shivaji Nagar FC Road', lat: 18.5200, lng: 73.8400 },
+      { name: 'Viman Nagar Symbiosis campus', lat: 18.5650, lng: 73.9120 }
+    ]
+  },
+  {
+    name: 'Kolkata',
+    code: 'CCU',
+    icon: '🌉',
+    latMin: 22.4500,
+    latMax: 22.6500,
+    lngMin: 88.3000,
+    lngMax: 88.4800,
+    landmarks: [
+      { name: 'Salt Lake Sector V Central', lat: 22.5726, lng: 88.4339 },
+      { name: 'Park Street Main Avenue', lat: 22.5485, lng: 88.3530 },
+      { name: 'New Town Eco Park Entrance', lat: 22.6000, lng: 88.4700 },
+      { name: 'Gariahat South Market Crossing', lat: 22.5200, lng: 88.3700 },
+      { name: 'Howrah Bridge Terminus', lat: 22.5850, lng: 88.3400 }
+    ]
   }
 ];
 
@@ -97,12 +147,51 @@ interface StoreMapSelectorProps {
 export default function StoreMapSelector({ lat, lng, location, onChangeLocation }: StoreMapSelectorProps) {
   const [activeCityIndex, setActiveCityIndex] = useState(0);
   const [searchAreaQuery, setSearchAreaQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ name: string; cityName: string; cityIndex: number; lat: number; lng: number; isCustom?: boolean }>>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hoverCoordinates, setHoverCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const activeCity = INDIAN_CITIES_MAP_CONFIGS[activeCityIndex];
+
+  // Real-time suggestions / coordinate search
+  useEffect(() => {
+    if (!searchAreaQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const query = searchAreaQuery.toLowerCase();
+    const matches: Array<{ name: string; cityName: string; cityIndex: number; lat: number; lng: number; isCustom?: boolean }> = [];
+    
+    INDIAN_CITIES_MAP_CONFIGS.forEach((city, cityIndex) => {
+      // Check city name match
+      if (city.name.toLowerCase().includes(query)) {
+        matches.push({
+          name: `FarmersGate Main Hub`,
+          cityName: city.name,
+          cityIndex,
+          lat: parseFloat(((city.latMin + city.latMax) / 2).toFixed(5)),
+          lng: parseFloat(((city.lngMin + city.lngMax) / 2).toFixed(5))
+        });
+      }
+
+      // Check landmark match
+      city.landmarks.forEach(lm => {
+        if (lm.name.toLowerCase().includes(query) || city.name.toLowerCase().includes(query)) {
+          matches.push({
+            name: lm.name,
+            cityName: city.name,
+            cityIndex,
+            lat: lm.lat,
+            lng: lm.lng
+          });
+        }
+      });
+    });
+
+    setSearchResults(matches.slice(0, 8));
+  }, [searchAreaQuery]);
 
   // Sync active city index if incoming lat/lng matches another city's bounding box
   useEffect(() => {
@@ -217,75 +306,51 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
     setTimeout(() => {
       const query = searchAreaQuery.toLowerCase();
       
-      // 1. Search existing Indian cities & landmarks dictionary
-      let matchedLandmark: { name: string; lat: number; lng: number } | null = null;
-      let matchedCityIndex = -1;
-
-      for (let i = 0; i < INDIAN_CITIES_MAP_CONFIGS.length; i++) {
-        const city = INDIAN_CITIES_MAP_CONFIGS[i];
-        
-        // Check city name match
-        if (query.includes(city.name.toLowerCase())) {
-          matchedCityIndex = i;
-        }
-
-        // Check landmark match
-        const lm = city.landmarks.find(l => 
-          l.name.toLowerCase().includes(query) || 
-          query.includes(l.name.toLowerCase().split(' ')[0])
-        );
-
-        if (lm) {
-          matchedLandmark = lm;
-          matchedCityIndex = i;
-          break;
-        }
+      // 1. Check if we already have static matched results
+      if (searchResults.length > 0) {
+        const topResult = searchResults[0];
+        handleSelectSearchResult(topResult);
+        setIsSearching(false);
+        return;
       }
 
-      if (matchedCityIndex !== -1) {
-        setActiveCityIndex(matchedCityIndex);
-        const city = INDIAN_CITIES_MAP_CONFIGS[matchedCityIndex];
-        
-        const finalLat = matchedLandmark ? matchedLandmark.lat : (city.latMin + city.latMax) / 2;
-        const finalLng = matchedLandmark ? matchedLandmark.lng : (city.lngMin + city.lngMax) / 2;
-        const finalName = matchedLandmark 
-          ? `Farmer's Gate Hub, Near ${matchedLandmark.name}, ${city.name}, India`
-          : `Farmer's Gate Regional Center, ${searchAreaQuery}, ${city.name}, India`;
-
-        onChangeLocation({
-          lat: parseFloat(finalLat.toFixed(5)),
-          lng: parseFloat(finalLng.toFixed(5)),
-          location: finalName
-        });
-        setSearchAreaQuery('');
-      } else {
-        // 2. Generate deterministic coordinates within the currently active city bounds
-        const city = activeCity;
-        let hash = 0;
-        for (let i = 0; i < searchAreaQuery.length; i++) {
-          hash = searchAreaQuery.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        
-        const latRange = city.latMax - city.latMin;
-        const lngRange = city.lngMax - city.lngMin;
-        
-        const latOffset = Math.abs((hash % 100) / 100) * latRange;
-        const lngOffset = Math.abs(((hash >> 3) % 100) / 100) * lngRange;
-
-        const generatedLat = city.latMin + latOffset;
-        const generatedLng = city.lngMin + lngOffset;
-        const generatedAddress = `${searchAreaQuery} District, near ${city.landmarks[Math.abs(hash) % city.landmarks.length].name}, ${city.name}, India`;
-
-        onChangeLocation({
-          lat: parseFloat(generatedLat.toFixed(5)),
-          lng: parseFloat(generatedLng.toFixed(5)),
-          location: generatedAddress
-        });
-        setSearchAreaQuery('');
+      // 2. Generate deterministic coordinates within the currently active city bounds
+      const city = activeCity;
+      let hash = 0;
+      for (let i = 0; i < searchAreaQuery.length; i++) {
+        hash = searchAreaQuery.charCodeAt(i) + ((hash << 5) - hash);
       }
+      
+      const latRange = city.latMax - city.latMin;
+      const lngRange = city.lngMax - city.lngMin;
+      
+      const latOffset = Math.abs((hash % 100) / 100) * latRange;
+      const lngOffset = Math.abs(((hash >> 3) % 100) / 100) * lngRange;
 
+      const generatedLat = city.latMin + latOffset;
+      const generatedLng = city.lngMin + lngOffset;
+      const generatedAddress = `${searchAreaQuery}, near ${city.landmarks[Math.abs(hash) % city.landmarks.length].name}, ${city.name}, India`;
+
+      onChangeLocation({
+        lat: parseFloat(generatedLat.toFixed(5)),
+        lng: parseFloat(generatedLng.toFixed(5)),
+        location: generatedAddress
+      });
+      setSearchAreaQuery('');
+      setSearchResults([]);
       setIsSearching(false);
-    }, 1200);
+    }, 800);
+  };
+
+  const handleSelectSearchResult = (result: { name: string; cityName: string; cityIndex: number; lat: number; lng: number }) => {
+    setActiveCityIndex(result.cityIndex);
+    onChangeLocation({
+      lat: result.lat,
+      lng: result.lng,
+      location: `${result.name}, ${result.cityName}, India`
+    });
+    setSearchAreaQuery('');
+    setSearchResults([]);
   };
 
   const pointerPos = getPointerPosition();
@@ -320,6 +385,35 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
               }}
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950 py-2.5 pl-10 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium text-white placeholder-zinc-500"
             />
+            {searchResults.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1.5 bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl z-50 divide-y divide-zinc-850 max-h-60 overflow-y-auto animate-fade-in">
+                <div className="px-3 py-1.5 bg-zinc-900 text-[10px] font-black uppercase text-zinc-500 flex justify-between items-center">
+                  <span>🗺️ Coordinates found by Location Name</span>
+                  <span className="text-[9px] text-emerald-400">Click to pin coordinates</span>
+                </div>
+                {searchResults.map((res, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSelectSearchResult(res)}
+                    className="w-full text-left px-3 py-2.5 hover:bg-zinc-900/90 transition text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 cursor-pointer group"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-zinc-200 group-hover:text-emerald-400 transition">
+                        📍 {res.name}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 font-medium uppercase">
+                        {res.cityName}, India
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400 bg-zinc-900 px-2 py-1 rounded border border-zinc-850 shrink-0 font-extrabold shadow-sm">
+                      <span className="text-[8px] text-zinc-500 font-sans font-black uppercase">Lat/Lng:</span>
+                      {res.lat.toFixed(4)}, {res.lng.toFixed(4)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <button
             type="button"
