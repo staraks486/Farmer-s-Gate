@@ -3809,7 +3809,7 @@ export default function StoreManager({
           <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm space-y-4 h-fit">
             <div>
               <h3 className="font-bold text-zinc-900">Record Crop Purchase (Restock)</h3>
-              <p className="text-xs text-zinc-400">Adds quantity directly to stock levels and updates cost price.</p>
+              <p className="text-xs text-zinc-400">Adds quantity directly to stock levels and logs procurement records.</p>
             </div>
 
             <form onSubmit={handleLogPurchaseSubmit} className="space-y-3.5">
