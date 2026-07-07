@@ -1,6 +1,7 @@
 import React from 'react';
 import { Store as StoreIcon, Settings, BarChart3, ChevronDown, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Store, SupabaseConfig } from '../types';
+import FarmersGateLogo from './FarmersGateLogo';
 
 interface HeaderProps {
   stores: Store[];
@@ -26,14 +27,12 @@ export default function Header({
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         
         {/* Left: Branding */}
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => onChangeView('dashboard')}>
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-200">
-            <StoreIcon className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight text-zinc-900">Farmer's Gate</h1>
-            <p className="text-[10px] font-medium tracking-wider uppercase text-emerald-600">Multi-Store Hub</p>
-          </div>
+        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => onChangeView('dashboard')}>
+          <FarmersGateLogo variant="header" className="transition-transform duration-200 group-hover:scale-[0.88]" />
+          <span className="h-6 w-px bg-zinc-200 hidden sm:inline-block"></span>
+          <span className="text-[10px] font-black tracking-widest uppercase text-emerald-600 hidden sm:inline-block bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100/60 shadow-3xs">
+            Multi-Store Hub
+          </span>
         </div>
 
         {/* Center: Navigation Options */}

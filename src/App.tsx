@@ -17,6 +17,8 @@ import CustomerHub from './components/CustomerHub';
 import PartnerPortal from './components/PartnerPortal';
 import ManagementSuite from './components/ManagementSuite';
 import ExecutivePortal from './components/ExecutivePortal';
+import FarmersGateLogo from './components/FarmersGateLogo';
+import InternalChatDrawer from './components/InternalChatDrawer';
 import { auth, seedProductsIfNeeded } from './lib/firebase';
 import { 
   onAuthStateChanged, 
@@ -347,23 +349,17 @@ export default function App() {
             </motion.div>
 
             {/* Title & Brand */}
-            <motion.h1 
-              className="text-3xl font-black tracking-[0.25em] text-white uppercase font-sans mb-1.5"
+            <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1, duration: 0.4 }}
+              transition={{ delay: 0.1, duration: 0.5 }}
+              className="mb-8"
             >
-              FARMERS<span className="text-emerald-400">GATE</span>
-            </motion.h1>
-            
-            <motion.p 
-              className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/70 mb-10"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.15, duration: 0.4 }}
-            >
-              Enterprise Retail & Supply Ecosystem
-            </motion.p>
+              <FarmersGateLogo variant="light" className="scale-125 my-2" />
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-emerald-400 mt-4">
+                Enterprise Retail & Supply Ecosystem
+              </p>
+            </motion.div>
 
             {/* Elegant Minimalist Line Preloader (No technical background logging/process metrics shown) */}
             <div className="w-48 px-2 mt-4 mb-8">
@@ -953,6 +949,9 @@ export default function App() {
           </div>
         </div>
       </footer>
+      
+      {/* Floating Internal Corporate Chat & File Sharing Network Widget */}
+      <InternalChatDrawer />
     </div>
   );
 }

@@ -52,6 +52,56 @@
         "linkToView": { "type": "string", "description": "Optional navigation hint" }
       },
       "required": ["type", "title", "message", "timestamp", "severity"]
+    },
+    "StockTransfer": {
+      "title": "StockTransfer",
+      "description": "Inventory transfer request between local store outlets",
+      "type": "object",
+      "properties": {
+        "challanId": { "type": "string" },
+        "senderStoreId": { "type": "string" },
+        "senderStoreName": { "type": "string" },
+        "receiverStoreId": { "type": "string" },
+        "receiverStoreName": { "type": "string" },
+        "itemName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "approxValue": { "type": "number" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "createdAt": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "receiveMessage": { "type": "string" }
+      },
+      "required": ["challanId", "senderStoreId", "senderStoreName", "receiverStoreId", "receiverStoreName", "itemName", "quantity", "approxValue", "status", "createdAt"]
+    },
+    "StockWaste": {
+      "title": "StockWaste",
+      "description": "Stock waste/spoilage reporting log",
+      "type": "object",
+      "properties": {
+        "storeId": { "type": "string" },
+        "storeName": { "type": "string" },
+        "itemName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "approxValue": { "type": "number" },
+        "reason": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["storeId", "storeName", "itemName", "quantity", "approxValue", "reason", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Internal chat room message with optional file uploads",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "fileData": { "type": "string" }
+      },
+      "required": ["senderId", "senderName", "message", "timestamp"]
     }
   },
   "firestore": {
@@ -66,6 +116,18 @@
     "notifications": {
       "schema": "AppNotification",
       "description": "Real-time global announcements and new crop dispatch notifications for branch outlets"
+    },
+    "transfers": {
+      "schema": "StockTransfer",
+      "description": "Inter-store inventory transfers"
+    },
+    "waste": {
+      "schema": "StockWaste",
+      "description": "Detailed log of crop spoilage/waste at various stores"
+    },
+    "internal_chat": {
+      "schema": "ChatMessage",
+      "description": "Real-time multi-store chat channels for internal staff communication"
     }
   }
 }

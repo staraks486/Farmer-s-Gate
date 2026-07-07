@@ -52,6 +52,7 @@ import { getVegEmoji, availableCoupons, initialReviews, CommunityReview } from '
 import RecipeGuide from './customer/RecipeGuide';
 import InteractiveMap from './customer/InteractiveMap';
 import ReviewsWall from './customer/ReviewsWall';
+import FarmersGateLogo from './FarmersGateLogo';
 
 export default function CustomerHub({ changePortal }: { changePortal?: (portal: 'customer' | 'partner' | 'management') => void }) {
   const [activeTab, setActiveTab] = useState<'shop' | 'track' | 'profile'>('shop');
@@ -762,13 +763,11 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
           
           {/* Left Block: Delivery Estimate & Location address */}
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-purple-600 flex items-center justify-center text-white text-lg shrink-0 shadow-xs animate-bounce-subtle">
-              ⚡
-            </div>
+            <FarmersGateLogo variant="monogram" className="shrink-0 scale-110 hover:scale-115 transition-transform duration-300" />
             <div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-lg font-black tracking-tight text-slate-900 uppercase">Express Delivery</span>
-                <span className="text-[8.5px] bg-purple-600 text-white font-black uppercase px-2 py-0.5 rounded-full tracking-wider">
+                <span className="text-[8.5px] bg-purple-600 text-white font-black uppercase px-2 py-0.5 rounded-full tracking-wider animate-pulse">
                   FASTEST
                 </span>
               </div>
@@ -1961,9 +1960,9 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
                 </div>
               ) : (
                 <>
-                  <div className="text-center space-y-1.5">
-                    <span className="text-4xl block">🔐</span>
-                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-tight">FarmersGate Account Portal</h3>
+                  <div className="text-center space-y-2">
+                    <FarmersGateLogo className="mb-2 scale-105" />
+                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-tight">Shopper Account Portal</h3>
                     <p className="text-[10.5px] text-slate-400 font-bold uppercase">
                       {authMode === 'login' ? 'Sign in to access your digital wallet' : 'Create a fresh shopper account'}
                     </p>

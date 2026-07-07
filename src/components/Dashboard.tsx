@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, 
   ShoppingBag, 
@@ -15,6 +15,25 @@ import {
 } from 'lucide-react';
 import { Store, Sale, Purchase, InventoryItem, TerminalActivityLog, AppNotification } from '../types';
 import { FirebaseOrder } from '../lib/firebase';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer, 
+  PieChart, 
+  Pie, 
+  Cell 
+} from 'recharts';
+import { 
+  subscribeToTransfers, 
+  subscribeToWaste, 
+  StockTransfer, 
+  StockWaste 
+} from '../lib/farmersGateDb';
 
 interface DashboardProps {
   stores: Store[];
@@ -42,7 +61,18 @@ export default function Dashboard({
   firebaseNotifications = []
 }: DashboardProps) {
   const [selectedFilterStore, setSelectedFilterStore] = useState<string>('all');
+  const [transfers, setTransfers] = useState<StockTransfer[]>([]);
+  const [wasteLogs, setWasteLogs] = useState<StockWaste[]>([]);
   const isEmployee = role === 'Employee';
+
+  useEffect(() => {
+    const unsubTransfers = subscribeToTransfers((data) => setTransfers(data));
+    const unsubWaste = subscribeToWaste((data) => setWasteLogs(data));
+    return () => {
+      unsubTransfers();
+      unsubWaste();
+    };
+  }, []);
 
   // Filter values based on selected store for metrics
   const filteredSales = selectedFilterStore === 'all' 
@@ -66,6 +96,37 @@ export default function Dashboard({
   const outOfStockItems = filteredInventory.filter(item => item.quantity === 0);
 
   const activeStores = stores.filter(s => s.isActive);
+
+  // Compile graphical multi-branch comparisons
+  const storeComparisonData = activeStores.map(store => {
+    // 1. Sales
+    const storeSales = sales
+      .filter(s => s.storeId === store.id)
+      .reduce((sum, s) => sum + s.totalPrice, 0);
+
+    // 2. Procurements
+    const storePurchases = purchases
+      .filter(p => p.storeId === store.id)
+      .reduce((sum, p) => sum + p.totalCost, 0);
+
+    // 3. Waste Spoilage Loss
+    const storeWasteLoss = wasteLogs
+      .filter(w => w.storeId === store.id)
+      .reduce((sum, w) => sum + w.approxValue, 0);
+
+    // 4. Outgoing & Incoming Transfers Count
+    const outgoingTransfers = transfers.filter(t => t.senderStoreId === store.id && t.status === 'Approved').length;
+    const incomingTransfers = transfers.filter(t => t.receiverStoreId === store.id && t.status === 'Approved').length;
+
+    return {
+      name: store.name.replace("Farmer's Gate - ", ""),
+      sales: storeSales,
+      procurements: storePurchases,
+      wasteLoss: storeWasteLoss,
+      outgoingTransfers,
+      incomingTransfers,
+    };
+  });
 
   return (
     <div className="space-y-6 animate-fade-in text-slate-900">
@@ -292,7 +353,87 @@ export default function Dashboard({
         </div>
       </div>
 
-      {/* 4. REAL-TIME ACTIVITY FEED & SECURE TERMINAL AUDIT LOGS */}
+      {/* 4. CONSOLIDATED ANALYTICS GRAPHICAL CHARTS */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+              <span>📊</span>
+              FarmersGate Multi-Branch Performance & Logistics Comparison
+            </h3>
+            <p className="text-[11px] text-slate-500 font-bold">Real-time graphic visualizations of revenue, inventory loss, and logistics transfers.</p>
+          </div>
+          <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
+            Real-time charts
+          </span>
+        </div>
+
+        {/* Recharts Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Chart 1: Revenue vs Cost */}
+          <div className="bg-slate-50/50 p-4 border border-slate-100 rounded-xl space-y-3">
+            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <span>💰</span> Sales vs Procurement Cost
+            </h4>
+            <div className="h-60 w-full text-xs font-semibold">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={storeComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" stroke="#64748b" fontSize={9} fontWeight="bold" />
+                  <YAxis stroke="#64748b" fontSize={9} fontWeight="bold" />
+                  <Tooltip formatter={(value) => `₹${value.toLocaleString()}`} />
+                  <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                  <Bar dataKey="sales" name="Sales Revenue" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="procurements" name="Procurement" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Chart 2: Spoilage / Waste Loss */}
+          <div className="bg-slate-50/50 p-4 border border-slate-100 rounded-xl space-y-3">
+            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🗑️</span> Waste/Spoilage Loss Value
+            </h4>
+            <div className="h-60 w-full text-xs font-semibold">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={storeComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" stroke="#64748b" fontSize={9} fontWeight="bold" />
+                  <YAxis stroke="#64748b" fontSize={9} fontWeight="bold" />
+                  <Tooltip formatter={(value) => `₹${value.toLocaleString()}`} />
+                  <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                  <Bar dataKey="wasteLoss" name="Spoilage Loss (₹)" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Chart 3: Stock Transfers count */}
+          <div className="bg-slate-50/50 p-4 border border-slate-100 rounded-xl space-y-3">
+            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🚚</span> Logistics Transfers (Out vs In)
+            </h4>
+            <div className="h-60 w-full text-xs font-semibold">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={storeComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" stroke="#64748b" fontSize={9} fontWeight="bold" />
+                  <YAxis stroke="#64748b" fontSize={9} fontWeight="bold" />
+                  <Tooltip formatter={(value) => `${value} transfers`} />
+                  <Legend wrapperStyle={{ fontSize: 9, fontWeight: 'bold' }} />
+                  <Bar dataKey="outgoingTransfers" name="Sent Out" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="incomingTransfers" name="Received In" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* 5. REAL-TIME ACTIVITY FEED & SECURE TERMINAL AUDIT LOGS */}
       {role === 'Admin' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           

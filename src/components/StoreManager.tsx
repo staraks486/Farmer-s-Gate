@@ -42,6 +42,8 @@ import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, Cpane
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
 import { subscribeToNotifications } from '../lib/firebase';
 import { QrScanner } from './QrScanner';
+import StockTransferTab from './StockTransferTab';
+import StockWasteTab from './StockWasteTab';
 
 interface StoreManagerProps {
   store: Store;
@@ -181,7 +183,7 @@ export default function StoreManager({
   cpanelSettings
 }: StoreManagerProps) {
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
-  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report'>('sale');
+  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report' | 'stock-transfer' | 'stock-waste'>('sale');
   
   // Store Expenses states
   const [localExpenses, setLocalExpenses] = useState<AccountEntry[]>([]);
@@ -2478,6 +2480,34 @@ export default function StoreManager({
         >
           <span>📊</span>
           Daily Report & Cash
+        </button>
+
+        {/* Stock Transfer Tab */}
+        <button
+          id="tab-stock-transfer"
+          onClick={() => setActiveSubTab('stock-transfer')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+            activeSubTab === 'stock-transfer'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <span>🚚</span>
+          Stock Transfer
+        </button>
+
+        {/* Stock Waste Tab */}
+        <button
+          id="tab-stock-waste"
+          onClick={() => setActiveSubTab('stock-waste')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+            activeSubTab === 'stock-waste'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <span>🗑️</span>
+          Stock Waste
         </button>
       </div>
 
@@ -7860,6 +7890,31 @@ export default function StoreManager({
           </div>
         );
       })()}
+
+      {/* --- SUB-TAB CONTENT: STOCK TRANSFER --- */}
+      {activeSubTab === 'stock-transfer' && (
+        <div className="bg-white border border-slate-100 p-6 rounded-2xl shadow-3xs animate-fade-in">
+          <StockTransferTab
+            store={store}
+            stores={stores}
+            inventory={inventory}
+            onUpdateInventoryItem={onUpdateInventoryItem}
+            currencySymbol={currencySymbol}
+          />
+        </div>
+      )}
+
+      {/* --- SUB-TAB CONTENT: STOCK WASTE --- */}
+      {activeSubTab === 'stock-waste' && (
+        <div className="bg-white border border-slate-100 p-6 rounded-2xl shadow-3xs animate-fade-in">
+          <StockWasteTab
+            store={store}
+            inventory={inventory}
+            onUpdateInventoryItem={onUpdateInventoryItem}
+            currencySymbol={currencySymbol}
+          />
+        </div>
+      )}
 
       {/* --- QUICK ADD BOTTOM SHEET FOR MOBILE --- */}
       {isQuickAddOpen && (

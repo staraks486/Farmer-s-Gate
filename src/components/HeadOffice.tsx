@@ -2335,20 +2335,25 @@ export default function HeadOffice({
                                     box-shadow: 0 4px 12px rgba(0,0,0,0.05);
                                   }
                                   .logo {
-                                    font-size: 20px;
-                                    font-weight: 900;
-                                    text-transform: uppercase;
-                                    letter-spacing: 2px;
-                                    color: ${qrFgColor};
-                                    margin-bottom: 5px;
+                                    font-family: 'Satisfy', 'Dancing Script', 'Brush Script MT', cursive;
+                                    font-size: 32px;
+                                    color: #15803d;
+                                    margin-bottom: 2px;
+                                    text-transform: none;
+                                    letter-spacing: normal;
                                   }
                                   .sublogo {
-                                    font-size: 8px;
-                                    font-weight: 700;
+                                    font-family: 'Plus Jakarta Sans', sans-serif;
+                                    font-size: 11px;
+                                    font-weight: 900;
                                     text-transform: uppercase;
-                                    letter-spacing: 3px;
-                                    color: #64748b;
-                                    margin-bottom: 25px;
+                                    letter-spacing: 4px;
+                                    color: #0f172a;
+                                    border-top: 1.2px solid #16a34a;
+                                    border-bottom: 1.2px solid #16a34a;
+                                    padding: 3px 0;
+                                    max-width: 140px;
+                                    margin: 0 auto 25px auto;
                                   }
                                   .badge {
                                     background: ${qrFgColor}15;
@@ -2381,11 +2386,12 @@ export default function HeadOffice({
                                     margin: 0 auto;
                                   }
                                 </style>
+                                <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&family=Satisfy&display=swap" rel="stylesheet">
                               </head>
                               <body>
                                 <div class="ticket-card">
-                                  <div class="logo">Farmers<span style="color: #10b981">Gate</span></div>
-                                  <div class="sublogo">Enterprise Retail Ecosystem</div>
+                                  <div class="logo">Farmer's</div>
+                                  <div class="sublogo">GATE</div>
                                   <div class="badge">${cat.emoji} ${cat.label}</div>
                                   <img class="qr-img" src="${dataUrl}" />
                                   <div class="footer-text">SCAN FOR LIVE HARVEST</div>
