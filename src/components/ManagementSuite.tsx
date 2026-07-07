@@ -118,7 +118,12 @@ const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   introSpeedSeconds: 4,
   enableLocalAccessRestriction: false,
   allowedLocalRadiusKm: 10,
-  simulatedLocalOnly: false
+  simulatedLocalOnly: false,
+  headOfficeName: 'Bangalore Corporate HQ',
+  headOfficeLocation: 'FarmersGate Corporate HQ, Sector 1, Bangalore',
+  headOfficeLat: 12.9716,
+  headOfficeLng: 77.5946,
+  activeCity: 'Bengaluru'
 };
 
 export default function ManagementSuite({ user, isStorePosPortal }: { user: any; isStorePosPortal?: boolean }) {

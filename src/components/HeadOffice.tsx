@@ -252,7 +252,12 @@ export default function HeadOffice({
   };
 
   const sandboxLocations = [
-    { name: "Bangalore Corporate HQ", lat: 12.9716, lng: 77.5946, color: "bg-blue-50 border-blue-200 text-blue-700" },
+    { 
+      name: sandboxCpanelSettings.headOfficeName || "Bangalore Corporate HQ", 
+      lat: Number(sandboxCpanelSettings.headOfficeLat) || 12.9716, 
+      lng: Number(sandboxCpanelSettings.headOfficeLng) || 77.5946, 
+      color: "bg-blue-50 border-blue-200 text-blue-700" 
+    },
     { name: "Whitefield Store", lat: 12.9698, lng: 77.7500, color: "bg-teal-50 border-teal-200 text-teal-700" },
     { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412, color: "bg-indigo-50 border-indigo-200 text-indigo-700" },
     { name: "Koramangala Store", lat: 12.9279, lng: 77.6271, color: "bg-purple-50 border-purple-200 text-purple-700" },

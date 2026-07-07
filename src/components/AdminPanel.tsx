@@ -2000,6 +2000,104 @@ export default function AdminPanel({
 
           </div>
 
+          {/* 🇮🇳 Indian Market Head Office Coordinates & Regional Center Selector */}
+          <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-sm text-left space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-zinc-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-700 font-extrabold text-lg">
+                  🇮🇳
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-zinc-900 tracking-tight">Indian Market Head Office & Regional Coordination</h3>
+                  <p className="text-xs text-zinc-500">Configure central coordinates, address, and dispatch hub locations for the sub-continent.</p>
+                </div>
+              </div>
+
+              {/* Fast presets selection */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Fast Presets:</span>
+                {[
+                  { name: 'Bengaluru Hub', details: { headOfficeName: 'FarmersGate South HQ - Bangalore Hub', headOfficeLocation: '100 Feet Rd, Indiranagar, Bengaluru, Karnataka 560038', headOfficeLat: 12.9716, headOfficeLng: 77.5946, activeCity: 'Bengaluru' } },
+                  { name: 'Mumbai Hub', details: { headOfficeName: 'FarmersGate West HQ - Bandra Hub', headOfficeLocation: 'Linking Road, Bandra West, Mumbai, Maharashtra 400050', headOfficeLat: 19.0596, headOfficeLng: 72.8295, activeCity: 'Mumbai' } },
+                  { name: 'Delhi Hub', details: { headOfficeName: 'FarmersGate North HQ - Connaught Hub', headOfficeLocation: 'Connaught Circle, New Delhi, Delhi 110001', headOfficeLat: 28.6304, headOfficeLng: 77.2177, activeCity: 'New Delhi' } },
+                  { name: 'Hyderabad Hub', details: { headOfficeName: 'FarmersGate Central Deccan HQ - HITEC Hub', headOfficeLocation: 'Road No 36, Jubilee Hills, Hyderabad, Telangana 500081', headOfficeLat: 17.4483, headOfficeLng: 78.3741, activeCity: 'Hyderabad' } }
+                ].map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => onUpdateCpanelSettings({
+                      ...cpanelSettings,
+                      ...preset.details
+                    })}
+                    className="px-2.5 py-1.5 bg-zinc-50 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl text-[10px] font-extrabold text-zinc-600 transition border border-zinc-150 cursor-pointer"
+                  >
+                    🎯 {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              {/* Head Office Name input */}
+              <div className="space-y-1.5 text-left">
+                <label className="block text-xs font-black text-zinc-500 uppercase tracking-wider">Head Office Name</label>
+                <input
+                  type="text"
+                  value={cpanelSettings.headOfficeName || ''}
+                  onChange={(e) => onUpdateCpanelSettings({ ...cpanelSettings, headOfficeName: e.target.value })}
+                  placeholder="e.g. FarmersGate Corporate HQ"
+                  className="w-full rounded-xl border border-zinc-250 p-3 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                />
+              </div>
+
+              {/* Head Office Location/Address input */}
+              <div className="space-y-1.5 text-left">
+                <label className="block text-xs font-black text-zinc-500 uppercase tracking-wider">Head Office Location / Address</label>
+                <input
+                  type="text"
+                  value={cpanelSettings.headOfficeLocation || ''}
+                  onChange={(e) => onUpdateCpanelSettings({ ...cpanelSettings, headOfficeLocation: e.target.value })}
+                  placeholder="e.g. Sector 1, Bangalore"
+                  className="w-full rounded-xl border border-zinc-250 p-3 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                />
+              </div>
+
+              {/* Head Office Latitude */}
+              <div className="space-y-1.5 text-left">
+                <label className="block text-xs font-black text-zinc-500 uppercase tracking-wider">Latitude Coordinate</label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={cpanelSettings.headOfficeLat ?? ''}
+                  onChange={(e) => onUpdateCpanelSettings({ ...cpanelSettings, headOfficeLat: parseFloat(e.target.value) || 0 })}
+                  placeholder="e.g. 12.9716"
+                  className="w-full rounded-xl border border-zinc-250 p-3 text-xs text-zinc-800 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                />
+              </div>
+
+              {/* Head Office Longitude */}
+              <div className="space-y-1.5 text-left">
+                <label className="block text-xs font-black text-zinc-500 uppercase tracking-wider">Longitude Coordinate</label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={cpanelSettings.headOfficeLng ?? ''}
+                  onChange={(e) => onUpdateCpanelSettings({ ...cpanelSettings, headOfficeLng: parseFloat(e.target.value) || 0 })}
+                  placeholder="e.g. 77.5946"
+                  className="w-full rounded-xl border border-zinc-250 p-3 text-xs text-zinc-800 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex items-start gap-2.5 text-xs text-emerald-800 leading-relaxed">
+              <span className="text-base leading-none">💡</span>
+              <p>
+                <strong>Indian Market Optimization:</strong> Setting these custom coordinates updates the Geofence center point dynamically.
+                Our shoppers and executive riders will automatically route dispatch orders relative to this Indian hub coordinates, ensuring correct distance estimations.
+              </p>
+            </div>
+          </div>
+
           {/* Diagnostics and Cache Maintenance Footer */}
           <div className="bg-zinc-50 rounded-2xl border border-zinc-200 p-5 shadow-xs text-left">
             <h4 className="text-sm font-extrabold text-zinc-800 mb-3 flex items-center gap-2">

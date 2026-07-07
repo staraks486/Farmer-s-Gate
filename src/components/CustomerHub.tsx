@@ -101,6 +101,30 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
   const [socialReviews, setSocialReviews] = useState<CommunityReview[]>(initialReviews);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
 
+  // Indian Cities & Market Regions Switcher
+  const [cityToastMsg, setCityToastMsg] = useState<string | null>(null);
+  const indianCitiesList = [
+    { name: 'Bengaluru', address: '100 Feet Rd, Indiranagar, Bengaluru, Karnataka 560038', code: 'BLR', icon: '🌳' },
+    { name: 'Mumbai', address: 'Linking Road, Bandra West, Mumbai, Maharashtra 400050', code: 'BOM', icon: '🌊' },
+    { name: 'New Delhi', address: 'Connaught Circle, Connaught Place, New Delhi, Delhi 110001', code: 'DEL', icon: '🏛️' },
+    { name: 'Hyderabad', address: 'Road No 36, Jubilee Hills, Hyderabad, Telangana 500081', code: 'HYD', icon: '🕌' },
+    { name: 'Chennai', address: 'Usman Road, T. Nagar, Chennai, Tamil Nadu 600017', code: 'MAA', icon: '🏝️' },
+    { name: 'Pune', address: 'North Main Road, Koregaon Park, Pune, Maharashtra 411001', code: 'PNQ', icon: '⛰️' },
+  ];
+
+  const handleSwitchCity = (city: { name: string; address: string; code: string; icon: string }) => {
+    setCustomAddress(city.address);
+    if (user) {
+      localStorage.setItem(`fg_address_${user.uid}`, city.address);
+    }
+    setAuthAddress(city.address);
+    
+    setCityToastMsg(`📍 Switched market region to ${city.name}! Express delivery routed through local ${city.name} dark store hub.`);
+    setTimeout(() => {
+      setCityToastMsg(null);
+    }, 4000);
+  };
+
   const handleAddReview = (newReview: CommunityReview) => {
     setSocialReviews(prev => [newReview, ...prev]);
   };
@@ -779,6 +803,29 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
                 📍 {customAddress || 'Green Meadows, Sector 4, Bangalore'} <span className="text-purple-600 font-extrabold text-[8.5px] group-hover:translate-y-0.5 transition-transform">▼ (Change Delivery Pin)</span>
               </button>
             </div>
+          </div>
+
+          {/* Indian City Quick Selector chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none max-w-full md:max-w-md bg-white/40 p-1 rounded-2xl border border-purple-150/30">
+            <span className="text-[9px] font-black uppercase text-purple-700 px-2 shrink-0">City Hub:</span>
+            {indianCitiesList.map((city) => {
+              const isSelected = customAddress && customAddress.toLowerCase().includes(city.name.toLowerCase());
+              return (
+                <button
+                  key={city.name}
+                  type="button"
+                  onClick={() => handleSwitchCity(city)}
+                  className={`px-2.5 py-1 rounded-xl text-[9px] font-extrabold uppercase shrink-0 transition flex items-center gap-1 cursor-pointer border ${
+                    isSelected
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                      : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200/60'
+                  }`}
+                >
+                  <span>{city.icon}</span>
+                  <span>{city.name}</span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Right Block: Instant Perspective Sub-brand Selector and user profile */}
@@ -2155,6 +2202,21 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
           </button>
         </div>
       )}
+
+      {/* 📍 Smooth floating Indian city-switch toast notification */}
+      <AnimatePresence>
+        {cityToastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white border border-slate-800 rounded-2xl px-5 py-3.5 shadow-xl flex items-center gap-2.5 max-w-sm w-[90%] text-xs font-semibold"
+          >
+            <span className="text-base">🚀</span>
+            <span className="flex-1 text-left leading-snug">{cityToastMsg}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Subtle testing utility footer (Not an official corporate public link) */}
       <div className="bg-slate-50 border-t border-slate-100 py-6 px-4 mt-12 shrink-0 text-center">

@@ -95,7 +95,7 @@ export default function App() {
             setIsCheckingGeo(false);
 
             const locations = [
-              { name: "Bangalore Corporate HQ", lat: 12.9716, lng: 77.5946 },
+              { name: settings.headOfficeName || "Bangalore Corporate HQ", lat: Number(settings.headOfficeLat) || 12.9716, lng: Number(settings.headOfficeLng) || 77.5946 },
               { name: "Whitefield Store", lat: 12.9698, lng: 77.7500 },
               { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412 },
               { name: "Koramangala Store", lat: 12.9279, lng: 77.6271 },
@@ -142,7 +142,7 @@ export default function App() {
 
         // Compute distance to branches
         const locations = [
-          { name: "Bangalore Corporate HQ", lat: 12.9716, lng: 77.5946 },
+          { name: settings.headOfficeName || "Bangalore Corporate HQ", lat: Number(settings.headOfficeLat) || 12.9716, lng: Number(settings.headOfficeLng) || 77.5946 },
           { name: "Whitefield Store", lat: 12.9698, lng: 77.7500 },
           { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412 },
           { name: "Koramangala Store", lat: 12.9279, lng: 77.6271 },

@@ -221,6 +221,11 @@ export interface CpanelSettings {
   enableLocalAccessRestriction?: boolean;
   allowedLocalRadiusKm?: number;
   simulatedLocalOnly?: boolean;
+  headOfficeName?: string;
+  headOfficeLocation?: string;
+  headOfficeLat?: number;
+  headOfficeLng?: number;
+  activeCity?: string;
 }
 
 export interface StorefrontAd {
