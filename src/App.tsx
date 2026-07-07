@@ -559,7 +559,7 @@ export default function App() {
                 <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">Arvind Kumar Shukla</span>
               </div>
               <div className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest">
-                System Version v2.1.5 • Secured with Firebase
+                System Version v2.2.0 • Secured with Firebase
               </div>
             </div>
           </div>
@@ -1168,7 +1168,7 @@ export default function App() {
 
           <div className="flex items-center gap-3 flex-wrap justify-center text-center">
             <span>Developer: <strong className="text-emerald-700 font-extrabold">Arvind Kumar Shukla</strong></span>
-            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono text-[9px]">v2.1.5</span>
+            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono text-[9px]">v2.2.0</span>
             <span>© 2026 FarmersGate Tech Inc • Powered by Firebase</span>
           </div>
         </div>

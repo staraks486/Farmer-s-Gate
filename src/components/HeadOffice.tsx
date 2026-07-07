@@ -3,6 +3,7 @@ import { Store, Requirement, InventoryItem, Sale, UserRole, ConsolidatedRequirem
 import { FirebaseOrder, updateOrderStatusInFirestore, addNotificationToFirestore } from '../lib/firebase';
 import QRCode from 'qrcode';
 import { QrScanner } from './QrScanner';
+import GeofenceD3Map from './admin/GeofenceD3Map';
 import { 
   Building2, 
   TrendingUp, 
@@ -5709,6 +5710,14 @@ export default function HeadOffice({
                   </p>
                 </div>
               </div>
+
+              {/* D3 Map Geofence Visualization */}
+              <GeofenceD3Map
+                userLat={!sandboxEnabled ? (currentLat || 12.9716) : (sandboxMode === 'manual' ? sandboxManualLat : sandboxPresetLat)}
+                userLng={!sandboxEnabled ? (currentLng || 77.5946) : (sandboxMode === 'manual' ? sandboxManualLng : sandboxPresetLng)}
+                stores={sandboxLocations}
+                radiusKm={sandboxCpanelSettings.allowedLocalRadiusKm || 10}
+              />
 
               {/* Stores Proximity Table */}
               <div className="overflow-x-auto">
