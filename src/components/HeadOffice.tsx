@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Store, Requirement, InventoryItem, Sale, UserRole, ConsolidatedRequirement, MasterCrop, AppNotification } from '../types';
 import { FirebaseOrder, updateOrderStatusInFirestore, addNotificationToFirestore } from '../lib/firebase';
 import QRCode from 'qrcode';
+import { QrScanner } from './QrScanner';
 import { 
   Building2, 
   TrendingUp, 
@@ -38,7 +39,13 @@ import {
   Link,
   Printer,
   Eye,
-  Sparkles
+  Sparkles,
+  Image,
+  UploadCloud,
+  FileSpreadsheet,
+  Clipboard,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
 interface HeadOfficeProps {
@@ -173,6 +180,35 @@ export default function HeadOffice({
     setEditingItemId(null);
   };
 
+  // --- HQ SMART BATCH STOCK OPERATIONS STATE ---
+  const [smartOpsTab, setSmartOpsTab] = useState<'image' | 'scanner' | 'sheet' | 'paste' | null>(null);
+  const [opsTargetStoreId, setOpsTargetStoreId] = useState<string>('');
+  const [opsUpdateMode, setOpsUpdateMode] = useState<'add' | 'overwrite'>('add');
+  const [opsSuccessMsg, setOpsSuccessMsg] = useState<string>('');
+  
+  // 1. Image Upload (Gemini AI)
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const [imageAnalysisError, setImageAnalysisError] = useState<string | null>(null);
+  const [analyzedItems, setAnalyzedItems] = useState<Array<{ cropName: string; quantity: number; costPrice?: number; sellingPrice?: number; checked: boolean }>>([]);
+  const [dragActive, setDragActive] = useState(false);
+
+  // 2. Camera QR/Barcode Scanner
+  const [isOpsScannerOpen, setIsOpsScannerOpen] = useState(false);
+  const [scannedCrop, setScannedCrop] = useState<string>('');
+  const [scannedQty, setScannedQty] = useState<number>(0);
+  const [scannedCost, setScannedCost] = useState<number>(0);
+  const [scannedPrice, setScannedPrice] = useState<number>(0);
+  const [scannedError, setScannedError] = useState<string>('');
+  const [scannedSuccessMsg, setScannedSuccessMsg] = useState<string>('');
+
+  // 3. Google Sheet Paste
+  const [sheetText, setSheetText] = useState<string>('');
+  const [sheetParsedItems, setSheetParsedItems] = useState<Array<{ cropName: string; quantity: number; costPrice?: number; sellingPrice?: number; isValid: boolean; error?: string }>>([]);
+
+  // 4. Bulk Text Paste
+  const [bulkText, setBulkText] = useState<string>('');
+  const [bulkParsedItems, setBulkParsedItems] = useState<Array<{ cropName: string; quantity: number; costPrice?: number; sellingPrice?: number; isValid: boolean; error?: string }>>([]);
+
   // Master Catalog States
   const [masterCropFormOpen, setMasterCropFormOpen] = useState(false);
   const [editingCropId, setEditingCropId] = useState<string | null>(null);
@@ -283,6 +319,313 @@ export default function HeadOffice({
     if (n.includes('garlic') || n.includes('lahsun')) return '🧄';
     if (n.includes('ginger') || n.includes('adrak')) return '🫚';
     return '🌱';
+  };
+
+  // --- HQ SMART BATCH STOCK HANDLERS ---
+  
+  // Set default target store id if empty when selecting a tab
+  useEffect(() => {
+    if (smartOpsTab && !opsTargetStoreId) {
+      const firstActiveStore = stores.find(s => s.isActive);
+      if (firstActiveStore) {
+        setOpsTargetStoreId(firstActiveStore.id);
+      }
+    }
+  }, [smartOpsTab]);
+
+  // Apply batch updates to the selected store's inventory
+  const applyBatchUpdates = (itemsToApply: Array<{ cropName: string; quantity: number; costPrice?: number; sellingPrice?: number }>) => {
+    if (!opsTargetStoreId) {
+      alert("Please select a target store to apply updates.");
+      return;
+    }
+
+    const storeObj = stores.find(s => s.id === opsTargetStoreId);
+    const storeName = storeObj ? storeObj.name.replace("Farmer's Gate - ", "") : "Store";
+
+    let countUpdated = 0;
+    let countAdded = 0;
+
+    itemsToApply.forEach(item => {
+      // Find matching item in current inventory for that store
+      const existing = inventory.find(
+        inv => inv.storeId === opsTargetStoreId && 
+               inv.vegetableName.toLowerCase() === item.cropName.toLowerCase()
+      );
+
+      const matchedMaster = masterCrops.find(
+        m => m.vegetableName.toLowerCase() === item.cropName.toLowerCase()
+      );
+
+      // Resolve proper name casing from master crops or input
+      const resolvedName = matchedMaster ? matchedMaster.vegetableName : item.cropName;
+
+      // Pricing logic: use parsed value, else fallback to master crop template, else standard default
+      const finalCost = item.costPrice || (matchedMaster ? matchedMaster.costPrice : 20);
+      const finalPrice = item.sellingPrice || (matchedMaster ? matchedMaster.sellingPrice : 30);
+
+      if (existing) {
+        const newQty = opsUpdateMode === 'add' ? existing.quantity + item.quantity : item.quantity;
+        onUpdateInventoryItem({
+          ...existing,
+          vegetableName: resolvedName,
+          quantity: parseFloat(newQty.toFixed(2)),
+          costPrice: finalCost,
+          sellingPrice: finalPrice,
+          lastUpdated: new Date().toISOString()
+        });
+        countUpdated++;
+      } else {
+        const newItem: InventoryItem = {
+          id: `inv-${opsTargetStoreId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          storeId: opsTargetStoreId,
+          vegetableName: resolvedName,
+          quantity: parseFloat(item.quantity.toFixed(2)),
+          minStockThreshold: matchedMaster ? matchedMaster.minStockThreshold : 20,
+          costPrice: finalCost,
+          sellingPrice: finalPrice,
+          lastUpdated: new Date().toISOString()
+        };
+        onUpdateInventoryItem(newItem);
+        countAdded++;
+      }
+    });
+
+    setOpsSuccessMsg(`Successfully processed ${itemsToApply.length} items for ${storeName}: ${countAdded} added, ${countUpdated} updated!`);
+    
+    // Clear state inputs
+    setAnalyzedItems([]);
+    setSheetText('');
+    setSheetParsedItems([]);
+    setBulkText('');
+    setBulkParsedItems([]);
+    
+    // Hide message after 5 seconds
+    setTimeout(() => setOpsSuccessMsg(''), 5000);
+  };
+
+  // Google Sheet Parser (Tab-separated)
+  const parseGoogleSheetText = (text: string) => {
+    setSheetText(text);
+    if (!text.trim()) {
+      setSheetParsedItems([]);
+      return;
+    }
+
+    const lines = text.split('\n');
+    const parsed: typeof sheetParsedItems = [];
+
+    lines.forEach((line, index) => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return; // skip empty lines
+
+      const columns = trimmedLine.split('\t');
+      const rawName = columns[0]?.trim();
+      const rawQty = columns[1]?.trim();
+      const rawCost = columns[2]?.trim();
+      const rawPrice = columns[3]?.trim();
+
+      if (!rawName) {
+        parsed.push({
+          cropName: `Row ${index + 1}`,
+          quantity: 0,
+          isValid: false,
+          error: "Missing crop name"
+        });
+        return;
+      }
+
+      const qty = parseFloat(rawQty);
+      if (isNaN(qty) || qty < 0) {
+        parsed.push({
+          cropName: rawName,
+          quantity: 0,
+          isValid: false,
+          error: `Invalid quantity "${rawQty}" (must be a positive number)`
+        });
+        return;
+      }
+
+      parsed.push({
+        cropName: rawName,
+        quantity: qty,
+        costPrice: rawCost ? parseFloat(rawCost) || undefined : undefined,
+        sellingPrice: rawPrice ? parseFloat(rawPrice) || undefined : undefined,
+        isValid: true
+      });
+    });
+
+    setSheetParsedItems(parsed);
+  };
+
+  // Bulk Custom Paste Parser (Comma/Line separated)
+  const parseBulkText = (text: string) => {
+    setBulkText(text);
+    if (!text.trim()) {
+      setBulkParsedItems([]);
+      return;
+    }
+
+    const lines = text.split('\n');
+    const parsed: typeof bulkParsedItems = [];
+
+    lines.forEach((line, index) => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return;
+
+      const columns = trimmedLine.split(',').map(c => c.trim());
+      const rawName = columns[0];
+      const rawQty = columns[1];
+      const rawCost = columns[2];
+      const rawPrice = columns[3];
+
+      if (!rawName) {
+        parsed.push({
+          cropName: `Line ${index + 1}`,
+          quantity: 0,
+          isValid: false,
+          error: "Empty crop name"
+        });
+        return;
+      }
+
+      const qty = parseFloat(rawQty);
+      if (isNaN(qty) || qty < 0) {
+        parsed.push({
+          cropName: rawName,
+          quantity: 0,
+          isValid: false,
+          error: `Missing or invalid quantity (must be positive)`
+        });
+        return;
+      }
+
+      parsed.push({
+        cropName: rawName,
+        quantity: qty,
+        costPrice: rawCost ? parseFloat(rawCost) || undefined : undefined,
+        sellingPrice: rawPrice ? parseFloat(rawPrice) || undefined : undefined,
+        isValid: true
+      });
+    });
+
+    setBulkParsedItems(parsed);
+  };
+
+  // Gemini AI Image Analyzer API trigger
+  const handleAnalyzeImage = async (base64Image: string, fileType: string) => {
+    setIsAnalyzingImage(true);
+    setImageAnalysisError(null);
+    setAnalyzedItems([]);
+
+    try {
+      const response = await fetch("/api/gemini/parse-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: base64Image,
+          mimeType: fileType
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to analyze document.");
+      }
+
+      const resData = await response.json();
+      if (resData.success && Array.isArray(resData.data)) {
+        const items = resData.data.map((item: any) => ({
+          cropName: item.cropName || "Unknown Crop",
+          quantity: Number(item.quantity) || 0,
+          costPrice: item.costPrice ? Number(item.costPrice) : undefined,
+          sellingPrice: item.sellingPrice ? Number(item.sellingPrice) : undefined,
+          checked: true
+        }));
+        setAnalyzedItems(items);
+        if (items.length === 0) {
+          setImageAnalysisError("Gemini AI finished analyzing but couldn't detect any structured produce lists in this image. Try another clear document!");
+        }
+      } else {
+        throw new Error("Invalid response format received from AI server.");
+      }
+    } catch (err: any) {
+      console.error("Image Analysis Error:", err);
+      setImageAnalysisError(err.message || "An error occurred while connecting to the Gemini AI API.");
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
+
+  // Process File Input from selection or drag-drop
+  const processImageFile = (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload a valid image file (PNG, JPG, WEBP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      if (result) {
+        handleAnalyzeImage(result, file.type);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Camera scanner success callback
+  const handleOpsScannerSuccess = (scannedValue: string) => {
+    setIsOpsScannerOpen(false);
+    setScannedError('');
+    setScannedSuccessMsg('');
+
+    // Attempt to match scanned produce name
+    const matchedMaster = masterCrops.find(
+      c => c.vegetableName.toLowerCase() === scannedValue.toLowerCase() || c.id === scannedValue
+    );
+
+    const existingInStore = inventory.find(
+      i => i.storeId === opsTargetStoreId && 
+           (i.vegetableName.toLowerCase() === scannedValue.toLowerCase() || i.id === scannedValue)
+    );
+
+    const targetCropName = matchedMaster 
+      ? matchedMaster.vegetableName 
+      : existingInStore 
+        ? existingInStore.vegetableName 
+        : scannedValue;
+
+    setScannedCrop(targetCropName);
+    setScannedQty(10); // set default quick scan addition
+    setScannedCost(existingInStore?.costPrice || matchedMaster?.costPrice || 20);
+    setScannedPrice(existingInStore?.sellingPrice || matchedMaster?.sellingPrice || 30);
+  };
+
+  const saveScannedItem = () => {
+    if (!scannedCrop.trim()) {
+      setScannedError("Produce name is required");
+      return;
+    }
+    if (scannedQty <= 0) {
+      setScannedError("Quantity must be greater than zero");
+      return;
+    }
+
+    // Apply the scanned item
+    applyBatchUpdates([{
+      cropName: scannedCrop,
+      quantity: scannedQty,
+      costPrice: scannedCost || undefined,
+      sellingPrice: scannedPrice || undefined
+    }]);
+
+    setScannedSuccessMsg(`Successfully updated "${scannedCrop}" stock!`);
+    setScannedCrop('');
+    setScannedQty(0);
+    setScannedCost(0);
+    setScannedPrice(0);
   };
 
   // 3. Stats Calculations
@@ -1129,6 +1472,561 @@ export default function HeadOffice({
       {activeTab === 'inventory' && (
         <div className="space-y-6">
           
+          {/* ⚡ HQ SMART BULK STOCK OPERATIONS CONTROL PANEL */}
+          <div className="bg-gradient-to-br from-slate-900 to-slate-950 text-white rounded-3xl p-6 border border-slate-800 shadow-xl space-y-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 font-bold text-xs ring-1 ring-emerald-500/25">⚡</span>
+                  <h3 className="font-extrabold text-sm tracking-tight text-white flex items-center gap-2">
+                    HQ Smart Batch Stock Updater
+                  </h3>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Bulk update or append crop inventory levels using AI document scanning, live barcode/QR cameras, Google sheets, or custom batch text.
+                </p>
+              </div>
+              
+              {/* Common Global Configs for Batch updates */}
+              <div className="flex flex-wrap items-center gap-3 bg-slate-900/60 p-2.5 rounded-2xl border border-slate-800">
+                <div className="space-y-1">
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-500 block">Target Outlet</span>
+                  <select
+                    value={opsTargetStoreId}
+                    onChange={(e) => setOpsTargetStoreId(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs font-bold text-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    <option value="" disabled>Select Target Store</option>
+                    {stores.filter(s => s.isActive).map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name.replace("Farmer's Gate - ", "")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-500 block">Stock Update Mode</span>
+                  <div className="flex rounded-lg border border-slate-800 overflow-hidden text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setOpsUpdateMode('add')}
+                      className={`px-3 py-1 transition-all ${opsUpdateMode === 'add' ? 'bg-emerald-600 text-white' : 'bg-slate-950 text-slate-400 hover:text-white'}`}
+                    >
+                      ➕ Append (Add)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpsUpdateMode('overwrite')}
+                      className={`px-3 py-1 transition-all ${opsUpdateMode === 'overwrite' ? 'bg-emerald-600 text-white' : 'bg-slate-950 text-slate-400 hover:text-white'}`}
+                    >
+                      🔄 Overwrite
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Success Message Banner */}
+            {opsSuccessMsg && (
+              <div className="bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 p-3 rounded-2xl text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200">
+                <CheckCircle className="h-4 w-4 shrink-0" />
+                <span>{opsSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* Selection Tabs */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={() => { setSmartOpsTab(smartOpsTab === 'image' ? null : 'image'); setOpsSuccessMsg(''); }}
+                className={`flex items-center gap-2 justify-center py-2.5 px-3 rounded-xl border transition-all text-xs font-bold cursor-pointer ${
+                  smartOpsTab === 'image' 
+                    ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-950' 
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <Image className="h-4 w-4 shrink-0" />
+                <span>📸 Image / Invoice (Gemini AI)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setSmartOpsTab(smartOpsTab === 'scanner' ? null : 'scanner'); setOpsSuccessMsg(''); }}
+                className={`flex items-center gap-2 justify-center py-2.5 px-3 rounded-xl border transition-all text-xs font-bold cursor-pointer ${
+                  smartOpsTab === 'scanner' 
+                    ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-950' 
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <QrCode className="h-4 w-4 shrink-0" />
+                <span>📷 Camera QR / Barcode</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setSmartOpsTab(smartOpsTab === 'sheet' ? null : 'sheet'); setOpsSuccessMsg(''); }}
+                className={`flex items-center gap-2 justify-center py-2.5 px-3 rounded-xl border transition-all text-xs font-bold cursor-pointer ${
+                  smartOpsTab === 'sheet' 
+                    ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-950' 
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <FileSpreadsheet className="h-4 w-4 shrink-0" />
+                <span>📊 Google Sheet Paste</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setSmartOpsTab(smartOpsTab === 'paste' ? null : 'paste'); setOpsSuccessMsg(''); }}
+                className={`flex items-center gap-2 justify-center py-2.5 px-3 rounded-xl border transition-all text-xs font-bold cursor-pointer ${
+                  smartOpsTab === 'paste' 
+                    ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-950' 
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <Clipboard className="h-4 w-4 shrink-0" />
+                <span>📋 Bulk Item Paste</span>
+              </button>
+            </div>
+
+            {/* TAB CONTENT: 1. IMAGE UPLOAD & GEMINI PARSING */}
+            {smartOpsTab === 'image' && (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 space-y-4 animate-in slide-in-from-top-4 duration-200">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase text-slate-400 flex items-center gap-1.5">
+                    <span>📸 AI Document & Receipt Scanner</span>
+                    <span className="bg-emerald-500/10 text-emerald-400 font-extrabold text-[8px] px-2 py-0.5 rounded-full border border-emerald-500/20">Powered by Gemini AI</span>
+                  </h4>
+                  <button onClick={() => setSmartOpsTab(null)} className="text-slate-500 hover:text-white text-xs font-bold">Close ✕</button>
+                </div>
+
+                {/* Drag and Drop Zone */}
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                  onDragLeave={() => setDragActive(false)}
+                  onDrop={(e) => { e.preventDefault(); setDragActive(false); if (e.dataTransfer.files?.[0]) processImageFile(e.dataTransfer.files[0]); }}
+                  className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
+                    dragActive 
+                      ? 'border-emerald-500 bg-emerald-950/10' 
+                      : 'border-slate-800 bg-slate-950/30 hover:border-slate-700'
+                  }`}
+                >
+                  <input
+                    type="file"
+                    id="hq-bulk-image-upload"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => { if (e.target.files?.[0]) processImageFile(e.target.files[0]); }}
+                  />
+                  <label htmlFor="hq-bulk-image-upload" className="cursor-pointer space-y-2.5 block">
+                    <div className="flex justify-center">
+                      <div className="p-3 bg-slate-900/80 rounded-full border border-slate-800">
+                        <UploadCloud className={`h-6 w-6 ${isAnalyzingImage ? 'animate-bounce text-emerald-400' : 'text-slate-400'}`} />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">Drag & drop your stock invoice image here, or click to browse</p>
+                      <p className="text-[10px] text-slate-500 mt-1">Accepts invoice/delivery receipt photos (PNG, JPEG, WEBP) up to 20MB</p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* AI Progress Loading Indicator */}
+                {isAnalyzingImage && (
+                  <div className="py-6 flex flex-col items-center justify-center space-y-3.5 text-center bg-slate-950/20 rounded-2xl border border-slate-800/40">
+                    <div className="relative flex items-center justify-center">
+                      <div className="h-10 w-10 rounded-full border-2 border-emerald-500/20 border-t-emerald-400 animate-spin"></div>
+                      <Sparkles className="h-4 w-4 text-emerald-400 absolute animate-pulse" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-white">Gemini AI is analyzing document lines...</p>
+                      <p className="text-[9px] font-medium text-slate-500 animate-pulse">Running advanced OCR, mapping produce names, extracting quantities & prices...</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Analysis Errors */}
+                {imageAnalysisError && (
+                  <div className="bg-red-950/30 border border-red-500/30 text-red-400 p-4 rounded-xl text-xs font-bold flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{imageAnalysisError}</span>
+                  </div>
+                )}
+
+                {/* Extracted Items Confirmation List */}
+                {analyzedItems.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <span className="text-xs font-bold text-white">Review {analyzedItems.length} AI Extracted Items</span>
+                      <button 
+                        onClick={() => {
+                          const allChecked = analyzedItems.every(i => i.checked);
+                          setAnalyzedItems(analyzedItems.map(i => ({ ...i, checked: !allChecked })));
+                        }}
+                        className="text-[10px] text-emerald-400 font-extrabold hover:underline"
+                      >
+                        {analyzedItems.every(i => i.checked) ? "Deselect All" : "Select All"}
+                      </button>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto border border-slate-800 rounded-xl divide-y divide-slate-800">
+                      {analyzedItems.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-3 p-3 bg-slate-950/20 text-slate-300">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...analyzedItems];
+                              updated[idx].checked = !updated[idx].checked;
+                              setAnalyzedItems(updated);
+                            }}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            {item.checked ? <CheckSquare className="h-4 w-4 text-emerald-500" /> : <Square className="h-4 w-4" />}
+                          </button>
+
+                          <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            {/* Crop Name input */}
+                            <div>
+                              <span className="text-[8px] font-black uppercase text-slate-500 block">Crop Name</span>
+                              <input
+                                type="text"
+                                value={item.cropName}
+                                onChange={(e) => {
+                                  const updated = [...analyzedItems];
+                                  updated[idx].cropName = e.target.value;
+                                  setAnalyzedItems(updated);
+                                }}
+                                className="bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-xs text-white w-full focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                            {/* Quantity input */}
+                            <div>
+                              <span className="text-[8px] font-black uppercase text-slate-500 block">Qty (kg)</span>
+                              <input
+                                type="number"
+                                value={item.quantity}
+                                onChange={(e) => {
+                                  const updated = [...analyzedItems];
+                                  updated[idx].quantity = Math.max(0, parseFloat(e.target.value) || 0);
+                                  setAnalyzedItems(updated);
+                                }}
+                                className="bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-xs text-white w-full text-right focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                            {/* Cost Price */}
+                            <div>
+                              <span className="text-[8px] font-black uppercase text-slate-500 block">Cost (₹)</span>
+                              <input
+                                type="number"
+                                value={item.costPrice || ''}
+                                placeholder="Auto"
+                                onChange={(e) => {
+                                  const updated = [...analyzedItems];
+                                  updated[idx].costPrice = e.target.value ? parseFloat(e.target.value) : undefined;
+                                  setAnalyzedItems(updated);
+                                }}
+                                className="bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-xs text-white w-full text-right focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setAnalyzedItems([])}
+                        className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-bold text-slate-400 hover:text-white"
+                      >
+                        Reset / Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const active = analyzedItems.filter(i => i.checked && i.cropName.trim() && i.quantity > 0);
+                          if (active.length === 0) {
+                            alert("Please select at least one valid item to apply.");
+                            return;
+                          }
+                          applyBatchUpdates(active);
+                        }}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold shadow-md hover:shadow-emerald-950"
+                      >
+                        Approve & Apply to {stores.find(s => s.id === opsTargetStoreId)?.name.replace("Farmer's Gate - ", "") || "Outlet"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB CONTENT: 2. SCANNING INTEGRATION */}
+            {smartOpsTab === 'scanner' && (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 space-y-4 animate-in slide-in-from-top-4 duration-200">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase text-slate-400">📷 Camera Barcode & QR Code Stock Updates</h4>
+                  <button onClick={() => setSmartOpsTab(null)} className="text-slate-500 hover:text-white text-xs font-bold">Close ✕</button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="bg-slate-950/40 rounded-2xl p-4 border border-slate-800/60 flex flex-col items-center justify-center space-y-3.5 text-center min-h-[160px]">
+                    <QrCode className="h-10 w-10 text-emerald-400 animate-pulse" />
+                    <div className="space-y-1">
+                      <p className="text-xs font-black text-white">Device Video Camera Capture</p>
+                      <p className="text-[10px] text-slate-400 max-w-sm">Use your device webcam or back phone camera to scan inventory stock codes, barcode stickers, or product QR codes.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsOpsScannerOpen(true)}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold shadow-md flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <span>🎥 Initialize Video Camera Scanner</span>
+                    </button>
+                  </div>
+
+                  {/* Manual / Scan Result Display and Confirmation Form */}
+                  <div className="bg-slate-950/40 rounded-2xl p-4 border border-slate-800/60 space-y-3.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-800 pb-1.5">Scanned Stock Preview & Commit Form</p>
+                    
+                    {scannedError && (
+                      <div className="bg-red-950/20 border border-red-500/20 text-red-400 p-2 rounded-lg text-[10px] font-bold">
+                        {scannedError}
+                      </div>
+                    )}
+                    {scannedSuccessMsg && (
+                      <div className="bg-emerald-950/20 border border-emerald-500/20 text-emerald-400 p-2 rounded-lg text-[10px] font-bold">
+                        {scannedSuccessMsg}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="col-span-2 space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-500">Scanned Item/Crop</label>
+                        <input
+                          type="text"
+                          value={scannedCrop}
+                          onChange={(e) => setScannedCrop(e.target.value)}
+                          placeholder="Wait for scan or type name..."
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white font-bold focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-500">Add Stock (kg)</label>
+                        <input
+                          type="number"
+                          value={scannedQty || ''}
+                          onChange={(e) => setScannedQty(Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="Qty..."
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white font-mono text-right focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-500">Cost Price (₹)</label>
+                        <input
+                          type="number"
+                          value={scannedCost || ''}
+                          onChange={(e) => setScannedCost(Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="Cost Price..."
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white font-mono text-right focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={saveScannedItem}
+                      disabled={!scannedCrop}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    >
+                      💾 Commit Scan to Inventory
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: 3. GOOGLE SHEETS PASTE */}
+            {smartOpsTab === 'sheet' && (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 space-y-4 animate-in slide-in-from-top-4 duration-200">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase text-slate-400">📊 Google Sheets & Excel Batch Importer</h4>
+                  <button onClick={() => setSmartOpsTab(null)} className="text-slate-500 hover:text-white text-xs font-bold">Close ✕</button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400">Paste copied spreadsheet rows here:</label>
+                      <textarea
+                        value={sheetText}
+                        onChange={(e) => parseGoogleSheetText(e.target.value)}
+                        placeholder="Crop Name&#9;Quantity&#9;Cost Price&#9;Selling Price&#10;Tomatoes (Tamatar)&#9;250&#9;22&#9;35&#10;Onions (Pyaz)&#9;500&#9;15&#10;Spinach (Palak)&#9;80"
+                        rows={6}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 placeholder:text-slate-700"
+                      />
+                    </div>
+                    <div className="bg-slate-950/20 p-3 rounded-xl border border-slate-800 text-[10px] text-slate-400 space-y-1">
+                      <p className="font-extrabold text-white uppercase">Spreadsheet Copy Instructions:</p>
+                      <p>1. Open Google Sheets / Excel.</p>
+                      <p>2. Select columns in order: <span className="text-emerald-400">Crop, Qty, Cost (optional), Selling (optional)</span>.</p>
+                      <p>3. Copy cells (Ctrl+C / Cmd+C) and paste them directly above.</p>
+                    </div>
+                  </div>
+
+                  {/* Parse Results Preview Grid */}
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Live Parsed Cells Review</p>
+                    {sheetParsedItems.length === 0 ? (
+                      <div className="h-40 border border-dashed border-slate-800 rounded-2xl flex items-center justify-center text-slate-600 text-xs text-center p-4">
+                        Pasted spreadsheet records will parse here in real-time.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="max-h-44 overflow-y-auto border border-slate-800 rounded-xl text-xs divide-y divide-slate-800">
+                          {sheetParsedItems.map((item, idx) => (
+                            <div key={idx} className="p-2.5 bg-slate-950/20 flex items-center justify-between gap-3">
+                              <div className="truncate">
+                                <span className="font-bold text-white block truncate">{item.cropName}</span>
+                                {item.error ? (
+                                  <span className="text-[9px] text-red-400 font-medium block">{item.error}</span>
+                                ) : (
+                                  <span className="text-[9px] text-slate-500 font-medium block">
+                                    Parsed Cost: ₹{item.costPrice || 'Auto'} | Selling: ₹{item.sellingPrice || 'Auto'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0">
+                                {item.isValid ? (
+                                  <span className="font-mono text-emerald-400 font-black">{item.quantity} kg</span>
+                                ) : (
+                                  <span className="text-[9px] bg-red-950/50 text-red-400 border border-red-500/20 px-2 py-0.5 rounded-full font-black">FAIL</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const valid = sheetParsedItems.filter(i => i.isValid);
+                            if (valid.length === 0) {
+                              alert("No valid spreadsheet lines detected.");
+                              return;
+                            }
+                            applyBatchUpdates(valid);
+                          }}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold transition-colors cursor-pointer"
+                        >
+                          🚀 Bulk Import {sheetParsedItems.filter(i => i.isValid).length} Valid Records to {stores.find(s => s.id === opsTargetStoreId)?.name.replace("Farmer's Gate - ", "") || "Outlet"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: 4. BULK TEXT PASTE */}
+            {smartOpsTab === 'paste' && (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 space-y-4 animate-in slide-in-from-top-4 duration-200">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase text-slate-400">📋 Comma-Separated Bulk Stock Paste</h4>
+                  <button onClick={() => setSmartOpsTab(null)} className="text-slate-500 hover:text-white text-xs font-bold">Close ✕</button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400">Write crop list (one item per line):</label>
+                      <textarea
+                        value={bulkText}
+                        onChange={(e) => parseBulkText(e.target.value)}
+                        placeholder="Format: Crop Name, Qty, CostPrice, SellingPrice&#10;Tomatoes (Tamatar), 100, 22, 35&#10;Onions (Pyaz), 120&#10;Spinach (Palak), 50, 12, 18"
+                        rows={6}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-emerald-500 placeholder:text-slate-700"
+                      />
+                    </div>
+                    <div className="bg-slate-950/20 p-3 rounded-xl border border-slate-800 text-[10px] text-slate-400">
+                      <span className="font-extrabold text-white block uppercase">Shorthand Format Rules:</span>
+                      <p className="mt-1">Syntax: <code className="text-emerald-400">CropName, Quantity, [CostPrice], [SellingPrice]</code></p>
+                      <p className="mt-0.5">Example: <code className="text-slate-300">Carrot (Gajar), 75, 18, 25</code></p>
+                    </div>
+                  </div>
+
+                  {/* Parse Results Preview Grid */}
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Live Parsed Shorthand Review</p>
+                    {bulkParsedItems.length === 0 ? (
+                      <div className="h-40 border border-dashed border-slate-800 rounded-2xl flex items-center justify-center text-slate-600 text-xs text-center p-4">
+                        Pasted lines will parse here automatically.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="max-h-44 overflow-y-auto border border-slate-800 rounded-xl text-xs divide-y divide-slate-800">
+                          {bulkParsedItems.map((item, idx) => (
+                            <div key={idx} className="p-2.5 bg-slate-950/20 flex items-center justify-between gap-3">
+                              <div className="truncate">
+                                <span className="font-bold text-white block truncate">{item.cropName}</span>
+                                {item.error ? (
+                                  <span className="text-[9px] text-red-400 font-medium block">{item.error}</span>
+                                ) : (
+                                  <span className="text-[9px] text-slate-500 font-medium block">
+                                    Cost: ₹{item.costPrice || 'Auto'} | Selling: ₹{item.sellingPrice || 'Auto'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0">
+                                {item.isValid ? (
+                                  <span className="font-mono text-emerald-400 font-black">{item.quantity} kg</span>
+                                ) : (
+                                  <span className="text-[9px] bg-red-950/50 text-red-400 border border-red-500/20 px-2 py-0.5 rounded-full font-black">FAIL</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const valid = bulkParsedItems.filter(i => i.isValid);
+                            if (valid.length === 0) {
+                              alert("No valid shorthand items detected.");
+                              return;
+                            }
+                            applyBatchUpdates(valid);
+                          }}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold transition-colors cursor-pointer"
+                        >
+                          🚀 Commit {bulkParsedItems.filter(i => i.isValid).length} Shorthand Items to {stores.find(s => s.id === opsTargetStoreId)?.name.replace("Farmer's Gate - ", "") || "Outlet"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Device Camera QR Scanner Modal Overlay */}
+          <QrScanner
+            isOpen={isOpsScannerOpen}
+            onClose={() => setIsOpsScannerOpen(false)}
+            onScanSuccess={handleOpsScannerSuccess}
+            inventory={inventory.map(i => ({
+              id: i.id,
+              vegetableName: i.vegetableName,
+              sellingPrice: i.sellingPrice,
+              quantity: i.quantity
+            }))}
+            title="HQ Central Stock Barcode & QR Scanner"
+          />
+
           {/* Inventory search and filter parameters */}
           <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
