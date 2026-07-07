@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { Store, Requirement, SupabaseConfig, ConsolidatedRequirement, CpanelSettings, StorefrontAd, MasterCrop, InventoryItem, CompanyOfficial } from '../types';
 import StoreMapSelector from './admin/StoreMapSelector';
+import RealTimeGoogleMapTab from './admin/RealTimeGoogleMapTab';
 import { 
   getSupabaseSQLSchema,
   getCircuitBreakerDetails,
@@ -90,7 +91,7 @@ export default function AdminPanel({
   onUpdateOfficial,
   onDeleteOfficial
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'stores' | 'supabase' | 'cpanel' | 'ads' | 'import' | 'officials'>('cpanel');
+  const [activeTab, setActiveTab] = useState<'stores' | 'supabase' | 'cpanel' | 'ads' | 'import' | 'officials' | 'googlemap'>('cpanel');
 
   // CSV Import States
   const [csvItems, setCsvItems] = useState<{
@@ -1023,6 +1024,21 @@ export default function AdminPanel({
             <span className="flex items-center gap-1.5">
               <Users className="h-4 w-4" />
               Company Officials ({officials?.length || 0})
+            </span>
+          </button>
+
+          <button
+            id="tab-googlemap"
+            onClick={() => setActiveTab('googlemap')}
+            className={`pb-4 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+              activeTab === 'googlemap'
+                ? 'border-emerald-600 text-emerald-600'
+                : 'border-transparent text-zinc-500 hover:text-zinc-800'
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <MapPin className="h-4 w-4 text-emerald-600 animate-bounce" />
+              🛰️ Live Google Map
             </span>
           </button>
         </div>
@@ -2820,6 +2836,11 @@ export default function AdminPanel({
           onUpdateOfficial={onUpdateOfficial}
           onDeleteOfficial={onDeleteOfficial}
         />
+      )}
+
+      {/* TAB CONTENT: REAL TIME PLACE LOCATION GOOGLE MAP */}
+      {activeTab === 'googlemap' && (
+        <RealTimeGoogleMapTab stores={stores} />
       )}
 
     </div>
