@@ -1522,7 +1522,7 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
                   </div>
 
                   {/* Middle: Map simulation */}
-                  <div className="lg:col-span-1 h-80 bg-slate-100 border border-slate-200 rounded-3xl overflow-hidden relative">
+                  <div className="lg:col-span-2 h-80 bg-slate-100 border border-slate-200 rounded-3xl overflow-hidden relative">
                     <div className="absolute top-3 left-3 bg-white/95 border border-slate-200 shadow-sm px-3 py-1.5 rounded-xl z-10 text-[9px] font-black uppercase text-slate-700 flex items-center gap-1">
                       <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" /> Real-time tracking
                     </div>
@@ -1563,52 +1563,6 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
                         </g>
                       )}
                     </svg>
-                  </div>
-
-                  {/* Right: Real-time Live Chat */}
-                  <div className="lg:col-span-1 bg-slate-50 border border-slate-200 rounded-3xl p-4 flex flex-col justify-between h-80">
-                    <div>
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                        💬 Rider Live Messaging Box
-                      </span>
-                      <p className="text-[8.5px] text-slate-400 font-semibold mt-0.5">Need delivery adjustments? Inform Ramesh here.</p>
-                    </div>
-
-                    {/* Chat logs */}
-                    <div className="flex-1 overflow-y-auto my-3 space-y-2 text-[10.5px]">
-                      {((selectedOrder as any).messages || []).length === 0 ? (
-                        <p className="text-slate-400 italic text-center pt-16">No messages exchanged. Sourced rider will notify you during dispatch.</p>
-                      ) : (
-                        ((selectedOrder as any).messages || []).map((msg: any, mIdx: number) => (
-                          <div key={mIdx} className={`flex flex-col ${msg.sender === 'customer' ? 'items-end' : 'items-start'}`}>
-                            <span className="text-[7.5px] font-bold text-slate-400 uppercase px-1">{msg.sender === 'customer' ? 'You' : 'Rider Ramesh'}</span>
-                            <div className={`p-2 rounded-2xl max-w-[85%] mt-0.5 ${
-                              msg.sender === 'customer' ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-800'
-                            }`}>
-                              <p className="font-semibold leading-normal">{msg.text}</p>
-                              <span className="text-[7px] text-right block opacity-70 mt-0.5">{msg.time}</span>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-
-                    <div className="flex gap-1.5 shrink-0">
-                      <input 
-                        type="text"
-                        placeholder="e.g. Please leave at door, thank you!"
-                        value={customerChatMessage}
-                        onChange={e => setCustomerChatMessage(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleSendCustomerChat()}
-                        className="flex-1 text-xs font-bold px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none"
-                      />
-                      <button 
-                        onClick={handleSendCustomerChat}
-                        className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer shadow-3xs"
-                      >
-                        <Send className="h-4 w-4" />
-                      </button>
-                    </div>
                   </div>
                 </div>
               ) : (

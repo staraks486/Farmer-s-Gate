@@ -1177,7 +1177,9 @@ export default function App() {
       </footer>
       
       {/* Floating Internal Corporate Chat & File Sharing Network Widget */}
-      <InternalChatDrawer />
+      {activePortal !== 'customer' && (
+        <InternalChatDrawer />
+      )}
     </div>
   );
 }

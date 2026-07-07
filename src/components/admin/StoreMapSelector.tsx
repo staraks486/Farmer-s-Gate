@@ -153,6 +153,34 @@ const INDIAN_CITIES_MAP_CONFIGS: CityConfig[] = [
   }
 ];
 
+const parseGoogleMapsUrl = (url: string) => {
+  // Regex 1: /@30.3398,76.3869
+  let match = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (match) {
+    return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+  }
+  // Regex 2: ?q=30.3398,76.3869 or ?daddr=30.3398,76.3869 or &ll=30.3398,76.3869
+  match = url.match(/[?&](?:q|daddr|ll|query)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (match) {
+    return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+  }
+  // Regex 3: /place/30.3398+76.3869 or /place/30.3398,76.3869
+  match = url.match(/\/place\/(-?\d+\.\d+)[+,](-?\d+\.\d+)/);
+  if (match) {
+    return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+  }
+  // Regex 4: just any coordinates in the URL
+  const coords = url.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+  if (coords) {
+    const lat = parseFloat(coords[1]);
+    const lng = parseFloat(coords[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng };
+    }
+  }
+  return null;
+};
+
 interface StoreMapSelectorProps {
   lat: number | '';
   lng: number | '';
@@ -168,8 +196,60 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hoverCoordinates, setHoverCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   
+  // Google Map Link Decoder state
+  const [pastedMapLink, setPastedMapLink] = useState('');
+  const [pasteMessage, setPasteMessage] = useState<{ text: string; isError: boolean } | null>(null);
+  
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const activeCity = INDIAN_CITIES_MAP_CONFIGS[activeCityIndex];
+
+  const handleDecodeMapLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pastedMapLink.trim()) return;
+
+    const decoded = parseGoogleMapsUrl(pastedMapLink);
+    if (decoded) {
+      let matchedCityName = activeCity.name;
+      let matchedCityIndex = activeCityIndex;
+
+      INDIAN_CITIES_MAP_CONFIGS.forEach((city, idx) => {
+        if (decoded.lat >= city.latMin && decoded.lat <= city.latMax &&
+            decoded.lng >= city.lngMin && decoded.lng <= city.lngMax) {
+          matchedCityName = city.name;
+          matchedCityIndex = idx;
+        }
+      });
+
+      setActiveCityIndex(matchedCityIndex);
+      
+      let locName = `Custom Location near ${matchedCityName}`;
+      try {
+        const urlObj = new URL(pastedMapLink);
+        const placeSegment = urlObj.pathname.split('/place/')[1];
+        if (placeSegment) {
+          locName = decodeURIComponent(placeSegment.split('/')[0]).replace(/\+/g, ' ');
+        } else {
+          const qParam = urlObj.searchParams.get('q') || urlObj.searchParams.get('query');
+          if (qParam && !qParam.match(/^-?\d/)) {
+            locName = qParam;
+          }
+        }
+      } catch (err) {
+        // Ignore URL parsing errors
+      }
+
+      onChangeLocation({
+        lat: parseFloat(decoded.lat.toFixed(5)),
+        lng: parseFloat(decoded.lng.toFixed(5)),
+        location: `${locName}, ${matchedCityName}, India`
+      });
+
+      setPasteMessage({ text: `Extracted coordinates: ${decoded.lat.toFixed(5)}, ${decoded.lng.toFixed(5)}!`, isError: false });
+      setPastedMapLink('');
+    } else {
+      setPasteMessage({ text: 'No coordinates found in this URL. Try pasting a direct maps link or coordinates directly.', isError: true });
+    }
+  };
 
   // Real-time suggestions / coordinate search
   useEffect(() => {
@@ -373,6 +453,50 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
 
   return (
     <div className="bg-zinc-900 text-white rounded-3xl p-5 border border-zinc-800 space-y-4 shadow-md">
+      {/* Google Maps Link Decoder */}
+      <div className="bg-zinc-950/60 p-4 rounded-2xl border border-zinc-800/80 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <label htmlFor="gmaps-link-input" className="text-xs font-black uppercase text-rose-400 tracking-wider flex items-center gap-1.5">
+            <MapPin className="h-4 w-4 text-rose-500 animate-pulse" /> Google Map Link Decoder
+          </label>
+          <span className="text-[8px] bg-rose-950/50 text-rose-300 px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider border border-rose-900/40">
+            Auto-Extract Coordinates
+          </span>
+        </div>
+        
+        <form onSubmit={handleDecodeMapLink} className="flex gap-2">
+          <div className="relative flex-1">
+            <span className="absolute left-3.5 top-2.5 text-xs text-zinc-500">🔗</span>
+            <input
+              id="gmaps-link-input"
+              type="text"
+              placeholder="Paste Google Maps URL here (e.g., https://www.google.com/maps/...)"
+              value={pastedMapLink}
+              onChange={(e) => {
+                setPastedMapLink(e.target.value);
+                setPasteMessage(null);
+              }}
+              className="w-full rounded-xl border border-zinc-850 bg-zinc-950 py-2.5 pl-9 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-rose-500 font-medium text-white placeholder-zinc-500 transition-all"
+            />
+          </div>
+          <button
+            type="submit"
+            className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold rounded-xl text-xs transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+          >
+            Decode Link
+          </button>
+        </form>
+
+        {pasteMessage && (
+          <p className={`text-[10px] font-semibold leading-normal px-1 ${pasteMessage.isError ? 'text-rose-400' : 'text-emerald-400'}`}>
+            {pasteMessage.isError ? '❌' : '✅'} {pasteMessage.text}
+          </p>
+        )}
+        <p className="text-[9px] text-zinc-500 font-semibold leading-normal">
+          Tip: Locate your store on Google Maps, copy the link from your browser or share menu, and paste it here to automatically retrieve precise Latitude & Longitude!
+        </p>
+      </div>
+
       {/* Geocoder / Area Search Field */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
