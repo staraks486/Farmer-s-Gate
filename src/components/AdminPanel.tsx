@@ -29,6 +29,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { Store, Requirement, SupabaseConfig, ConsolidatedRequirement, CpanelSettings, StorefrontAd, MasterCrop, InventoryItem, CompanyOfficial } from '../types';
+import StoreMapSelector from './admin/StoreMapSelector';
 import { 
   getSupabaseSQLSchema,
   getCircuitBreakerDetails,
@@ -1077,97 +1078,16 @@ export default function AdminPanel({
                   </div>
                 </div>
 
-                <div className="bg-emerald-50/40 p-4 rounded-2xl border border-emerald-100/50 space-y-3.5 text-left">
-                  <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider flex items-center gap-1.5">
-                    🗺️ Location & Geo-coordinate Search Helper
-                  </span>
-                  <div>
-                    <label htmlFor="store-search-address" className="block text-[10px] font-black text-zinc-500 uppercase mb-1">Search Indian Neighborhood / City Hub</label>
-                    <div className="flex gap-2">
-                      <input
-                        id="store-search-address"
-                        type="text"
-                        placeholder="e.g. Bandra, Indiranagar, Connaught..."
-                        value={storeSearchAddress}
-                        onChange={(e) => setStoreSearchAddress(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleLocationGeocodeSearch();
-                          }
-                        }}
-                        className="flex-1 rounded-xl border border-zinc-200 px-3 py-1.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white font-medium"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleLocationGeocodeSearch}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                      >
-                        Search
-                      </button>
-                    </div>
-                    {geocodeResults.length > 0 && (
-                      <div className="mt-2 bg-white border border-zinc-200 rounded-xl max-h-32 overflow-y-auto divide-y divide-zinc-100 shadow-sm animate-fade-in">
-                        {geocodeResults.map((res, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => handleSelectGeocodeResult(res)}
-                            className="w-full text-left px-3 py-2 text-xs hover:bg-emerald-50/50 transition font-medium text-zinc-700 flex items-center justify-between cursor-pointer"
-                          >
-                            <span>📍 {res.name}</span>
-                            <span className="text-[10px] font-mono text-emerald-700 font-extrabold bg-emerald-50 px-1.5 py-0.5 rounded">
-                              {res.lat}, {res.lng}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3.5">
-                    <div>
-                      <label htmlFor="store-lat-input" className="block text-[10px] font-black text-zinc-500 uppercase mb-1">Latitude Coordinate</label>
-                      <input
-                        id="store-lat-input"
-                        type="number"
-                        step="0.0001"
-                        placeholder="e.g. 12.9716"
-                        value={storeLat}
-                        onChange={(e) => setStoreLat(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                        className="w-full rounded-xl border border-zinc-200 p-2 text-xs text-zinc-800 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="store-lng-input" className="block text-[10px] font-black text-zinc-500 uppercase mb-1">Longitude Coordinate</label>
-                      <input
-                        id="store-lng-input"
-                        type="number"
-                        step="0.0001"
-                        placeholder="e.g. 77.5946"
-                        value={storeLng}
-                        onChange={(e) => setStoreLng(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                        className="w-full rounded-xl border border-zinc-200 p-2 text-xs text-zinc-800 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="store-loc-input" className="block text-xs font-bold text-zinc-600 uppercase tracking-wide mb-1">Store Location Address *</label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
-                    <input
-                      id="store-loc-input"
-                      type="text"
-                      required
-                      placeholder="e.g. 100 Feet Rd, Indiranagar, Bengaluru"
-                      value={storeLocation}
-                      onChange={(e) => setStoreLocation(e.target.value)}
-                      className="w-full rounded-xl border border-zinc-200 py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800"
-                    />
-                  </div>
-                </div>
+                <StoreMapSelector
+                  lat={storeLat}
+                  lng={storeLng}
+                  location={storeLocation}
+                  onChangeLocation={({ lat, lng, location }) => {
+                    setStoreLat(lat);
+                    setStoreLng(lng);
+                    setStoreLocation(location);
+                  }}
+                />
 
                 <div>
                   <label htmlFor="store-phone-input" className="block text-xs font-bold text-zinc-600 uppercase tracking-wide mb-1">Manager WhatsApp Number *</label>
