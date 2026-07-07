@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Store, Sale, Purchase, InventoryItem, Requirement, SupabaseConfig, Supplier, PurchaseOrder, CustomerOrder, MasterCrop, StaffMember, AttendanceRecord } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, SupabaseConfig, Supplier, PurchaseOrder, CustomerOrder, MasterCrop, StaffMember, AttendanceRecord, CompanyOfficial } from '../types';
 
 // Default master crops/inventory reference
 const DEFAULT_MASTER_CROPS: MasterCrop[] = [
@@ -1803,4 +1803,117 @@ export async function dbRunDiagnostics(): Promise<SupabaseDiagnostics> {
   result.connected = result.urlReachable && result.authValid && !hasErrors;
   return result;
 }
+
+// ==========================================
+// --- COMPANY OFFICIALS LOGISTICS ---
+// ==========================================
+
+export async function dbGetCompanyOfficials(): Promise<CompanyOfficial[]> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { data, error } = await supabaseInstance.from('company_officials').select('*');
+      if (error) throw error;
+      return data as CompanyOfficial[];
+    } catch (e) {
+      console.warn('Supabase fetch company officials failed, falling back to local storage:', e);
+    }
+  }
+
+  const local = localStorage.getItem('fg_company_officials');
+  if (local) {
+    return JSON.parse(local);
+  }
+  
+  // Provide some default demo officials
+  const defaultOfficials: CompanyOfficial[] = [
+    { id: 'off-1', name: 'Rajesh Singhania', designation: 'Chief Operating Officer (COO)', mobileNumber: '919888877777', createdAt: new Date().toISOString() },
+    { id: 'off-2', name: 'Vikram Aditya', designation: 'Director of Supply Chain', mobileNumber: '919888866666', createdAt: new Date().toISOString() },
+    { id: 'off-3', name: 'Dr. Sunita Sharma', designation: 'Head of Quality Assurance', mobileNumber: '919888855555', createdAt: new Date().toISOString() }
+  ];
+  localStorage.setItem('fg_company_officials', JSON.stringify(defaultOfficials));
+  return defaultOfficials;
+}
+
+export async function dbAddCompanyOfficial(official: CompanyOfficial): Promise<CompanyOfficial> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      await ensureDependentEntitiesExist('company_officials', official);
+      const { data, error } = await supabaseInstance
+        .from('company_officials')
+        .insert([official])
+        .select()
+        .single();
+      if (error) throw error;
+      return data as CompanyOfficial;
+    } catch (e) {
+      console.warn('Supabase save official failed, writing to local storage:', e);
+      dbAddUnsyncedOp('company_officials', 'insert', official);
+    }
+  } else {
+    dbAddUnsyncedOp('company_officials', 'insert', official);
+  }
+
+  const officialsList = await dbGetCompanyOfficials();
+  officialsList.push(official);
+  localStorage.setItem('fg_company_officials', JSON.stringify(officialsList));
+  return official;
+}
+
+export async function dbUpdateCompanyOfficial(official: CompanyOfficial): Promise<CompanyOfficial> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      await ensureDependentEntitiesExist('company_officials', official);
+      const { data, error } = await supabaseInstance
+        .from('company_officials')
+        .update(official)
+        .eq('id', official.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as CompanyOfficial;
+    } catch (e) {
+      console.warn('Supabase update official failed, writing to local storage:', e);
+      dbAddUnsyncedOp('company_officials', 'update', official);
+    }
+  } else {
+    dbAddUnsyncedOp('company_officials', 'update', official);
+  }
+
+  const officialsList = await dbGetCompanyOfficials();
+  const idx = officialsList.findIndex(o => o.id === official.id);
+  if (idx !== -1) {
+    officialsList[idx] = official;
+  } else {
+    officialsList.push(official);
+  }
+  localStorage.setItem('fg_company_officials', JSON.stringify(officialsList));
+  return official;
+}
+
+export async function dbDeleteCompanyOfficial(id: string): Promise<void> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { error } = await supabaseInstance
+        .from('company_officials')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return;
+    } catch (e) {
+      console.warn('Supabase delete official failed, writing to local storage:', e);
+      dbAddUnsyncedOp('company_officials', 'delete', { id });
+    }
+  } else {
+    dbAddUnsyncedOp('company_officials', 'delete', { id });
+  }
+
+  const officialsList = await dbGetCompanyOfficials();
+  const filtered = officialsList.filter(o => o.id !== id);
+  localStorage.setItem('fg_company_officials', JSON.stringify(filtered));
+}
+
 

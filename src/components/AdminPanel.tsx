@@ -28,7 +28,7 @@ import {
   FileText,
   CheckCircle
 } from 'lucide-react';
-import { Store, Requirement, SupabaseConfig, ConsolidatedRequirement, CpanelSettings, StorefrontAd, MasterCrop, InventoryItem } from '../types';
+import { Store, Requirement, SupabaseConfig, ConsolidatedRequirement, CpanelSettings, StorefrontAd, MasterCrop, InventoryItem, CompanyOfficial } from '../types';
 import { 
   getSupabaseSQLSchema,
   getCircuitBreakerDetails,
@@ -59,6 +59,10 @@ interface AdminPanelProps {
   inventory: InventoryItem[];
   onUpdateMasterCrop: (crop: MasterCrop) => void;
   onUpdateInventoryItem: (item: InventoryItem) => void;
+  officials: CompanyOfficial[];
+  onAddOfficial: (official: CompanyOfficial) => void;
+  onUpdateOfficial: (official: CompanyOfficial) => void;
+  onDeleteOfficial: (id: string) => void;
 }
 
 export default function AdminPanel({
@@ -79,9 +83,13 @@ export default function AdminPanel({
   masterCrops,
   inventory,
   onUpdateMasterCrop,
-  onUpdateInventoryItem
+  onUpdateInventoryItem,
+  officials,
+  onAddOfficial,
+  onUpdateOfficial,
+  onDeleteOfficial
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'stores' | 'supabase' | 'cpanel' | 'ads' | 'import'>('cpanel');
+  const [activeTab, setActiveTab] = useState<'stores' | 'supabase' | 'cpanel' | 'ads' | 'import' | 'officials'>('cpanel');
 
   // CSV Import States
   const [csvItems, setCsvItems] = useState<{
@@ -922,6 +930,21 @@ export default function AdminPanel({
             <span className="flex items-center gap-1.5">
               <span>📦</span>
               CSV Catalog Importer
+            </span>
+          </button>
+
+          <button
+            id="tab-officials"
+            onClick={() => setActiveTab('officials')}
+            className={`pb-4 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+              activeTab === 'officials'
+                ? 'border-emerald-600 text-emerald-600'
+                : 'border-transparent text-zinc-500 hover:text-zinc-800'
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <Users className="h-4 w-4" />
+              Company Officials ({officials?.length || 0})
             </span>
           </button>
         </div>
@@ -2486,6 +2509,284 @@ export default function AdminPanel({
         </div>
       )}
 
+      {/* TAB CONTENT: COMPANY OFFICIALS */}
+      {activeTab === 'officials' && (
+        <CompanyOfficialsSubTab
+          officials={officials}
+          onAddOfficial={onAddOfficial}
+          onUpdateOfficial={onUpdateOfficial}
+          onDeleteOfficial={onDeleteOfficial}
+        />
+      )}
+
+    </div>
+  );
+}
+
+// ==========================================
+// --- COMPANY OFFICIALS SUB-TAB COMPONENT ---
+// ==========================================
+
+interface CompanyOfficialsSubTabProps {
+  officials: CompanyOfficial[];
+  onAddOfficial: (official: CompanyOfficial) => void;
+  onUpdateOfficial: (official: CompanyOfficial) => void;
+  onDeleteOfficial: (id: string) => void;
+}
+
+function CompanyOfficialsSubTab({
+  officials,
+  onAddOfficial,
+  onUpdateOfficial,
+  onDeleteOfficial
+}: CompanyOfficialsSubTabProps) {
+  const [formOpen, setFormOpen] = React.useState(false);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  
+  // Form fields
+  const [name, setName] = React.useState('');
+  const [designation, setDesignation] = React.useState('');
+  const [mobileNumber, setMobileNumber] = React.useState('');
+  const [error, setError] = React.useState('');
+
+  const resetForm = () => {
+    setName('');
+    setDesignation('');
+    setMobileNumber('');
+    setError('');
+    setEditingId(null);
+    setFormOpen(false);
+  };
+
+  const handleEdit = (official: CompanyOfficial) => {
+    setName(official.name);
+    setDesignation(official.designation);
+    setMobileNumber(official.mobileNumber);
+    setEditingId(official.id);
+    setFormOpen(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError('Name is required');
+      return;
+    }
+    if (!designation.trim()) {
+      setError('Designation is required');
+      return;
+    }
+    if (!mobileNumber.trim()) {
+      setError('Mobile number is required');
+      return;
+    }
+    // Simple validation for phone numbers
+    const cleanPhone = mobileNumber.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      setError('Please enter a valid 10-digit mobile number');
+      return;
+    }
+
+    if (editingId) {
+      onUpdateOfficial({
+        id: editingId,
+        name: name.trim(),
+        designation: designation.trim(),
+        mobileNumber: cleanPhone,
+        createdAt: officials.find(o => o.id === editingId)?.createdAt || new Date().toISOString()
+      });
+    } else {
+      onAddOfficial({
+        id: 'off-' + Date.now(),
+        name: name.trim(),
+        designation: designation.trim(),
+        mobileNumber: cleanPhone,
+        createdAt: new Date().toISOString()
+      });
+    }
+    resetForm();
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header Action */}
+      <div className="flex items-center justify-between bg-zinc-50 rounded-2xl p-4 border border-zinc-200">
+        <div>
+          <h3 className="font-bold text-zinc-900 text-sm">Company Officials Directory</h3>
+          <p className="text-xs text-zinc-500">Manage contact information, designations, and mobile numbers of key executive officials.</p>
+        </div>
+        <button
+          onClick={() => {
+            if (formOpen) {
+              resetForm();
+            } else {
+              setFormOpen(true);
+            }
+          }}
+          className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-emerald-200 hover:bg-emerald-700 transition-all cursor-pointer"
+        >
+          <Plus className="h-4 w-4" />
+          {formOpen ? 'Collapse Form' : 'Add Official'}
+        </button>
+      </div>
+
+      {/* Form Section */}
+      {formOpen && (
+        <form onSubmit={handleSubmit} className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm max-w-xl animate-fade-in space-y-4">
+          <h4 className="font-bold text-sm text-zinc-900 border-b border-zinc-100 pb-2">
+            {editingId ? 'Edit Official Contact Details' : 'Register New Company Official'}
+          </h4>
+
+          {error && (
+            <div className="p-3 text-xs bg-red-50 text-red-600 rounded-xl border border-red-100 font-semibold">
+              ⚠️ {error}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-600 mb-1.5">Official Name *</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Rajesh Singhania"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-600 mb-1.5">Designation / Role *</label>
+              <input
+                type="text"
+                value={designation}
+                onChange={(e) => setDesignation(e.target.value)}
+                placeholder="e.g. Chief Operating Officer (COO)"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-600 mb-1.5">Mobile Number *</label>
+              <div className="relative">
+                <span className="absolute left-3 top-2 text-zinc-400 text-xs font-semibold">+91</span>
+                <input
+                  type="text"
+                  value={mobileNumber}
+                  onChange={(e) => setMobileNumber(e.target.value)}
+                  placeholder="9876543210"
+                  className="w-full rounded-xl border border-zinc-200 pl-10 pr-3 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                  required
+                />
+              </div>
+              <p className="text-[10px] text-zinc-400 mt-1">Please enter a valid 10-digit mobile number for WhatsApp & calls.</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2 border-t border-zinc-100 justify-end">
+            <button
+              type="button"
+              onClick={resetForm}
+              className="px-4 py-2 text-xs font-bold text-zinc-500 hover:text-zinc-700 transition-all cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md shadow-emerald-100 transition-all cursor-pointer"
+            >
+              {editingId ? 'Save Changes' : 'Register Official'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Grid of Officials */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {officials.map((official) => (
+          <div
+            key={official.id}
+            className="group relative rounded-2xl border border-zinc-200 bg-white p-5 hover:border-emerald-300 hover:shadow-md transition-all duration-200"
+          >
+            {/* Visual Header Icon */}
+            <div className="absolute top-4 right-4 flex items-center gap-1 text-zinc-300 group-hover:text-emerald-500 transition-all duration-200">
+              <Users className="h-5 w-5 opacity-40 group-hover:opacity-100" />
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <h4 className="font-bold text-zinc-900 text-sm group-hover:text-emerald-800 transition-colors">
+                  {official.name}
+                </h4>
+                <p className="text-xs font-semibold text-emerald-600 bg-emerald-50 rounded-lg px-2 py-0.5 inline-block mt-1">
+                  {official.designation}
+                </p>
+              </div>
+
+              {/* Mobile details */}
+              <div className="pt-2 border-t border-zinc-100 flex flex-col gap-1.5 text-xs text-zinc-600">
+                <div className="flex items-center gap-2">
+                  <PhoneCall className="h-3.5 w-3.5 text-zinc-400" />
+                  <span className="font-mono font-medium">+91 {official.mobileNumber}</span>
+                </div>
+              </div>
+
+              {/* Call to action tools */}
+              <div className="pt-3 border-t border-zinc-100 flex items-center gap-2 justify-between">
+                <div className="flex items-center gap-1.5">
+                  <a
+                    href={`tel:+91${official.mobileNumber}`}
+                    className="flex items-center gap-1 rounded-lg bg-zinc-100 hover:bg-emerald-50 hover:text-emerald-700 p-1.5 text-[11px] font-bold text-zinc-600 transition-all cursor-pointer"
+                    title="Direct Call"
+                  >
+                    📞 Call
+                  </a>
+                  <a
+                    href={`https://wa.me/91${official.mobileNumber}`}
+                    target="_blank"
+                    referrerPolicy="no-referrer"
+                    className="flex items-center gap-1 rounded-lg bg-zinc-100 hover:bg-emerald-50 hover:text-emerald-700 p-1.5 text-[11px] font-bold text-zinc-600 transition-all cursor-pointer"
+                    title="WhatsApp Chat"
+                  >
+                    💬 WhatsApp
+                  </a>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleEdit(official)}
+                    className="rounded-lg p-1.5 text-[11px] font-bold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 transition-all cursor-pointer"
+                    title="Edit Official"
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to remove ${official.name}?`)) {
+                        onDeleteOfficial(official.id);
+                      }
+                    }}
+                    className="rounded-lg p-1.5 text-[11px] font-bold text-red-500 hover:bg-red-50 transition-all cursor-pointer"
+                    title="Delete Official"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {officials.length === 0 && (
+          <div className="col-span-full border border-dashed border-zinc-300 rounded-2xl py-12 text-center text-zinc-400 bg-zinc-50">
+            <Users className="h-8 w-8 mx-auto text-zinc-300 mb-2" />
+            <p className="font-bold text-sm">No Officials Listed</p>
+            <p className="text-xs mt-0.5 text-zinc-500">Register company officials to keep team records synced and accessible.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -36,7 +36,8 @@ import {
   AppNotification,
   getUserRole,
   StaffMember,
-  AttendanceRecord
+  AttendanceRecord,
+  CompanyOfficial
 } from '../types';
 import { 
   subscribeToOrders, 
@@ -85,7 +86,11 @@ import {
   dbUpdateStaffMember,
   dbDeleteStaffMember,
   dbGetAttendanceRecords,
-  dbSaveAttendanceRecord
+  dbSaveAttendanceRecord,
+  dbGetCompanyOfficials,
+  dbAddCompanyOfficial,
+  dbUpdateCompanyOfficial,
+  dbDeleteCompanyOfficial
 } from '../lib/supabase';
 
 // Component imports
@@ -146,6 +151,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [storefrontAds, setStorefrontAds] = useState<StorefrontAd[]>([]);
+  const [officials, setOfficials] = useState<CompanyOfficial[]>([]);
   const [cpanelSettings, setCpanelSettings] = useState<CpanelSettings>(DEFAULT_CPANEL_SETTINGS);
   const [dbConfig, setDbConfig] = useState<SupabaseConfig>({ supabaseUrl: '', supabaseAnonKey: '', isConnected: false });
 
@@ -172,6 +178,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
       const fetchedCrops = await dbGetMasterCrops();
       const fetchedStaff = await dbGetStaffMembers();
       const fetchedAttendance = await dbGetAttendanceRecords();
+      const fetchedOfficials = await dbGetCompanyOfficials();
       const config = getSupabaseConfig();
 
       setStores(fetchedStores);
@@ -195,6 +202,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
       setMasterCrops(fetchedCrops);
       setStaff(fetchedStaff);
       setAttendance(fetchedAttendance);
+      setOfficials(fetchedOfficials);
       setDbConfig(config);
 
       // Load settings and ads from localStorage if exist
@@ -359,6 +367,22 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
 
   const handleSaveAttendance = async (record: AttendanceRecord) => {
     await dbSaveAttendanceRecord(record);
+    await loadAllData();
+  };
+
+  // Company Officials Handlers
+  const handleAddOfficial = async (official: CompanyOfficial) => {
+    await dbAddCompanyOfficial(official);
+    await loadAllData();
+  };
+
+  const handleUpdateOfficial = async (official: CompanyOfficial) => {
+    await dbUpdateCompanyOfficial(official);
+    await loadAllData();
+  };
+
+  const handleDeleteOfficial = async (id: string) => {
+    await dbDeleteCompanyOfficial(id);
     await loadAllData();
   };
 
@@ -981,6 +1005,10 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
               inventory={inventory}
               onUpdateMasterCrop={handleUpdateMasterCrop}
               onUpdateInventoryItem={handleUpdateInventoryItem}
+              officials={officials}
+              onAddOfficial={handleAddOfficial}
+              onUpdateOfficial={handleUpdateOfficial}
+              onDeleteOfficial={handleDeleteOfficial}
             />
           )}
         </div>

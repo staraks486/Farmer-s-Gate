@@ -228,7 +228,17 @@ export interface StorefrontAd {
   isActive: boolean;
   tagline?: string;
   actionText?: string;
-}export interface AppUserRole {
+}
+
+export interface CompanyOfficial {
+  id: string;
+  name: string;
+  designation: string;
+  mobileNumber: string;
+  createdAt: string;
+}
+
+export interface AppUserRole {
   role: 'admin' | 'supply_office' | 'ledger' | 'supply_chain' | 'store_pos' | 'staff' | 'customer';
   label: string;
   allowedPortals: ('customer' | 'partner' | 'management')[];
