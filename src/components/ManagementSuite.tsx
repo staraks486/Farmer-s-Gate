@@ -115,7 +115,10 @@ const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   enableMultipleRegisters: true,
   quickDemoDataEnabled: true,
   disableLoadingIntro: false,
-  introSpeedSeconds: 4
+  introSpeedSeconds: 4,
+  enableLocalAccessRestriction: false,
+  allowedLocalRadiusKm: 10,
+  simulatedLocalOnly: false
 };
 
 export default function ManagementSuite({ user, isStorePosPortal }: { user: any; isStorePosPortal?: boolean }) {

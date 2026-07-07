@@ -217,6 +217,9 @@ export interface CpanelSettings {
   quickDemoDataEnabled: boolean;
   disableLoadingIntro?: boolean;
   introSpeedSeconds?: number;
+  enableLocalAccessRestriction?: boolean;
+  allowedLocalRadiusKm?: number;
+  simulatedLocalOnly?: boolean;
 }
 
 export interface StorefrontAd {

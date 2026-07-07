@@ -1629,7 +1629,7 @@ export default function AdminPanel({
             )}
           </div>
 
-          <div className="grid gap-6 grid-cols-1 lg:grid-cols-3 text-left">
+          <div className="grid gap-6 grid-cols-1 lg:grid-cols-4 text-left">
             
             {/* Column 1: Financial & Tax Compliance Controls */}
             <div className="bg-white rounded-2xl border border-zinc-200 p-5 shadow-xs space-y-5">
@@ -1909,6 +1909,93 @@ export default function AdminPanel({
                 />
                 <p className="text-[8px] text-zinc-400">Available placeholders: <code>{`{customer}`}</code>, <code>{`{amount}`}</code>, <code>{`{store}`}</code>.</p>
               </div>
+            </div>
+
+            {/* Column 4: Geofencing & Local Access Controls */}
+            <div className="bg-white rounded-2xl border border-zinc-200 p-5 shadow-xs space-y-5">
+              <div className="flex items-center gap-2.5 border-b border-zinc-100 pb-3">
+                <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700">
+                  <MapPin className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-zinc-900 text-sm font-sans">Geofencing & Local Access</h4>
+                  <p className="text-[10px] text-zinc-400">Restrict corporate access to local physical branches.</p>
+                </div>
+              </div>
+
+              {/* Toggle Local Access Restriction */}
+              <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-100/70">
+                <div className="space-y-0.5 text-left">
+                  <span className="block text-xs font-bold text-zinc-800">Geofence Restrictions</span>
+                  <span className="block text-[9px] text-zinc-400 leading-tight">Only local physical visitors near branch coordinates can access administration/POS hubs.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUpdateCpanelSettings({ 
+                    ...cpanelSettings, 
+                    enableLocalAccessRestriction: !cpanelSettings.enableLocalAccessRestriction 
+                  })}
+                  className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
+                    cpanelSettings.enableLocalAccessRestriction ? 'bg-emerald-600' : 'bg-zinc-300'
+                  }`}
+                >
+                  <span className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${
+                    cpanelSettings.enableLocalAccessRestriction ? 'left-6' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+
+              {/* Allowed Radius Slider */}
+              {cpanelSettings.enableLocalAccessRestriction && (
+                <div className="space-y-2 p-2.5 bg-zinc-50 rounded-xl border border-zinc-100/70 text-left animate-fade-in">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="block text-xs font-bold text-zinc-850">Allowed Local Radius</span>
+                    <span className="font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                      {(cpanelSettings.allowedLocalRadiusKm || 10)} km
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="50"
+                    step="1"
+                    value={cpanelSettings.allowedLocalRadiusKm || 10}
+                    onChange={(e) => onUpdateCpanelSettings({ 
+                      ...cpanelSettings, 
+                      allowedLocalRadiusKm: parseInt(e.target.value) || 10
+                    })}
+                    className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                  />
+                  <p className="text-[9px] text-zinc-400 leading-tight">Allowed physical range around Bangalore HQ or active retail outlets.</p>
+                </div>
+              )}
+
+              {/* Simulation Mode Toggle */}
+              {cpanelSettings.enableLocalAccessRestriction && (
+                <div className="flex items-center justify-between p-2.5 bg-amber-50/50 rounded-xl border border-amber-100">
+                  <div className="space-y-0.5 text-left">
+                    <span className="block text-xs font-bold text-amber-900">Developer Local Simulation</span>
+                    <span className="block text-[9px] text-amber-700 leading-tight">Skip GPS coordinate queries and simulate being inside the allowed range.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = !cpanelSettings.simulatedLocalOnly;
+                      onUpdateCpanelSettings({ 
+                        ...cpanelSettings, 
+                        simulatedLocalOnly: updated
+                      });
+                    }}
+                    className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
+                      cpanelSettings.simulatedLocalOnly ? 'bg-amber-600' : 'bg-zinc-300'
+                    }`}
+                  >
+                    <span className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${
+                      cpanelSettings.simulatedLocalOnly ? 'left-6' : 'left-1'
+                    }`} />
+                  </button>
+                </div>
+              )}
             </div>
 
           </div>

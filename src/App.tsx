@@ -11,7 +11,8 @@ import {
   Sprout,
   ArrowRight,
   Check,
-  BarChart3
+  BarChart3,
+  MapPin
 } from 'lucide-react';
 import CustomerHub from './components/CustomerHub';
 import PartnerPortal from './components/PartnerPortal';
@@ -31,6 +32,100 @@ import { getUserRole } from './types';
 export default function App() {
   const [activePortal, setActivePortal] = useState<'customer' | 'partner' | 'management' | 'executive' | 'store_pos'>('customer');
   const [user, setUser] = useState<FirebaseUser | null>(null);
+
+  // Geofencing and Local Access Restrictor States & Helpers
+  const [userLocation, setUserLocation] = useState<{lat: number; lng: number} | null>(null);
+  const [isCheckingGeo, setIsCheckingGeo] = useState<boolean>(false);
+  const [geoBlockError, setGeoBlockError] = useState<string>('');
+
+  // Haversine formula to compute distance in km
+  const getDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  const getLatestCpanelSettings = () => {
+    try {
+      const local = localStorage.getItem('farmersgate_cpanel_settings');
+      return local ? JSON.parse(local) : null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const verifyLocation = (targetPortal: string, onVerified: (allowed: boolean, reason?: string) => void) => {
+    const isRestricted = ['partner', 'management', 'executive', 'store_pos'].includes(targetPortal);
+    if (!isRestricted) {
+      onVerified(true);
+      return;
+    }
+
+    const settings = getLatestCpanelSettings();
+    if (!settings?.enableLocalAccessRestriction) {
+      onVerified(true);
+      return;
+    }
+
+    if (settings.simulatedLocalOnly) {
+      onVerified(true);
+      return;
+    }
+
+    // Try to get current position dynamically
+    setIsCheckingGeo(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        setUserLocation(coords);
+        setIsCheckingGeo(false);
+
+        // Compute distance to branches
+        const locations = [
+          { name: "Bangalore Corporate HQ", lat: 12.9716, lng: 77.5946 },
+          { name: "Whitefield Store", lat: 12.9698, lng: 77.7500 },
+          { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412 },
+          { name: "Koramangala Store", lat: 12.9279, lng: 77.6271 },
+          { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824 },
+          { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806 },
+          { name: "Hebbal Store", lat: 13.0354, lng: 77.5988 }
+        ];
+
+        const radius = settings.allowedLocalRadiusKm || 10;
+        let nearestDist = Infinity;
+        let nearestName = "";
+
+        for (const loc of locations) {
+          const dist = getDistanceKm(coords.lat, coords.lng, loc.lat, loc.lng);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestName = loc.name;
+          }
+        }
+
+        if (nearestDist <= radius) {
+          onVerified(true);
+        } else {
+          onVerified(false, `Your device is ${nearestDist.toFixed(1)} km away from the nearest physical branch (${nearestName}). Restricting to public storefront. Range must be within ${radius} km.`);
+        }
+      },
+      (error) => {
+        setIsCheckingGeo(false);
+        console.warn('Geolocation failed or denied:', error);
+        onVerified(false, "Location permission is required for local security verification. Other visitors can only access the standard public Shopper Store.");
+      },
+      { enableHighAccuracy: true, timeout: 6000 }
+    );
+  };
 
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -281,7 +376,16 @@ export default function App() {
       }
 
       if (targetPortal) {
-        setActivePortal(targetPortal);
+        verifyLocation(targetPortal, (allowed, reason) => {
+          if (allowed) {
+            setActivePortal(targetPortal!);
+            setGeoBlockError('');
+          } else {
+            setGeoBlockError(reason || 'Access restricted.');
+            setActivePortal('customer');
+            window.location.hash = 'customer';
+          }
+        });
       }
     };
 
@@ -292,11 +396,20 @@ export default function App() {
       window.removeEventListener('hashchange', handleHashAndParams);
       window.removeEventListener('popstate', handleHashAndParams);
     };
-  }, []);
+  }, [userLocation]);
 
   const changePortal = (portal: 'customer' | 'partner' | 'management' | 'executive' | 'store_pos') => {
-    setActivePortal(portal);
-    window.location.hash = portal;
+    verifyLocation(portal, (allowed, reason) => {
+      if (allowed) {
+        setActivePortal(portal);
+        window.location.hash = portal;
+        setGeoBlockError('');
+      } else {
+        setGeoBlockError(reason || 'Access restricted.');
+        setActivePortal('customer');
+        window.location.hash = 'customer';
+      }
+    });
   };
 
   if (showIntro) {
@@ -405,7 +518,67 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f4fbf7] flex flex-col font-sans select-none antialiased text-slate-800">
+    <div className="min-h-screen bg-[#f4fbf7] flex flex-col font-sans select-none antialiased text-slate-800 relative">
+      
+      {/* 📍 Geofencing Access Restriction Notification Toast */}
+      {geoBlockError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="bg-gradient-to-br from-slate-900 via-zinc-950 to-slate-950 text-white rounded-2xl p-4 shadow-2xl border border-red-500/30 flex items-start gap-3.5 ring-1 ring-red-500/15">
+            <div className="p-2 bg-red-500/10 rounded-xl text-red-400 border border-red-500/20 shrink-0">
+              <MapPin className="h-5 w-5 animate-pulse" />
+            </div>
+            <div className="flex-1 space-y-1 text-left">
+              <h5 className="font-extrabold text-xs tracking-tight text-white uppercase flex items-center gap-1.5">
+                <span>🔒 Geographic Access Security Restriction</span>
+                <span className="bg-red-500/10 text-red-400 text-[8px] font-black px-2 py-0.5 rounded-full border border-red-500/20 animate-pulse">Restricted Area</span>
+              </h5>
+              <p className="text-[10px] text-zinc-400 font-medium leading-relaxed">
+                {geoBlockError}
+              </p>
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const settings = getLatestCpanelSettings();
+                    if (settings) {
+                      settings.simulatedLocalOnly = true;
+                      localStorage.setItem('farmersgate_cpanel_settings', JSON.stringify(settings));
+                      setGeoBlockError('');
+                      alert("Sandbox Local Simulation Enabled! You can now access all restricted corporate/retail portals.");
+                    }
+                  }}
+                  className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-extrabold text-[9px] px-2.5 py-1.5 rounded-lg uppercase tracking-wide transition-all cursor-pointer"
+                >
+                  ⚡ Force Local Simulation
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGeoBlockError('')}
+                  className="bg-zinc-850 hover:bg-zinc-800 text-zinc-300 font-extrabold text-[9px] px-2.5 py-1.5 rounded-lg uppercase tracking-wide transition-all cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Geofence Location Verification Loading Modal */}
+      {isCheckingGeo && (
+        <div className="fixed inset-0 bg-slate-950/80 z-50 flex flex-col items-center justify-center p-6 backdrop-blur-xs">
+          <div className="max-w-xs text-center space-y-4">
+            <div className="relative flex items-center justify-center animate-bounce">
+              <div className="h-12 w-12 rounded-full border-2 border-emerald-500/20 border-t-emerald-400 animate-spin"></div>
+              <MapPin className="h-5 w-5 text-emerald-400 absolute" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-extrabold text-white font-sans">Verifying Branch Proximity</h4>
+              <p className="text-[10px] text-slate-400">Querying secure browser GPS coordinates to verify physical proximity near a FarmersGate branch...</p>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Dynamic Portal Selector Rail (Visible only in the management admin module to authorized staff) */}
       {activePortal === 'management' && (
