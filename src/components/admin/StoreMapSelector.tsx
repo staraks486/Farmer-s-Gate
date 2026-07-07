@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Search, Compass, Navigation, RefreshCw, Layers } from 'lucide-react';
+import { MapPin, Search, Compass, Navigation, RefreshCw, Layers, X } from 'lucide-react';
 
 interface CityConfig {
   name: string;
@@ -189,6 +189,16 @@ interface StoreMapSelectorProps {
 }
 
 export default function StoreMapSelector({ lat, lng, location, onChangeLocation }: StoreMapSelectorProps) {
+  const [cities, setCities] = useState<CityConfig[]>(() => {
+    const saved = localStorage.getItem('fg_map_cities');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return INDIAN_CITIES_MAP_CONFIGS;
+  });
+
   const [activeCityIndex, setActiveCityIndex] = useState(0);
   const [searchAreaQuery, setSearchAreaQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ name: string; cityName: string; cityIndex: number; lat: number; lng: number; isCustom?: boolean }>>([]);
@@ -201,7 +211,26 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
   const [pasteMessage, setPasteMessage] = useState<{ text: string; isError: boolean } | null>(null);
   
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const activeCity = INDIAN_CITIES_MAP_CONFIGS[activeCityIndex];
+  const activeCity = cities[activeCityIndex] || cities[0];
+
+  const handleDeleteCity = (idxToDelete: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (cities.length <= 1) {
+      alert("At least one city region is required for map coordination.");
+      return;
+    }
+    const cityName = cities[idxToDelete].name;
+    if (confirm(`Are you sure you want to delete the "${cityName}" region from map presets?`)) {
+      const newCities = cities.filter((_, idx) => idx !== idxToDelete);
+      setCities(newCities);
+      localStorage.setItem('fg_map_cities', JSON.stringify(newCities));
+      if (activeCityIndex === idxToDelete) {
+        setActiveCityIndex(0);
+      } else if (activeCityIndex > idxToDelete) {
+        setActiveCityIndex(activeCityIndex - 1);
+      }
+    }
+  };
 
   const handleDecodeMapLink = (e: React.FormEvent) => {
     e.preventDefault();
@@ -212,7 +241,7 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
       let matchedCityName = activeCity.name;
       let matchedCityIndex = activeCityIndex;
 
-      INDIAN_CITIES_MAP_CONFIGS.forEach((city, idx) => {
+      cities.forEach((city, idx) => {
         if (decoded.lat >= city.latMin && decoded.lat <= city.latMax &&
             decoded.lng >= city.lngMin && decoded.lng <= city.lngMax) {
           matchedCityName = city.name;
@@ -260,7 +289,7 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
     const query = searchAreaQuery.toLowerCase();
     const matches: Array<{ name: string; cityName: string; cityIndex: number; lat: number; lng: number; isCustom?: boolean }> = [];
     
-    INDIAN_CITIES_MAP_CONFIGS.forEach((city, cityIndex) => {
+    cities.forEach((city, cityIndex) => {
       // Check city name match
       if (city.name.toLowerCase().includes(query)) {
         matches.push({
@@ -292,14 +321,14 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
   // Sync active city index if incoming lat/lng matches another city's bounding box
   useEffect(() => {
     if (lat !== '' && lng !== '') {
-      const matchingCityIdx = INDIAN_CITIES_MAP_CONFIGS.findIndex(
+      const matchingCityIdx = cities.findIndex(
         city => lat >= city.latMin && lat <= city.latMax && lng >= city.lngMin && lng <= city.lngMax
       );
       if (matchingCityIdx !== -1 && matchingCityIdx !== activeCityIndex) {
         setActiveCityIndex(matchingCityIdx);
       }
     }
-  }, [lat, lng]);
+  }, [lat, lng, cities]);
 
   // Convert map coordinates to click position
   const getPointerPosition = () => {
@@ -576,32 +605,45 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
       {/* City Switcher Tabs */}
       <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none border-b border-zinc-800">
         <span className="text-[9px] font-black uppercase text-zinc-500 mr-2">Region Base:</span>
-        {INDIAN_CITIES_MAP_CONFIGS.map((city, idx) => {
+        {cities.map((city, idx) => {
           const isSelected = activeCityIndex === idx;
           return (
-            <button
+            <div
               key={city.code}
-              type="button"
-              onClick={() => {
-                setActiveCityIndex(idx);
-                // Center pin at city center coordinates
-                const centerLat = (city.latMin + city.latMax) / 2;
-                const centerLng = (city.lngMin + city.lngMax) / 2;
-                onChangeLocation({
-                  lat: parseFloat(centerLat.toFixed(5)),
-                  lng: parseFloat(centerLng.toFixed(5)),
-                  location: `FarmersGate Center Hub, ${city.name}, India`
-                });
-              }}
-              className={`px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase shrink-0 transition flex items-center gap-1 cursor-pointer ${
+              className={`px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase shrink-0 transition flex items-center gap-1.5 border ${
                 isSelected
-                  ? 'bg-emerald-600 text-white border border-emerald-500'
-                  : 'bg-zinc-800 hover:bg-zinc-750 text-zinc-400 border border-zinc-800'
+                  ? 'bg-emerald-600 text-white border-emerald-500'
+                  : 'bg-zinc-800 hover:bg-zinc-750 text-zinc-400 border-zinc-800'
               }`}
             >
-              <span>{city.icon}</span>
-              <span>{city.name}</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCityIndex(idx);
+                  // Center pin at city center coordinates
+                  const centerLat = (city.latMin + city.latMax) / 2;
+                  const centerLng = (city.lngMin + city.lngMax) / 2;
+                  onChangeLocation({
+                    lat: parseFloat(centerLat.toFixed(5)),
+                    lng: parseFloat(centerLng.toFixed(5)),
+                    location: `FarmersGate Center Hub, ${city.name}, India`
+                  });
+                }}
+                className="flex items-center gap-1 cursor-pointer text-left focus:outline-none"
+              >
+                <span>{city.icon}</span>
+                <span>{city.name}</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={(e) => handleDeleteCity(idx, e)}
+                className="ml-0.5 p-0.5 text-zinc-400 hover:text-red-400 hover:bg-zinc-700/50 rounded transition cursor-pointer"
+                title={`Delete ${city.name} region`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
           );
         })}
       </div>

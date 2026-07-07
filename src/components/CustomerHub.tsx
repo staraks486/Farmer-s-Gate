@@ -787,7 +787,9 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
           
           {/* Left Block: Delivery Estimate & Location address */}
           <div className="flex items-center gap-3">
-            <FarmersGateLogo variant="monogram" className="shrink-0 scale-110 hover:scale-115 transition-transform duration-300" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-600 text-white shadow-md hover:scale-105 transition-transform duration-300">
+              <ShoppingBag className="h-5 w-5" />
+            </div>
             <div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-lg font-black tracking-tight text-slate-900 uppercase">Express Delivery</span>
