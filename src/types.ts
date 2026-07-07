@@ -6,6 +6,8 @@ export interface Store {
   isActive: boolean;
   createdAt: string;
   password?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface Sale {

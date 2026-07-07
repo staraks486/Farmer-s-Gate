@@ -550,6 +550,11 @@ export default function AdminPanel({
   const [storeFormOpen, setStoreFormOpen] = useState(false);
   const [storeName, setStoreName] = useState('');
   const [storeLocation, setStoreLocation] = useState('');
+  const [storeLat, setStoreLat] = useState<number | ''>('');
+  const [storeLng, setStoreLng] = useState<number | ''>('');
+  const [storeSearchAddress, setStoreSearchAddress] = useState('');
+  const [geocodeResults, setGeocodeResults] = useState<Array<{ name: string; lat: number; lng: number }>>([]);
+  const [storesSearchQuery, setStoresSearchQuery] = useState('');
   const [storeWhatsapp, setStoreWhatsapp] = useState('');
   const [storePassword, setStorePassword] = useState('');
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
@@ -796,7 +801,9 @@ export default function AdminPanel({
           name: storeName.startsWith("Farmer's Gate - ") ? storeName : `Farmer's Gate - ${storeName}`,
           location: storeLocation,
           whatsappNumber: storeWhatsapp.replace(/[^\d+]/g, ''), // clean phone input
-          password: storePassword || undefined
+          password: storePassword || undefined,
+          lat: storeLat !== '' ? storeLat : undefined,
+          lng: storeLng !== '' ? storeLng : undefined
         });
       }
     } else {
@@ -807,7 +814,9 @@ export default function AdminPanel({
         whatsappNumber: storeWhatsapp.replace(/[^\d+]/g, ''), // clean phone input
         isActive: true,
         createdAt: new Date().toISOString(),
-        password: storePassword || undefined
+        password: storePassword || undefined,
+        lat: storeLat !== '' ? storeLat : undefined,
+        lng: storeLng !== '' ? storeLng : undefined
       };
       onAddStore(newStore);
     }
@@ -815,6 +824,10 @@ export default function AdminPanel({
     // Reset Form
     setStoreName('');
     setStoreLocation('');
+    setStoreLat('');
+    setStoreLng('');
+    setStoreSearchAddress('');
+    setGeocodeResults([]);
     setStoreWhatsapp('');
     setStorePassword('');
     setEditingStoreId(null);
@@ -825,9 +838,73 @@ export default function AdminPanel({
     setEditingStoreId(store.id);
     setStoreName(store.name.replace("Farmer's Gate - ", ""));
     setStoreLocation(store.location);
+    setStoreLat(store.lat ?? '');
+    setStoreLng(store.lng ?? '');
     setStoreWhatsapp(store.whatsappNumber);
     setStorePassword(store.password || '');
     setStoreFormOpen(true);
+  };
+
+  // Indian cities & sub-market neighborhoods directory for auto-complete location search
+  const INDIAN_COORDINATE_DICTIONARY = [
+    { name: "Farmer's Gate HQ - 100 Feet Rd, Indiranagar, Bengaluru, Karnataka 560038", lat: 12.9716, lng: 77.6412, tags: ['bangalore', 'indiranagar', 'bengaluru', '100 feet', 'hq'] },
+    { name: "Whitefield Store - ITPL Main Road, Bangalore, Karnataka 560066", lat: 12.9698, lng: 77.7500, tags: ['bangalore', 'whitefield', 'bengaluru', 'itpl'] },
+    { name: "Koramangala Store - 80 Feet Rd, Koramangala 3rd Block, Bangalore 560034", lat: 12.9279, lng: 77.6271, tags: ['bangalore', 'koramangala', 'bengaluru'] },
+    { name: "Bandra West Dispatch - Linking Road, Bandra West, Mumbai, Maharashtra 400050", lat: 19.0596, lng: 72.8295, tags: ['mumbai', 'bandra', 'west', 'linking'] },
+    { name: "Karol Bagh Outlet - Arya Samaj Road, Karol Bagh, New Delhi, Delhi 110005", lat: 28.6430, lng: 77.1887, tags: ['delhi', 'karol bagh', 'metro', 'new delhi'] },
+    { name: "Connaught Place Hub - Connaught Circle, Block A, New Delhi, Delhi 110001", lat: 28.6304, lng: 77.2177, tags: ['delhi', 'connaught', 'cp', 'new delhi'] },
+    { name: "Jubilee Hills Central - Road No 36, Jubilee Hills, Hyderabad, Telangana 500081", lat: 17.4483, lng: 78.3741, tags: ['hyderabad', 'jubilee', 'hitec'] },
+    { name: "Gachibowli Darkstore - Financial District, Gachibowli, Hyderabad, Telangana 500032", lat: 17.4401, lng: 78.3489, tags: ['hyderabad', 'gachibowli', 'financial'] },
+    { name: "T. Nagar Market - Usman Road, T. Nagar, Chennai, Tamil Nadu 600017", lat: 13.0405, lng: 80.2337, tags: ['chennai', 't. nagar', 't nagar', 'usman'] },
+    { name: "Koregaon Park Branch - North Main Road, Koregaon Park, Pune, Maharashtra 411001", lat: 18.5362, lng: 73.8930, tags: ['pune', 'koregaon', 'park', 'maharashtra'] },
+    { name: "Salt Lake Sector V - Salt Lake City, Kolkata, West Bengal 700091", lat: 22.5726, lng: 88.4339, tags: ['kolkata', 'salt lake', 'sector v', 'bengal'] },
+    { name: "Vastrapur Outlet - Vastrapur Lake Road, Ahmedabad, Gujarat 380015", lat: 23.0373, lng: 72.5252, tags: ['ahmedabad', 'vastrapur', 'gujarat'] }
+  ];
+
+  const handleLocationGeocodeSearch = () => {
+    if (!storeSearchAddress.trim()) {
+      setGeocodeResults([]);
+      return;
+    }
+    const query = storeSearchAddress.toLowerCase();
+    // Search the coordinate dictionary
+    const matches = INDIAN_COORDINATE_DICTIONARY.filter(loc => 
+      loc.name.toLowerCase().includes(query) || 
+      loc.tags.some(t => t.includes(query))
+    );
+
+    if (matches.length > 0) {
+      setGeocodeResults(matches);
+    } else {
+      // Generate a smart mock geocode result based on standard coordinate anchors
+      // using simple hashing so it is repeatable for same inputs
+      let hash = 0;
+      for (let i = 0; i < storeSearchAddress.length; i++) {
+        hash = storeSearchAddress.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const latOffset = (hash % 100) / 1000;
+      const lngOffset = ((hash >> 4) % 100) / 1000;
+      
+      // Default nearby Bangalore
+      const generatedLat = 12.9716 + latOffset;
+      const generatedLng = 77.5946 + lngOffset;
+
+      setGeocodeResults([
+        {
+          name: `${storeSearchAddress} (Simulated Location Reference)`,
+          lat: parseFloat(generatedLat.toFixed(5)),
+          lng: parseFloat(generatedLng.toFixed(5))
+        }
+      ]);
+    }
+  };
+
+  const handleSelectGeocodeResult = (res: { name: string; lat: number; lng: number }) => {
+    setStoreLocation(res.name);
+    setStoreLat(res.lat);
+    setStoreLng(res.lng);
+    setGeocodeResults([]);
+    setStoreSearchAddress('');
   };
 
   // Handle Supabase Submit
@@ -1000,14 +1077,91 @@ export default function AdminPanel({
                   </div>
                 </div>
 
+                <div className="bg-emerald-50/40 p-4 rounded-2xl border border-emerald-100/50 space-y-3.5 text-left">
+                  <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider flex items-center gap-1.5">
+                    🗺️ Location & Geo-coordinate Search Helper
+                  </span>
+                  <div>
+                    <label htmlFor="store-search-address" className="block text-[10px] font-black text-zinc-500 uppercase mb-1">Search Indian Neighborhood / City Hub</label>
+                    <div className="flex gap-2">
+                      <input
+                        id="store-search-address"
+                        type="text"
+                        placeholder="e.g. Bandra, Indiranagar, Connaught..."
+                        value={storeSearchAddress}
+                        onChange={(e) => setStoreSearchAddress(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleLocationGeocodeSearch();
+                          }
+                        }}
+                        className="flex-1 rounded-xl border border-zinc-200 px-3 py-1.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white font-medium"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleLocationGeocodeSearch}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                      >
+                        Search
+                      </button>
+                    </div>
+                    {geocodeResults.length > 0 && (
+                      <div className="mt-2 bg-white border border-zinc-200 rounded-xl max-h-32 overflow-y-auto divide-y divide-zinc-100 shadow-sm animate-fade-in">
+                        {geocodeResults.map((res, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleSelectGeocodeResult(res)}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-emerald-50/50 transition font-medium text-zinc-700 flex items-center justify-between cursor-pointer"
+                          >
+                            <span>📍 {res.name}</span>
+                            <span className="text-[10px] font-mono text-emerald-700 font-extrabold bg-emerald-50 px-1.5 py-0.5 rounded">
+                              {res.lat}, {res.lng}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div>
+                      <label htmlFor="store-lat-input" className="block text-[10px] font-black text-zinc-500 uppercase mb-1">Latitude Coordinate</label>
+                      <input
+                        id="store-lat-input"
+                        type="number"
+                        step="0.0001"
+                        placeholder="e.g. 12.9716"
+                        value={storeLat}
+                        onChange={(e) => setStoreLat(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                        className="w-full rounded-xl border border-zinc-200 p-2 text-xs text-zinc-800 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="store-lng-input" className="block text-[10px] font-black text-zinc-500 uppercase mb-1">Longitude Coordinate</label>
+                      <input
+                        id="store-lng-input"
+                        type="number"
+                        step="0.0001"
+                        placeholder="e.g. 77.5946"
+                        value={storeLng}
+                        onChange={(e) => setStoreLng(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                        className="w-full rounded-xl border border-zinc-200 p-2 text-xs text-zinc-800 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div>
-                  <label htmlFor="store-loc-input" className="block text-xs font-bold text-zinc-600 uppercase tracking-wide mb-1">Store Location Address</label>
+                  <label htmlFor="store-loc-input" className="block text-xs font-bold text-zinc-600 uppercase tracking-wide mb-1">Store Location Address *</label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
                     <input
                       id="store-loc-input"
                       type="text"
-                      placeholder="e.g. 45 Market St, City Center"
+                      required
+                      placeholder="e.g. 100 Feet Rd, Indiranagar, Bengaluru"
                       value={storeLocation}
                       onChange={(e) => setStoreLocation(e.target.value)}
                       className="w-full rounded-xl border border-zinc-200 py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800"
@@ -1067,9 +1221,48 @@ export default function AdminPanel({
             </div>
           )}
 
+          {/* Search Existing Stores */}
+          <div className="relative bg-white rounded-3xl p-5 border border-zinc-200 flex flex-col sm:flex-row items-center gap-4 text-left shadow-sm">
+            <div className="flex-1 w-full">
+              <label htmlFor="search-stores-input" className="block text-xs font-bold text-zinc-500 uppercase tracking-wide mb-1">Search & Filter Registered Outlets</label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-zinc-400 text-xs">
+                  🔍
+                </span>
+                <input
+                  id="search-stores-input"
+                  type="text"
+                  placeholder="Filter branches by name, city, location address, or latitude/longitude..."
+                  value={storesSearchQuery}
+                  onChange={(e) => setStoresSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-zinc-200 py-3 pl-10 pr-4 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium text-zinc-800 bg-zinc-50/50"
+                />
+              </div>
+            </div>
+            {storesSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setStoresSearchQuery('')}
+                className="px-4 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold rounded-xl text-xs transition cursor-pointer self-end"
+              >
+                Clear Search
+              </button>
+            )}
+          </div>
+
           {/* Stores Grid */}
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-            {stores.map(store => (
+            {stores
+              .filter(store => {
+                const query = storesSearchQuery.toLowerCase();
+                return (
+                  store.name.toLowerCase().includes(query) ||
+                  store.location.toLowerCase().includes(query) ||
+                  (store.lat !== undefined && store.lat.toString().includes(query)) ||
+                  (store.lng !== undefined && store.lng.toString().includes(query))
+                );
+              })
+              .map(store => (
               <div 
                 key={store.id} 
                 className={`rounded-2xl border p-5 bg-white shadow-sm flex flex-col justify-between transition-all ${
@@ -1105,6 +1298,11 @@ export default function AdminPanel({
                       <MapPin className="h-3.5 w-3.5 text-zinc-400" />
                       <span>{store.location || 'No location configured'}</span>
                     </div>
+                    {store.lat !== undefined && store.lng !== undefined && (
+                      <div className="flex items-center gap-2 text-[10px] text-emerald-700 font-mono bg-emerald-50/70 border border-emerald-100 rounded-lg px-2 py-0.5 w-fit">
+                        <span>🌐 Coordinates: {store.lat.toFixed(5)}, {store.lng.toFixed(5)}</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 text-xs text-zinc-500">
                       <PhoneCall className="h-3.5 w-3.5 text-zinc-400" />
                       <span>WhatsApp: <strong className="text-zinc-700">+{store.whatsappNumber}</strong></span>
