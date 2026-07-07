@@ -7,22 +7,66 @@ interface CropItem {
   vegetableName: string;
   sellingPrice: number;
   quantity: number;
+  category?: string;
 }
 
 interface QrScannerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onScanSuccess: (scannedValue: string) => void;
-  inventory: CropItem[];
+  isOpen?: boolean;
+  onClose?: () => void;
+  onScanSuccess?: (scannedValue: string) => void;
+  inventory?: CropItem[];
   title?: string;
+  onSuccess?: (scannedValue: string) => void;
+  onError?: (err: string) => void;
 }
 
+const getSimItemCategory = (item: CropItem): string => {
+  if (item.category) return item.category;
+  
+  // Fallback keyword matcher
+  const lower = item.vegetableName.toLowerCase();
+  
+  // Fruits
+  const fruitKeywords = [
+    'banana', 'avocado', 'lemon', 'apple', 'mango', 'orange', 'grape', 'strawberry', 
+    'papaya', 'watermelon', 'pineapple', 'pomegranate', 'fruit', 'guava', 'peach', 
+    'pear', 'plum', 'cherry', 'kiwi', 'blueberry', 'coconut', 'melon', 'lime', 'kela', 'seb', 'aam'
+  ];
+  
+  // Grocery
+  const groceryKeywords = [
+    'rice', 'wheat', 'flour', 'sugar', 'salt', 'oil', 'dal', 'pulse', 'spice', 
+    'garlic', 'ginger', 'coriander', 'chili', 'chilli', 'mushroom', 'egg', 'bread', 
+    'milk', 'butter', 'cheese', 'tea', 'coffee', 'grocery', 'pack', 'bottle', 
+    'box', 'can', 'masala', 'paneer', 'ghee', 'lentil', 'sauce', 'vinegar', 'dhaniya'
+  ];
+
+  // Herbs
+  const herbsKeywords = [
+    'mint', 'parsley', 'basil', 'oregano', 'thyme', 'rosemary', 'cilantro', 'herbs', 'pudina'
+  ];
+  
+  if (fruitKeywords.some(keyword => lower.includes(keyword))) {
+    return 'Fruit';
+  }
+  if (herbsKeywords.some(keyword => lower.includes(keyword))) {
+    return 'Herbs';
+  }
+  if (groceryKeywords.some(keyword => lower.includes(keyword))) {
+    return 'Grocery';
+  }
+  
+  return 'Vegetable';
+};
+
 export const QrScanner: React.FC<QrScannerProps> = ({
-  isOpen,
-  onClose,
-  onScanSuccess,
-  inventory,
-  title = "QR & Barcode Scanner"
+  isOpen = true,
+  onClose = () => {},
+  onScanSuccess = (_val: string) => {},
+  inventory = [],
+  title = "QR & Barcode Scanner",
+  onSuccess,
+  onError
 }) => {
   const [hasCamera, setHasCamera] = useState<boolean | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
@@ -34,6 +78,7 @@ export const QrScanner: React.FC<QrScannerProps> = ({
   const [muteSounds, setMuteSounds] = useState(false);
   const [activeMode, setActiveMode] = useState<'camera' | 'simulator'>('camera');
   const [searchFilter, setSearchFilter] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -210,7 +255,11 @@ export const QrScanner: React.FC<QrScannerProps> = ({
       setScanStatus('success');
       
       setTimeout(() => {
-        onScanSuccess(scannedValue);
+        if (onSuccess) {
+          onSuccess(scannedValue);
+        } else {
+          onScanSuccess(scannedValue);
+        }
         setScanStatus('idle');
       }, 900);
     } else {
@@ -222,7 +271,11 @@ export const QrScanner: React.FC<QrScannerProps> = ({
 
   // Resolution controls for warnings
   const handleForceAccept = () => {
-    onScanSuccess(scannedResult);
+    if (onSuccess) {
+      onSuccess(scannedResult);
+    } else {
+      onScanSuccess(scannedResult);
+    }
     setScanStatus('idle');
   };
 
@@ -533,11 +586,39 @@ export const QrScanner: React.FC<QrScannerProps> = ({
                 </div>
               </div>
 
+              {/* Category Filter Tabs */}
+              <div className="flex flex-wrap gap-1.5 border-b border-slate-100 pb-2.5">
+                {['All', 'Vegetable', 'Fruit', 'Herbs', 'Grocery', 'Other'].map(cat => {
+                  const filteredCount = inventory.filter(item => {
+                    const itemCat = getSimItemCategory(item);
+                    if (cat === 'All') return true;
+                    return itemCat === cat;
+                  }).length;
+                  
+                  if (filteredCount === 0 && cat !== 'All') return null; // Hide empty categories to keep UI clean
+
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg transition-all cursor-pointer border ${
+                        selectedCategory === cat
+                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-2xs'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {cat} ({filteredCount})
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* Search filter for simulation items */}
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="Filter vegetable items..."
+                  placeholder="Filter items by name..."
                   value={searchFilter}
                   onChange={(e) => setSearchFilter(e.target.value)}
                   className="w-full text-xs font-bold px-3.5 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/30"
@@ -547,7 +628,11 @@ export const QrScanner: React.FC<QrScannerProps> = ({
               {/* Grid lists */}
               <div className="grid grid-cols-2 gap-2 max-h-[175px] overflow-y-auto pr-1">
                 {inventory
-                  .filter(item => item.vegetableName.toLowerCase().includes(searchFilter.toLowerCase()))
+                  .filter(item => {
+                    const matchesSearch = item.vegetableName.toLowerCase().includes(searchFilter.toLowerCase());
+                    if (selectedCategory === 'All') return matchesSearch;
+                    return getSimItemCategory(item) === selectedCategory && matchesSearch;
+                  })
                   .map(item => (
                     <button
                       key={item.id}
@@ -558,12 +643,15 @@ export const QrScanner: React.FC<QrScannerProps> = ({
                       <div className="h-9 w-9 bg-slate-50 rounded-lg flex items-center justify-center font-mono font-bold text-xs text-slate-500 border border-slate-200 shrink-0 group-hover:bg-white transition-colors">
                         <QrCode className="h-5 w-5 text-slate-400 group-hover:text-emerald-600 transition-colors" />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <span className="block text-xs font-black text-slate-800 truncate leading-tight">
                           {item.vegetableName}
                         </span>
                         <span className="block text-[9px] font-bold text-slate-400 mt-0.5">
                           ₹{item.sellingPrice.toFixed(0)}/kg • stock: {item.quantity.toFixed(0)}kg
+                        </span>
+                        <span className="inline-block text-[8px] font-extrabold uppercase text-emerald-600 mt-1 bg-emerald-50/80 px-1.5 py-0.5 rounded border border-emerald-100">
+                          {getSimItemCategory(item)}
                         </span>
                       </div>
                     </button>

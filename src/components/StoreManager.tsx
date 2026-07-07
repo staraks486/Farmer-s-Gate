@@ -1920,6 +1920,29 @@ export default function StoreManager({
     } else if (scannerTarget === 'inventory') {
       setVegSearchQuery(scannedValue);
     }
+
+    // High fidelity: Return cursor and active focus immediately back to the trigger input to keep layout focus pristine
+    setTimeout(() => {
+      if (scannerTarget === 'pos') {
+        const input = document.getElementById('pos-search-input');
+        if (input) {
+          input.focus();
+          // Move cursor to end of string if search has value
+          const len = (input as HTMLInputElement).value.length;
+          (input as HTMLInputElement).setSelectionRange(len, len);
+        }
+      } else if (scannerTarget === 'purchase') {
+        const input = document.getElementById('pur-veg');
+        if (input) input.focus();
+      } else if (scannerTarget === 'inventory') {
+        const input = document.getElementById('inventory-search-input');
+        if (input) {
+          input.focus();
+          const len = (input as HTMLInputElement).value.length;
+          (input as HTMLInputElement).setSelectionRange(len, len);
+        }
+      }
+    }, 150);
   };
 
   // 2. STATE FOR PURCHASE TAB
@@ -2806,6 +2829,7 @@ export default function StoreManager({
                       <div className="relative flex-1">
                         <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                         <input
+                          id="pos-search-input"
                           type="text"
                           placeholder="Search available crops..."
                           value={posSearch}
@@ -3944,6 +3968,7 @@ export default function StoreManager({
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
                 <input
+                  id="inventory-search-input"
                   type="text"
                   placeholder="Search stock ledger (e.g. Tomato, Onion)..."
                   value={vegSearchQuery}
@@ -6374,7 +6399,10 @@ export default function StoreManager({
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleQrScanSuccess}
-        inventory={storeInventory}
+        inventory={storeInventory.map(item => ({
+          ...item,
+          category: getItemCategory(item.vegetableName)
+        }))}
         title={
           scannerTarget === 'pos' 
             ? 'POS Quick Barcode Scanner' 

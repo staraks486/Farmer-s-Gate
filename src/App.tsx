@@ -78,6 +78,57 @@ export default function App() {
       return;
     }
 
+    // Intercept with Geolocation Sandbox Simulation
+    try {
+      const sandboxStr = localStorage.getItem('farmersgate_geo_sandbox_settings');
+      if (sandboxStr) {
+        const sandbox = JSON.parse(sandboxStr);
+        if (sandbox && sandbox.enabled && sandbox.mode !== 'real') {
+          const coords = {
+            lat: sandbox.mode === 'manual' ? Number(sandbox.manualLat) : Number(sandbox.presetLat),
+            lng: sandbox.mode === 'manual' ? Number(sandbox.manualLng) : Number(sandbox.presetLng),
+          };
+          
+          setIsCheckingGeo(true);
+          setTimeout(() => {
+            setUserLocation(coords);
+            setIsCheckingGeo(false);
+
+            const locations = [
+              { name: "Bangalore Corporate HQ", lat: 12.9716, lng: 77.5946 },
+              { name: "Whitefield Store", lat: 12.9698, lng: 77.7500 },
+              { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412 },
+              { name: "Koramangala Store", lat: 12.9279, lng: 77.6271 },
+              { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824 },
+              { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806 },
+              { name: "Hebbal Store", lat: 13.0354, lng: 77.5988 }
+            ];
+
+            const radius = settings.allowedLocalRadiusKm || 10;
+            let nearestDist = Infinity;
+            let nearestName = "";
+
+            for (const loc of locations) {
+              const dist = getDistanceKm(coords.lat, coords.lng, loc.lat, loc.lng);
+              if (dist < nearestDist) {
+                nearestDist = dist;
+                nearestName = loc.name;
+              }
+            }
+
+            if (nearestDist <= radius) {
+              onVerified(true);
+            } else {
+              onVerified(false, `[SANDBOX ACTIVE] Your simulated device is ${nearestDist.toFixed(1)} km away from the nearest physical branch (${nearestName}). Restricting access. Range must be within ${radius} km.`);
+            }
+          }, 200);
+          return;
+        }
+      }
+    } catch (e) {
+      console.error('Error handling sandbox settings:', e);
+    }
+
     // Try to get current position dynamically
     setIsCheckingGeo(true);
     navigator.geolocation.getCurrentPosition(

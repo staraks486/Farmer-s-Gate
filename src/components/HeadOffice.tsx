@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Store, Requirement, InventoryItem, Sale, UserRole, ConsolidatedRequirement, MasterCrop, AppNotification } from '../types';
 import { FirebaseOrder, updateOrderStatusInFirestore, addNotificationToFirestore } from '../lib/firebase';
 import QRCode from 'qrcode';
@@ -47,7 +47,12 @@ import {
   CheckSquare,
   Square,
   Scan,
-  Camera
+  Camera,
+  MapPin,
+  Globe,
+  Compass,
+  Navigation,
+  Sliders
 } from 'lucide-react';
 
 interface HeadOfficeProps {
@@ -82,8 +87,200 @@ export default function HeadOffice({
   firebaseNotifications = []
 }: HeadOfficeProps) {
   // Main and sub layout tabs
-  const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog' | 'customer-orders' | 'qr-catalog'>('requirements');
+  const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog' | 'customer-orders' | 'qr-catalog' | 'geo-sandbox'>('requirements');
   const [reqSubTab, setReqSubTab] = useState<'itemized' | 'consolidated'>('itemized');
+
+  // Geolocation Sandbox State
+  const [sandboxEnabled, setSandboxEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('farmersgate_geo_sandbox_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return !!parsed.enabled;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return false;
+  });
+
+  const [sandboxMode, setSandboxMode] = useState<'real' | 'manual' | 'preset'>(() => {
+    try {
+      const saved = localStorage.getItem('farmersgate_geo_sandbox_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.mode || 'preset';
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return 'preset';
+  });
+
+  const [sandboxManualLat, setSandboxManualLat] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('farmersgate_geo_sandbox_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Number(parsed.manualLat) || 12.9716;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return 12.9716;
+  });
+
+  const [sandboxManualLng, setSandboxManualLng] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('farmersgate_geo_sandbox_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Number(parsed.manualLng) || 77.5946;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return 77.5946;
+  });
+
+  const [sandboxPresetName, setSandboxPresetName] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('farmersgate_geo_sandbox_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.presetName || 'Bangalore Corporate HQ';
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return 'Bangalore Corporate HQ';
+  });
+
+  const [sandboxPresetLat, setSandboxPresetLat] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('farmersgate_geo_sandbox_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Number(parsed.presetLat) || 12.9716;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return 12.9716;
+  });
+
+  const [sandboxPresetLng, setSandboxPresetLng] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('farmersgate_geo_sandbox_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Number(parsed.presetLng) || 77.5946;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return 77.5946;
+  });
+
+  const [sandboxCpanelSettings, setSandboxCpanelSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('farmersgate_cpanel_settings');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return { enableLocalAccessRestriction: true, allowedLocalRadiusKm: 10 };
+  });
+
+  // Verification simulation log/terminal
+  const [verificationOutput, setVerificationOutput] = useState<{
+    timestamp: string;
+    allowed: boolean;
+    reason?: string;
+    details?: {
+      nearestStore: string;
+      distance: number;
+      radius: number;
+    };
+  } | null>(null);
+
+  // Distances computed locally in the component for high-fidelity visual display
+  const [currentLat, setCurrentLat] = useState<number | null>(null);
+  const [currentLng, setCurrentLng] = useState<number | null>(null);
+  const [gettingRealGps, setGettingRealGps] = useState(false);
+
+  // Save Sandbox state changes immediately to LocalStorage so App.tsx can read them reactively
+  useEffect(() => {
+    const config = {
+      enabled: sandboxEnabled,
+      mode: sandboxMode,
+      manualLat: Number(sandboxManualLat),
+      manualLng: Number(sandboxManualLng),
+      presetName: sandboxPresetName,
+      presetLat: Number(sandboxPresetLat),
+      presetLng: Number(sandboxPresetLng)
+    };
+    localStorage.setItem('farmersgate_geo_sandbox_settings', JSON.stringify(config));
+  }, [sandboxEnabled, sandboxMode, sandboxManualLat, sandboxManualLng, sandboxPresetName, sandboxPresetLat, sandboxPresetLng]);
+
+  useEffect(() => {
+    if (activeTab === 'geo-sandbox' && currentLat === null) {
+      // Fetch initial live reference GPS
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setCurrentLat(pos.coords.latitude);
+          setCurrentLng(pos.coords.longitude);
+        },
+        (err) => console.warn(err),
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    }
+  }, [activeTab]);
+
+  const getSandboxDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  const sandboxLocations = [
+    { name: "Bangalore Corporate HQ", lat: 12.9716, lng: 77.5946, color: "bg-blue-50 border-blue-200 text-blue-700" },
+    { name: "Whitefield Store", lat: 12.9698, lng: 77.7500, color: "bg-teal-50 border-teal-200 text-teal-700" },
+    { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412, color: "bg-indigo-50 border-indigo-200 text-indigo-700" },
+    { name: "Koramangala Store", lat: 12.9279, lng: 77.6271, color: "bg-purple-50 border-purple-200 text-purple-700" },
+    { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824, color: "bg-amber-50 border-amber-200 text-amber-700" },
+    { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806, color: "bg-orange-50 border-orange-200 text-orange-700" },
+    { name: "Hebbal Store", lat: 13.0354, lng: 77.5988, color: "bg-rose-50 border-rose-200 text-rose-700" }
+  ];
+
+  const fetchRealGps = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    setGettingRealGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCurrentLat(pos.coords.latitude);
+        setCurrentLng(pos.coords.longitude);
+        setGettingRealGps(false);
+      },
+      (err) => {
+        console.error(err);
+        alert(`Failed to fetch GPS coordinates: ${err.message}`);
+        setGettingRealGps(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
 
   // Custom QR Code Generation Settings
   const [qrFgColor, setQrFgColor] = useState('#065f46'); // Premium emerald dark
@@ -275,6 +472,12 @@ export default function HeadOffice({
   const [masterSearch, setMasterSearch] = useState('');
   const [masterCategoryFilter, setMasterCategoryFilter] = useState<string>('all');
 
+  const cropFormNameRef = useRef<HTMLInputElement | null>(null);
+
+  const duplicateCrop = masterCrops.find(
+    c => c.vegetableName.trim().toLowerCase() === cropFormName.trim().toLowerCase() && c.id !== editingCropId
+  );
+
   const openNewCropForm = () => {
     setEditingCropId(null);
     setCropFormName('');
@@ -300,6 +503,33 @@ export default function HeadOffice({
     if (!cropFormName.trim()) {
       alert("Crop Name is required.");
       return;
+    }
+
+    // Double-check duplicates on add mode
+    if (!editingCropId) {
+      const existingDuplicate = masterCrops.find(
+        c => c.vegetableName.trim().toLowerCase() === cropFormName.trim().toLowerCase()
+      );
+      if (existingDuplicate) {
+        if (confirm(`An item named "${existingDuplicate.vegetableName}" already exists in the master catalog under "${existingDuplicate.category}".\n\nWould you like to switch to EDITing this existing item instead?`)) {
+          setEditingCropId(existingDuplicate.id);
+          setCropFormName(existingDuplicate.vegetableName);
+          setCropFormCategory(existingDuplicate.category);
+          setCropFormCost(existingDuplicate.costPrice);
+          setCropFormPrice(existingDuplicate.sellingPrice);
+          setCropFormMinThreshold(existingDuplicate.minStockThreshold);
+          setTimeout(() => {
+            if (cropFormNameRef.current) {
+              cropFormNameRef.current.focus();
+              const len = cropFormNameRef.current.value.length;
+              cropFormNameRef.current.setSelectionRange(len, len);
+            }
+          }, 50);
+          return;
+        } else {
+          return; // cancel submit to let them modify name or keep resolving
+        }
+      }
     }
 
     const savedCrop: MasterCrop = {
@@ -1425,6 +1655,18 @@ export default function HeadOffice({
           >
             <span>📱</span> Category QR Codes
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('geo-sandbox')}
+            className={`px-3 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'geo-sandbox' 
+                ? 'bg-slate-900 text-white shadow-sm' 
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            }`}
+          >
+            <span>🌍</span> Geolocation Sandbox
+          </button>
         </div>
 
         <div className="flex items-center gap-2 px-2 shrink-0">
@@ -2465,7 +2707,8 @@ export default function HeadOffice({
               id: i.id,
               vegetableName: i.vegetableName,
               sellingPrice: i.sellingPrice,
-              quantity: i.quantity
+              quantity: i.quantity,
+              category: masterCrops.find(mc => mc.vegetableName.toLowerCase() === i.vegetableName.toLowerCase())?.category || 'Vegetable'
             }))}
             title="HQ Central Stock Barcode & QR Scanner"
           />
@@ -3758,14 +4001,61 @@ export default function HeadOffice({
                   
                   <div className="space-y-1">
                     <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Crop Vegetable Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Tomato Premium, Strawberries Basket..."
-                      value={cropFormName}
-                      onChange={(e) => setCropFormName(e.target.value)}
-                      className="w-full text-xs font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50 text-slate-800"
-                    />
+                    <div className="relative">
+                      <input
+                        ref={cropFormNameRef}
+                        type="text"
+                        required
+                        placeholder="e.g. Tomato Premium, Strawberries Basket..."
+                        value={cropFormName}
+                        onChange={(e) => setCropFormName(e.target.value)}
+                        className={`w-full text-xs font-bold rounded-xl border p-2.5 pr-10 focus:outline-none focus:ring-1 bg-slate-50/50 text-slate-800 transition-all ${
+                          duplicateCrop 
+                            ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-500 bg-amber-50/10' 
+                            : 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500'
+                        }`}
+                      />
+                      {duplicateCrop && (
+                        <div className="absolute right-3 top-2.5">
+                          <AlertTriangle className="h-4 w-4 text-amber-500 animate-pulse" />
+                        </div>
+                      )}
+                    </div>
+
+                    {duplicateCrop && (
+                      <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl flex flex-col gap-1.5 mt-2 text-xs text-amber-800 text-left animate-fade-in">
+                        <span className="font-black text-[10.5px] uppercase tracking-wider flex items-center gap-1.5 text-amber-700">
+                          <span>⚠️</span> Duplicate Crop Found
+                        </span>
+                        <p className="text-[11px] leading-relaxed text-amber-800">
+                          An item with the name <strong className="font-black">"{duplicateCrop.vegetableName}"</strong> already exists in the master catalog under <span className="font-bold underline">{duplicateCrop.category}</span>.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCropId(duplicateCrop.id);
+                            setCropFormName(duplicateCrop.vegetableName);
+                            setCropFormCategory(duplicateCrop.category);
+                            setCropFormCost(duplicateCrop.costPrice);
+                            setCropFormPrice(duplicateCrop.sellingPrice);
+                            setCropFormMinThreshold(duplicateCrop.minStockThreshold);
+                            
+                            // Let's defer focus to ensure React state updates have registered
+                            setTimeout(() => {
+                              if (cropFormNameRef.current) {
+                                cropFormNameRef.current.focus();
+                                // Set cursor at the end of input
+                                const len = cropFormNameRef.current.value.length;
+                                cropFormNameRef.current.setSelectionRange(len, len);
+                              }
+                            }, 50);
+                          }}
+                          className="w-full mt-1.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border-0 shadow-sm"
+                        >
+                          ✏️ Switch to Edit Existing Template
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -4543,6 +4833,499 @@ export default function HeadOffice({
             })()}
           </div>
 
+        </div>
+      )}
+
+      {activeTab === 'geo-sandbox' && (
+        <div className="space-y-6 animate-fade-in text-slate-800">
+          {/* Header Sandbox Card */}
+          <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-md relative overflow-hidden">
+            <div className="absolute right-0 top-0 opacity-10 pointer-events-none transform translate-x-12 -translate-y-6">
+              <Globe className="h-64 w-64 text-slate-400" />
+            </div>
+            <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1 text-left">
+                <div className="flex items-center gap-2">
+                  <span className="bg-amber-500/20 text-amber-300 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-amber-500/30">
+                    Simulation Environment
+                  </span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[10px] text-emerald-400 font-black uppercase tracking-widest">HQ Lab v1.2</span>
+                </div>
+                <h3 className="text-lg font-black tracking-tight mt-1 text-white">Administrative Geolocation Sandbox</h3>
+                <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                  Toggle, simulate, and stress-test physical cross-branch proximity boundaries and geofencing limits.
+                  Bypass real hardware GPS to simulate remote check-ins, regional dispatch rules, and local-access locks.
+                </p>
+              </div>
+
+              {/* Master Sandbox Enable/Disable Toggle */}
+              <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-4 flex items-center justify-between gap-4 shrink-0 shadow-inner">
+                <div className="text-left">
+                  <span className="block text-xs font-black uppercase tracking-wider text-slate-300">Sandbox Status</span>
+                  <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                    {sandboxEnabled ? "🟢 Bypassing Real GPS" : "⚪ Using Real Hardware GPS"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !sandboxEnabled;
+                    setSandboxEnabled(next);
+                    // Force refresh of verifyLocation on change by triggering a change event
+                    const ev = new CustomEvent('farmersgate_geo_change');
+                    window.dispatchEvent(ev);
+                  }}
+                  className={`w-14 h-7 rounded-full transition-all relative outline-none cursor-pointer border-0 ${
+                    sandboxEnabled ? 'bg-emerald-500 shadow-sm shadow-emerald-500/20' : 'bg-slate-700'
+                  }`}
+                >
+                  <span className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-all shadow-md ${
+                    sandboxEnabled ? 'left-8' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Sandbox Configuration Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
+            {/* Left Col: Simulation Mode Panel */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-5">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Sliders className="h-4 w-4 text-slate-500" />
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">Coordinate Sources & Modes</h4>
+              </div>
+
+              {!sandboxEnabled && (
+                <div className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl text-center space-y-2">
+                  <p className="text-[11px] font-bold text-zinc-500 leading-relaxed">
+                    The Sandbox is currently <span className="text-red-500 font-extrabold uppercase">Disabled</span>. Enable the status toggle above to customize simulated coordinate overrides.
+                  </p>
+                </div>
+              )}
+
+              {sandboxEnabled && (
+                <div className="space-y-4">
+                  {/* Mode Selector Tabs */}
+                  <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                    <button
+                      type="button"
+                      onClick={() => setSandboxMode('real')}
+                      className={`py-2 text-[10px] font-black uppercase rounded-lg transition-all border-0 cursor-pointer ${
+                        sandboxMode === 'real' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800 bg-transparent'
+                      }`}
+                    >
+                      Real GPS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSandboxMode('manual')}
+                      className={`py-2 text-[10px] font-black uppercase rounded-lg transition-all border-0 cursor-pointer ${
+                        sandboxMode === 'manual' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800 bg-transparent'
+                      }`}
+                    >
+                      Manual Input
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSandboxMode('preset')}
+                      className={`py-2 text-[10px] font-black uppercase rounded-lg transition-all border-0 cursor-pointer ${
+                        sandboxMode === 'preset' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800 bg-transparent'
+                      }`}
+                    >
+                      Presets
+                    </button>
+                  </div>
+
+                  {/* Mode: REAL GPS */}
+                  {sandboxMode === 'real' && (
+                    <div className="space-y-3 p-3 bg-blue-50/50 border border-blue-100 rounded-2xl animate-fade-in text-left">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-blue-800 uppercase tracking-wider">Live System Coordinates</span>
+                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-center">
+                        <div className="bg-white border border-blue-100 rounded-xl p-2.5">
+                          <span className="block text-[8px] font-black uppercase text-slate-400">Latitude</span>
+                          <span className="text-xs font-mono font-bold text-slate-800">
+                            {currentLat !== null ? currentLat.toFixed(6) : "Querying..."}
+                          </span>
+                        </div>
+                        <div className="bg-white border border-blue-100 rounded-xl p-2.5">
+                          <span className="block text-[8px] font-black uppercase text-slate-400">Longitude</span>
+                          <span className="text-xs font-mono font-bold text-slate-800">
+                            {currentLng !== null ? currentLng.toFixed(6) : "Querying..."}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={fetchRealGps}
+                        disabled={gettingRealGps}
+                        className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition flex items-center justify-center gap-1.5 cursor-pointer border-0"
+                      >
+                        <Navigation className={`h-3 w-3 ${gettingRealGps ? 'animate-spin' : ''}`} />
+                        {gettingRealGps ? "Querying Hardware..." : "Sync Live Hardware GPS"}
+                      </button>
+                      <p className="text-[9px] text-blue-700/80 leading-relaxed text-center">
+                        Using standard browser <code className="font-mono bg-blue-100/50 px-1 rounded">navigator.geolocation</code>. Changes with your actual physical movement.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Mode: MANUAL INPUT */}
+                  {sandboxMode === 'manual' && (
+                    <div className="space-y-4 p-4 bg-emerald-50/40 border border-emerald-100 rounded-2xl animate-fade-in text-left">
+                      <span className="block text-[10px] font-black text-emerald-800 uppercase tracking-wider mb-1">Custom Lat/Lng Injector</span>
+                      
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Latitude</label>
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              step="0.0001"
+                              value={sandboxManualLat}
+                              onChange={(e) => setSandboxManualLat(parseFloat(e.target.value) || 0)}
+                              className="flex-1 text-xs font-mono font-bold border border-slate-200 p-2 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setSandboxManualLat(prev => parseFloat((prev + 0.001).toFixed(6)))}
+                              className="px-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-[10px] font-bold cursor-pointer"
+                            >
+                              +0.001
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSandboxManualLat(prev => parseFloat((prev - 0.001).toFixed(6)))}
+                              className="px-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-[10px] font-bold cursor-pointer"
+                            >
+                              -0.001
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Longitude</label>
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              step="0.0001"
+                              value={sandboxManualLng}
+                              onChange={(e) => setSandboxManualLng(parseFloat(e.target.value) || 0)}
+                              className="flex-1 text-xs font-mono font-bold border border-slate-200 p-2 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setSandboxManualLng(prev => parseFloat((prev + 0.001).toFixed(6)))}
+                              className="px-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-[10px] font-bold cursor-pointer"
+                            >
+                              +0.001
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSandboxManualLng(prev => parseFloat((prev - 0.001).toFixed(6)))}
+                              className="px-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-[10px] font-bold cursor-pointer"
+                            >
+                              -0.001
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Map Link Utility */}
+                      <div className="pt-2 border-t border-emerald-100/60 flex items-center justify-between text-[9px] text-emerald-800">
+                        <span className="font-bold">🗺️ Active Bangalore Coordinate:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSandboxManualLat(12.9716);
+                            setSandboxManualLng(77.5946);
+                          }}
+                          className="font-extrabold underline hover:text-emerald-950 cursor-pointer bg-transparent border-0"
+                        >
+                          Reset to HQ
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Mode: PRESETS */}
+                  {sandboxMode === 'preset' && (
+                    <div className="space-y-3 p-3 bg-purple-50/40 border border-purple-100 rounded-2xl animate-fade-in max-h-[300px] overflow-y-auto text-left">
+                      <span className="block text-[10px] font-black text-purple-800 uppercase tracking-wider">Select Store Target</span>
+                      <div className="space-y-2">
+                        {sandboxLocations.map(loc => {
+                          const isSelected = sandboxPresetName === loc.name;
+                          return (
+                            <button
+                              key={loc.name}
+                              type="button"
+                              onClick={() => {
+                                setSandboxPresetName(loc.name);
+                                setSandboxPresetLat(loc.lat);
+                                setSandboxPresetLng(loc.lng);
+                              }}
+                              className={`w-full p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-purple-600 border-purple-600 text-white shadow-xs'
+                                  : 'bg-white border-slate-200 hover:bg-purple-50/50 text-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black truncate">{loc.name.replace(" Farmer's Gate", "")}</span>
+                                <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                                  isSelected ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500'
+                                }`}>
+                                  PRESET
+                                </span>
+                              </div>
+                              <span className={`block text-[9px] font-mono mt-0.5 ${
+                                isSelected ? 'text-purple-100' : 'text-slate-400'
+                              }`}>
+                                Lat: {loc.lat} • Lng: {loc.lng}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Middle Col: Cross-Branch Proximity Matrix */}
+            <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Compass className="h-4 w-4 text-emerald-600" />
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">Cross-Branch Proximity Matrix</h4>
+                </div>
+                
+                {/* Active Simulated Coordinate Badge */}
+                <div className="text-right">
+                  <span className="text-[8px] font-black uppercase text-slate-400 block">Current Sim GPS</span>
+                  <span className="text-[10px] font-mono font-extrabold text-slate-800">
+                    {!sandboxEnabled 
+                      ? `${currentLat !== null ? currentLat.toFixed(4) : "12.9716"}, ${currentLng !== null ? currentLng.toFixed(4) : "77.5946"}`
+                      : sandboxMode === 'manual' 
+                        ? `${sandboxManualLat.toFixed(4)}, ${sandboxManualLng.toFixed(4)}`
+                        : `${sandboxPresetLat.toFixed(4)}, ${sandboxPresetLng.toFixed(4)}`
+                    }
+                  </span>
+                </div>
+              </div>
+
+              {/* Proximity Matrix Settings Panel */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/60 text-left">
+                <div>
+                  <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Current Security Boundary Rule</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs font-black text-slate-800">Local Access Radius:</span>
+                    <span className="bg-emerald-50 text-emerald-800 border border-emerald-100 px-2 py-0.5 rounded-md font-mono font-black text-xs">
+                      {sandboxCpanelSettings.allowedLocalRadiusKm || 10} km
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-slate-400 leading-tight mt-1.5">
+                    Configured inside HQ System Admin control panel settings. Users must be within this range to access administrative suites.
+                  </p>
+                </div>
+
+                {/* Quick Radius Adjust (Sandbox override only) */}
+                <div className="space-y-1.5">
+                  <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Temporary Radius Overrider</span>
+                  <div className="flex gap-1.5 items-center">
+                    <input
+                      type="range"
+                      min="1"
+                      max="40"
+                      value={sandboxCpanelSettings.allowedLocalRadiusKm || 10}
+                      onChange={(e) => {
+                        const nextRadius = parseInt(e.target.value) || 10;
+                        const nextSettings = { ...sandboxCpanelSettings, allowedLocalRadiusKm: nextRadius };
+                        setSandboxCpanelSettings(nextSettings);
+                        localStorage.setItem('farmersgate_cpanel_settings', JSON.stringify(nextSettings));
+                      }}
+                      className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                    />
+                    <span className="text-xs font-bold text-slate-700 shrink-0 min-w-[40px] text-right">
+                      {sandboxCpanelSettings.allowedLocalRadiusKm || 10} km
+                    </span>
+                  </div>
+                  <p className="text-[8px] text-amber-600 font-bold leading-tight">
+                    ⚠️ This instantly modifies the global cpanel security radius.
+                  </p>
+                </div>
+              </div>
+
+              {/* Stores Proximity Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                      <th className="py-2.5">Physical Store Outlet</th>
+                      <th>Location Coords</th>
+                      <th className="text-right">Distance (km)</th>
+                      <th className="text-right">Access Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {sandboxLocations.map(loc => {
+                      const simCoords = !sandboxEnabled
+                        ? { lat: currentLat || 12.9716, lng: currentLng || 77.5946 }
+                        : sandboxMode === 'manual'
+                          ? { lat: sandboxManualLat, lng: sandboxManualLng }
+                          : { lat: sandboxPresetLat, lng: sandboxPresetLng };
+
+                      const distance = getSandboxDistanceKm(simCoords.lat, simCoords.lng, loc.lat, loc.lng);
+                      const isAllowed = distance <= (sandboxCpanelSettings.allowedLocalRadiusKm || 10);
+
+                      return (
+                        <tr key={loc.name} className="hover:bg-slate-50/50 transition">
+                          <td className="py-3 pr-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs">🏪</span>
+                              <div className="text-left">
+                                <span className="block text-xs font-black text-slate-800 leading-tight">
+                                  {loc.name.replace("Farmer's Gate - ", "")}
+                                </span>
+                                <span className="text-[9px] font-bold text-slate-400 block mt-0.5 uppercase tracking-wide">
+                                  Bangalore Zone
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 text-[10px] font-mono font-bold text-slate-500">
+                            {loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}
+                          </td>
+                          <td className="py-3 text-right font-mono font-black text-xs text-slate-700">
+                            {distance.toFixed(2)} km
+                          </td>
+                          <td className="py-3 text-right">
+                            <span className={`inline-block text-[8.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                              isAllowed
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                : 'bg-red-50 border-red-200 text-red-600'
+                            }`}>
+                              {isAllowed ? "🟢 Authorized" : "🔴 Restricted"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Boundary Verification Simulation Command Board */}
+              <div className="pt-4 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-left">
+                <div className="space-y-0.5 text-left">
+                  <span className="block text-xs font-black text-slate-800">Verification Logic Sandbox Runner</span>
+                  <p className="text-[9px] text-slate-400 leading-tight">
+                    Simulate how the security system processes these coordinates when validating user authorizations.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const simCoords = !sandboxEnabled
+                      ? { lat: currentLat || 12.9716, lng: currentLng || 77.5946 }
+                      : sandboxMode === 'manual'
+                        ? { lat: sandboxManualLat, lng: sandboxManualLng }
+                        : { lat: sandboxPresetLat, lng: sandboxPresetLng };
+
+                    let nearestDist = Infinity;
+                    let nearestName = "";
+
+                    for (const loc of sandboxLocations) {
+                      const dist = getSandboxDistanceKm(simCoords.lat, simCoords.lng, loc.lat, loc.lng);
+                      if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearestName = loc.name;
+                      }
+                    }
+
+                    const radius = sandboxCpanelSettings.allowedLocalRadiusKm || 10;
+                    const passed = nearestDist <= radius;
+
+                    setVerificationOutput({
+                      timestamp: new Date().toLocaleTimeString(),
+                      allowed: passed,
+                      reason: passed 
+                        ? `Authorization Approved. Simulated device is ${nearestDist.toFixed(2)} km away from ${nearestName.replace("Farmer's Gate - ", "")} (within security boundary of ${radius} km).`
+                        : `Authorization Blocked! Simulated device is ${nearestDist.toFixed(2)} km away from the nearest branch (${nearestName.replace("Farmer's Gate - ", "")}). This exceeds maximum range of ${radius} km.`,
+                      details: {
+                        nearestStore: nearestName,
+                        distance: nearestDist,
+                        radius: radius
+                      }
+                    });
+                  }}
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1.5 border-0"
+                >
+                  ⚡ Run Verification Test
+                </button>
+              </div>
+
+              {/* Diagnostic Terminal View */}
+              {verificationOutput && (
+                <div className="bg-slate-950 text-emerald-400 font-mono text-[10px] rounded-2xl p-4 border border-slate-800 space-y-2 animate-fade-in text-left">
+                  <div className="flex justify-between items-center text-[9px] text-slate-500 font-bold border-b border-slate-800 pb-1.5">
+                    <span>⚡ DIAGNOSTIC VERIFICATION LOG</span>
+                    <span>{verificationOutput.timestamp}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-slate-500">{"$ farmersgate-core --verify-geofence"}</p>
+                    <p><span className="text-blue-400">INFO:</span> Initializing dynamic local-access proxy boundary checking...</p>
+                    <p><span className="text-blue-400">INFO:</span> Checked sandbox settings: {sandboxEnabled ? "ENABLED (Override Active)" : "DISABLED (Default GPS)"}</p>
+                    <p><span className="text-blue-400">GPS:</span> Current evaluation coordinates: {sandboxEnabled ? `[SIMULATED] [${sandboxMode.toUpperCase()}]` : "[HARDWARE]"}</p>
+                    <p><span className="text-blue-400">GPS:</span> Evaluating Lat: <span className="text-white font-bold">
+                      {!sandboxEnabled 
+                        ? (currentLat || 12.9716).toFixed(6)
+                        : sandboxMode === 'manual' 
+                          ? sandboxManualLat.toFixed(6) 
+                          : sandboxPresetLat.toFixed(6)
+                      }
+                    </span> Lng: <span className="text-white font-bold">
+                      {!sandboxEnabled 
+                        ? (currentLng || 77.5946).toFixed(6)
+                        : sandboxMode === 'manual' 
+                          ? sandboxManualLng.toFixed(6) 
+                          : sandboxPresetLng.toFixed(6)
+                      }
+                    </span></p>
+                    
+                    {verificationOutput.details && (
+                      <>
+                        <p><span className="text-blue-400">EVAL:</span> Nearest branch detected: <span className="text-amber-300 font-bold">{verificationOutput.details.nearestStore}</span></p>
+                        <p><span className="text-blue-400">EVAL:</span> Measured proximity range: <span className="text-white font-bold">{verificationOutput.details.distance.toFixed(3)} km</span></p>
+                        <p><span className="text-blue-400">RULE:</span> Security access boundary limit: <span className="text-slate-300 font-bold">{verificationOutput.details.radius.toFixed(1)} km</span></p>
+                      </>
+                    )}
+
+                    <div className="pt-1 text-xs font-bold border-t border-slate-900 mt-2">
+                      {verificationOutput.allowed ? (
+                        <p className="text-emerald-400">
+                          🟢 [SUCCESS] ACCESS AUTHORIZED. Welcome to Management HQ.
+                        </p>
+                      ) : (
+                        <p className="text-rose-400">
+                          🔴 [ACCESS DENIED] GEOFENCE SECURITY VIOLATION: Device is outside allowed physical branch perimeter. Restricted to public storefront mode.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
         </div>
       )}
 
