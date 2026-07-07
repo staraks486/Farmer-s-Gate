@@ -488,6 +488,24 @@ export default function HeadOffice({
   const [masterSearch, setMasterSearch] = useState('');
   const [masterCategoryFilter, setMasterCategoryFilter] = useState<string>('all');
 
+  // Master Catalog Pagination
+  const [masterPage, setMasterPage] = useState<number>(1);
+  const masterCropsPerPage = 6;
+
+  useEffect(() => {
+    setMasterPage(1);
+  }, [masterSearch, masterCategoryFilter]);
+
+  const filteredCrops = masterCrops.filter(crop => {
+    const matchesSearch = crop.vegetableName.toLowerCase().includes(masterSearch.toLowerCase());
+    const matchesCategory = masterCategoryFilter === 'all' || crop.category === masterCategoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  const totalMasterPages = Math.ceil(filteredCrops.length / masterCropsPerPage);
+  const currentMasterPage = Math.min(masterPage, Math.max(1, totalMasterPages));
+  const paginatedCrops = filteredCrops.slice((currentMasterPage - 1) * masterCropsPerPage, currentMasterPage * masterCropsPerPage);
+
   const cropFormNameRef = useRef<HTMLInputElement | null>(null);
 
   const duplicateCrop = masterCrops.find(
@@ -4285,13 +4303,7 @@ export default function HeadOffice({
 
           {/* Master Crop Catalog Templates Cards Layout */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {masterCrops
-              .filter(crop => {
-                const matchesSearch = crop.vegetableName.toLowerCase().includes(masterSearch.toLowerCase());
-                const matchesCategory = masterCategoryFilter === 'all' || crop.category === masterCategoryFilter;
-                return matchesSearch && matchesCategory;
-              })
-              .map(crop => {
+            {paginatedCrops.map(crop => {
                 const activeStoresCount = inventory.filter(
                   item => item.vegetableName.toLowerCase() === crop.vegetableName.toLowerCase()
                 ).length;
@@ -4419,11 +4431,7 @@ export default function HeadOffice({
                 );
               })}
 
-            {masterCrops.filter(crop => {
-              const matchesSearch = crop.vegetableName.toLowerCase().includes(masterSearch.toLowerCase());
-              const matchesCategory = masterCategoryFilter === 'all' || crop.category === masterCategoryFilter;
-              return matchesSearch && matchesCategory;
-            }).length === 0 && (
+            {filteredCrops.length === 0 && (
               <div className="col-span-full py-20 bg-white border-2 border-dashed border-slate-200 rounded-3xl text-center text-slate-400">
                 <Tag className="h-12 w-12 text-slate-300 mx-auto mb-2" />
                 <p className="text-sm font-semibold text-slate-700">No Master Crops match search criteria</p>
@@ -4431,6 +4439,60 @@ export default function HeadOffice({
               </div>
             )}
           </div>
+
+          {/* Master Catalog Pagination Row */}
+          {totalMasterPages > 1 && (
+            <div className="bg-white border border-slate-200/70 p-4 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs mt-6">
+              <span className="text-xs text-slate-500 font-semibold">
+                Showing <strong className="font-bold text-slate-700">{((currentMasterPage - 1) * masterCropsPerPage) + 1}</strong> to{" "}
+                <strong className="font-bold text-slate-700">{Math.min(currentMasterPage * masterCropsPerPage, filteredCrops.length)}</strong> of{" "}
+                <strong className="font-bold text-slate-700">{filteredCrops.length}</strong> master crops
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentMasterPage === 1}
+                  onClick={() => setMasterPage(prev => Math.max(1, prev - 1))}
+                  className={`px-3 py-2 rounded-2xl border text-xs font-bold transition-all cursor-pointer ${
+                    currentMasterPage === 1
+                      ? 'bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed'
+                      : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700 shadow-xs'
+                  }`}
+                >
+                  Prev
+                </button>
+
+                {Array.from({ length: totalMasterPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setMasterPage(p)}
+                    className={`h-8 w-8 rounded-2xl flex items-center justify-center text-xs font-extrabold transition-all cursor-pointer ${
+                      currentMasterPage === p
+                        ? 'bg-emerald-600 border border-emerald-600 text-white shadow-sm'
+                        : 'bg-white hover:bg-slate-100 border border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  disabled={currentMasterPage === totalMasterPages}
+                  onClick={() => setMasterPage(prev => Math.min(totalMasterPages, prev + 1))}
+                  className={`px-3 py-2 rounded-2xl border text-xs font-bold transition-all cursor-pointer ${
+                    currentMasterPage === totalMasterPages
+                      ? 'bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed'
+                      : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700 shadow-xs'
+                  }`}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* MASTER CROP MODAL / OVERLAY FORM */}
           {masterCropFormOpen && (
@@ -4517,7 +4579,7 @@ export default function HeadOffice({
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Category Group</label>
                       <select
@@ -4534,7 +4596,28 @@ export default function HeadOffice({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Stock Low Threshold (kg)</label>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Measuring Unit</label>
+                      <select
+                        value={cropFormUnit}
+                        onChange={(e) => setCropFormUnit(e.target.value as any)}
+                        className="w-full text-xs font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50 text-slate-800"
+                      >
+                        <option value="kg">kg (Kilogram)</option>
+                        <option value="g">g (Gram)</option>
+                        <option value="pcs">pcs (Pieces)</option>
+                        <option value="bunch">bunch (Bunch)</option>
+                        <option value="pack">pack (Pack)</option>
+                        <option value="box">box (Box)</option>
+                        <option value="crate">crate (Crate)</option>
+                        <option value="sack">sack (Sack)</option>
+                        <option value="dozen">dozen (Dozen)</option>
+                        <option value="bundle">bundle (Bundle)</option>
+                        <option value="bag">bag (Bag)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Low Limit ({cropFormUnit})</label>
                       <input
                         type="number"
                         min="1"
@@ -4548,7 +4631,7 @@ export default function HeadOffice({
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Std Cost Price (₹/kg)</label>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Std Cost Price (₹/{cropFormUnit})</label>
                       <input
                         type="number"
                         min="0"
@@ -4561,7 +4644,7 @@ export default function HeadOffice({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Std Selling Price (₹/kg)</label>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Std Selling Price (₹/{cropFormUnit})</label>
                       <input
                         type="number"
                         min="0"
@@ -4578,7 +4661,7 @@ export default function HeadOffice({
                   <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-2xl flex items-center justify-between text-xs">
                     <span className="font-bold text-emerald-800">Target Profit Margin:</span>
                     <span className="font-extrabold text-emerald-900">
-                      ₹{(cropFormPrice - cropFormCost).toFixed(2)}/kg ({cropFormCost > 0 ? Math.round(((cropFormPrice - cropFormCost) / cropFormCost) * 100) : 0}%)
+                      ₹{(cropFormPrice - cropFormCost).toFixed(2)}/{cropFormUnit} ({cropFormCost > 0 ? Math.round(((cropFormPrice - cropFormCost) / cropFormCost) * 100) : 0}%)
                     </span>
                   </div>
 
