@@ -60,6 +60,7 @@ interface StoreManagerProps {
   onAddPurchase: (purchase: Purchase) => void;
   onDeletePurchase: (id: string) => void;
   onUpdateInventoryItem: (item: InventoryItem) => void;
+  onUpdateInventoryItems?: (items: InventoryItem[]) => void;
   onAddRequirement: (req: Requirement) => void;
   onUpdateRequirement?: (req: Requirement) => void;
   onUpdateRequirementStatus: (id: string, status: 'Pending' | 'Ordered' | 'Fulfilled') => void;
@@ -171,6 +172,7 @@ export default function StoreManager({
   onAddPurchase,
   onDeletePurchase,
   onUpdateInventoryItem,
+  onUpdateInventoryItems,
   onAddRequirement,
   onUpdateRequirement,
   onUpdateRequirementStatus,
@@ -2100,19 +2102,23 @@ export default function StoreManager({
       if (missingCrops.length > 0) {
         console.log(`[Background Sync] Quietly seeding ${missingCrops.length} crops into store ${store.name}`);
         
-        // Add them sequentially to avoid concurrent write issues
-        for (let idx = 0; idx < missingCrops.length; idx++) {
-          const crop = missingCrops[idx];
-          await onUpdateInventoryItem({
-            id: `item-${Date.now()}-${idx}-${Math.floor(Math.random() * 100000)}`,
-            storeId: store.id,
-            vegetableName: crop.vegetableName,
-            quantity: crop.quantity,
-            costPrice: crop.costPrice,
-            sellingPrice: crop.sellingPrice,
-            minStockThreshold: crop.minStockThreshold,
-            lastUpdated: new Date().toISOString()
-          });
+        const itemsToUpdate = missingCrops.map((crop, idx) => ({
+          id: `item-${Date.now()}-${idx}-${Math.floor(Math.random() * 100000)}`,
+          storeId: store.id,
+          vegetableName: crop.vegetableName,
+          quantity: crop.quantity,
+          costPrice: crop.costPrice,
+          sellingPrice: crop.sellingPrice,
+          minStockThreshold: crop.minStockThreshold || 10,
+          lastUpdated: new Date().toISOString()
+        }));
+
+        if (onUpdateInventoryItems) {
+          await onUpdateInventoryItems(itemsToUpdate);
+        } else {
+          for (const item of itemsToUpdate) {
+            await onUpdateInventoryItem(item);
+          }
         }
       }
     };

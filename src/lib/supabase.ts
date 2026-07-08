@@ -888,6 +888,46 @@ export async function dbAddOrUpdateInventoryItem(item: InventoryItem): Promise<I
   }
 }
 
+export async function dbAddOrUpdateInventoryItems(items: InventoryItem[]): Promise<InventoryItem[]> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { data, error } = await supabaseInstance
+        .from('inventory')
+        .upsert(items)
+        .select();
+      if (error) throw error;
+      return data as InventoryItem[];
+    } catch (e) {
+      console.warn('Supabase bulk upsert inventory failed, writing to local storage:', e);
+      for (const item of items) {
+        dbAddUnsyncedOp('inventory', 'insert', item);
+      }
+    }
+  } else {
+    for (const item of items) {
+      dbAddUnsyncedOp('inventory', 'insert', item);
+    }
+  }
+
+  const inventory = await dbGetInventory();
+  const updatedItems: InventoryItem[] = [];
+  
+  for (const item of items) {
+    const index = inventory.findIndex(i => i.storeId === item.storeId && i.vegetableName.toLowerCase() === item.vegetableName.toLowerCase());
+    if (index !== -1) {
+      inventory[index] = { ...inventory[index], ...item, lastUpdated: new Date().toISOString() };
+      updatedItems.push(inventory[index]);
+    } else {
+      inventory.push(item);
+      updatedItems.push(item);
+    }
+  }
+  
+  localStorage.setItem('fg_inventory', JSON.stringify(inventory));
+  return updatedItems;
+}
+
 // Helper to adjust stock quantity dynamically when transactions occur
 export async function dbAdjustInventoryStock(storeId: string, vegName: string, qtyDelta: number, costPriceUpdate?: number): Promise<void> {
   const inventory = await dbGetInventory(storeId);

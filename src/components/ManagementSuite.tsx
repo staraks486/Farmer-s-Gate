@@ -58,7 +58,8 @@ import {
   dbAddPurchase, 
   dbDeletePurchase, 
   dbGetInventory, 
-  dbAddOrUpdateInventoryItem, 
+  dbAddOrUpdateInventoryItem,
+  dbAddOrUpdateInventoryItems, 
   dbGetRequirements, 
   dbAddRequirement, 
   dbUpdateRequirement, 
@@ -172,8 +173,12 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   const [syncing, setSyncing] = useState(false);
 
   // Load all data
-  const loadAllData = async () => {
-    setLoading(true);
+  const loadAllData = async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    } else {
+      setSyncing(true);
+    }
     try {
       const fetchedStores = await dbGetStores();
       const fetchedSales = await dbGetSales();
@@ -245,7 +250,11 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     } catch (err) {
       console.error('Error loading management data', err);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      } else {
+        setSyncing(false);
+      }
     }
   };
 
@@ -291,8 +300,8 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     }
   };
 
-  const triggerDataUpdate = async () => {
-    await loadAllData();
+  const triggerDataUpdate = async (silent = false) => {
+    await loadAllData(silent);
     try {
       fetch('/api/app-version/increment', { method: 'POST' })
         .then(res => res.json())
@@ -365,7 +374,12 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   // Inventory
   const handleUpdateInventoryItem = async (item: InventoryItem) => {
     await dbAddOrUpdateInventoryItem(item);
-    await triggerDataUpdate();
+    await triggerDataUpdate(true);
+  };
+
+  const handleUpdateInventoryItems = async (items: InventoryItem[]) => {
+    await dbAddOrUpdateInventoryItems(items);
+    await triggerDataUpdate(true);
   };
 
   // Master Crops
@@ -719,6 +733,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
                   onAddPurchase={handleAddPurchase}
                   onDeletePurchase={handleDeletePurchase}
                   onUpdateInventoryItem={handleUpdateInventoryItem}
+                  onUpdateInventoryItems={handleUpdateInventoryItems}
                   onAddRequirement={handleAddRequirement}
                   onUpdateRequirement={handleUpdateRequirement}
                   onUpdateRequirementStatus={handleUpdateRequirementStatus}
