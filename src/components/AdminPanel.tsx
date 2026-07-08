@@ -29,7 +29,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { Store, Requirement, SupabaseConfig, ConsolidatedRequirement, CpanelSettings, StorefrontAd, MasterCrop, InventoryItem, CompanyOfficial } from '../types';
-import StoreMapSelector from './admin/StoreMapSelector';
+import StoreMapSelector, { INDIAN_CITIES_MAP_CONFIGS } from './admin/StoreMapSelector';
 import RealTimeGoogleMapTab from './admin/RealTimeGoogleMapTab';
 import { 
   getSupabaseSQLSchema,
@@ -1119,6 +1119,11 @@ export default function AdminPanel({
                 setStoreLocation('');
                 setStoreWhatsapp('');
                 setStorePassword('');
+                setStoreLat('');
+                setStoreLng('');
+                setStoreGoogleMapsUrl('');
+                setStoreSearchAddress('');
+                setGeocodeResults([]);
                 setStoreFormOpen(!storeFormOpen);
               }}
               className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-emerald-200 hover:bg-emerald-700 transition-all cursor-pointer"
@@ -1178,6 +1183,38 @@ export default function AdminPanel({
                     </button>
                   </div>
                   <span className="text-[10px] text-zinc-400 mt-1 block">Paste any Google Maps URL and click "Convert" to instantly decode precise coordinate points and address location into the fields below!</span>
+                </div>
+
+                <div>
+                  <label htmlFor="store-city-select" className="block text-xs font-bold text-zinc-600 uppercase tracking-wide mb-1">Select City Region *</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-zinc-400">🏙️</span>
+                    <select
+                      id="store-city-select"
+                      value={INDIAN_CITIES_MAP_CONFIGS.find(city => storeLocation.toLowerCase().includes(city.name.toLowerCase()))?.name || ""}
+                      onChange={(e) => {
+                        const cityName = e.target.value;
+                        const city = INDIAN_CITIES_MAP_CONFIGS.find(c => c.name === cityName);
+                        if (city && city.landmarks && city.landmarks.length > 0) {
+                          const landmark = city.landmarks[0];
+                          setStoreLat(landmark.lat);
+                          setStoreLng(landmark.lng);
+                          setStoreLocation(`${landmark.name}, ${city.name}, India`);
+                        }
+                      }}
+                      className="w-full rounded-xl border border-zinc-200 py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800 font-medium"
+                    >
+                      <option value="" disabled>-- Select a City to update location --</option>
+                      {INDIAN_CITIES_MAP_CONFIGS.map(city => (
+                        <option key={city.name} value={city.name}>
+                          {city.icon} {city.name} ({city.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <span className="text-[10px] text-zinc-400 mt-1 block">
+                    Selecting a city region will automatically update the coordinates and center address to a popular retail landmark in that city.
+                  </span>
                 </div>
 
                 <div>

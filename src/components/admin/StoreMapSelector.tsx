@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MapPin, Search, Compass, Navigation, RefreshCw, Layers, X } from 'lucide-react';
 
-interface CityConfig {
+export interface CityConfig {
   name: string;
   code: string;
   icon: string;
@@ -12,7 +12,7 @@ interface CityConfig {
   landmarks: Array<{ name: string; lat: number; lng: number }>;
 }
 
-const INDIAN_CITIES_MAP_CONFIGS: CityConfig[] = [
+export const INDIAN_CITIES_MAP_CONFIGS: CityConfig[] = [
   {
     name: 'Bengaluru',
     code: 'BLR',
