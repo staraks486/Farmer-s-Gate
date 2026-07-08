@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Store, Requirement, InventoryItem, Sale, UserRole, ConsolidatedRequirement, MasterCrop, AppNotification } from '../types';
-import { FirebaseOrder, updateOrderStatusInFirestore, addNotificationToFirestore } from '../lib/firebase';
+import { 
+  FirebaseOrder, 
+  updateOrderStatusInFirestore, 
+  addNotificationToFirestore,
+  getProductsFromFirestore,
+  updateProductInFirestore,
+  addProductToFirestore,
+  deleteProductFromFirestore,
+  resetShopperProductsInFirestore
+} from '../lib/firebase';
 import QRCode from 'qrcode';
 import { QrScanner } from './QrScanner';
 import GeofenceD3Map from './admin/GeofenceD3Map';
@@ -48,6 +57,8 @@ import {
   Link,
   Printer,
   Eye,
+  EyeOff,
+  RefreshCw,
   Sparkles,
   Image,
   UploadCloud,
@@ -96,7 +107,7 @@ export default function HeadOffice({
   firebaseNotifications = []
 }: HeadOfficeProps) {
   // Main and sub layout tabs
-  const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog' | 'customer-orders' | 'qr-catalog' | 'geo-sandbox'>('requirements');
+  const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog' | 'customer-orders' | 'qr-catalog' | 'geo-sandbox' | 'shopper-store'>('requirements');
   const [reqSubTab, setReqSubTab] = useState<'itemized' | 'consolidated'>('itemized');
   const [expandedStoreStock, setExpandedStoreStock] = useState<Record<string, boolean>>({});
 
@@ -177,6 +188,230 @@ export default function HeadOffice({
     }
     return 77.5946;
   });
+
+  // --- Shopper Store Control State ---
+  const [shopperProducts, setShopperProducts] = useState<any[]>([]);
+  const [loadingShopperProducts, setLoadingShopperProducts] = useState<boolean>(false);
+  const [shopperStoreSuccessMsg, setShopperStoreSuccessMsg] = useState<string>('');
+  const [shopperStoreErrorMsg, setShopperStoreErrorMsg] = useState<string>('');
+  
+  // States for adding / editing a shopper store item
+  const [isAddingShopperProduct, setIsAddingShopperProduct] = useState<boolean>(false);
+  const [editingShopperProductId, setEditingShopperProductId] = useState<string | null>(null);
+  
+  // Form fields for shopper store item
+  const [shopperFormVegName, setShopperFormVegName] = useState<string>('');
+  const [shopperFormCategory, setShopperFormCategory] = useState<string>('Vegetable');
+  const [shopperFormSellingPrice, setShopperFormSellingPrice] = useState<number>(0);
+  const [shopperFormCostPrice, setShopperFormCostPrice] = useState<number>(0);
+  const [shopperFormStock, setShopperFormStock] = useState<number>(0);
+  const [shopperFormUnit, setShopperFormUnit] = useState<string>('kg');
+  const [shopperFormEmoji, setShopperFormEmoji] = useState<string>('🥦');
+  const [shopperFormIsVisible, setShopperFormIsVisible] = useState<boolean>(true);
+
+  const fetchShopperProducts = async () => {
+    setLoadingShopperProducts(true);
+    setShopperStoreErrorMsg('');
+    try {
+      const items = await getProductsFromFirestore();
+      setShopperProducts(items);
+    } catch (err: any) {
+      setShopperStoreErrorMsg('Failed to load shopper store items: ' + err.message);
+    } finally {
+      setLoadingShopperProducts(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'shopper-store') {
+      fetchShopperProducts();
+    }
+  }, [activeTab]);
+
+  const resetShopperForm = () => {
+    setEditingShopperProductId(null);
+    setIsAddingShopperProduct(false);
+    setShopperFormVegName('');
+    setShopperFormCategory('Vegetable');
+    setShopperFormSellingPrice(0);
+    setShopperFormCostPrice(0);
+    setShopperFormStock(0);
+    setShopperFormUnit('kg');
+    setShopperFormEmoji('🥦');
+    setShopperFormIsVisible(true);
+  };
+
+  const handleOpenEditShopperProduct = (item: any) => {
+    setEditingShopperProductId(item.id);
+    setShopperFormVegName(item.vegetableName || '');
+    setShopperFormCategory(item.category || 'Vegetable');
+    setShopperFormSellingPrice(item.sellingPrice || 0);
+    setShopperFormCostPrice(item.costPrice || 0);
+    setShopperFormStock(item.stock || 0);
+    setShopperFormUnit(item.unit || 'kg');
+    setShopperFormEmoji(item.emoji || getVegEmoji(item.vegetableName));
+    setShopperFormIsVisible(item.isVisible !== false);
+    setIsAddingShopperProduct(true);
+  };
+
+  const handleSaveShopperProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shopperFormVegName.trim()) {
+      setShopperStoreErrorMsg('Product name is required.');
+      return;
+    }
+    
+    setLoadingShopperProducts(true);
+    setShopperStoreErrorMsg('');
+    try {
+      const payload = {
+        vegetableName: shopperFormVegName.trim(),
+        category: shopperFormCategory,
+        sellingPrice: Number(shopperFormSellingPrice) || 0,
+        costPrice: Number(shopperFormCostPrice) || 0,
+        stock: Number(shopperFormStock) || 0,
+        unit: shopperFormUnit,
+        emoji: shopperFormEmoji.trim() || '🥦',
+        isVisible: shopperFormIsVisible
+      };
+      
+      if (editingShopperProductId) {
+        // Edit existing
+        await updateProductInFirestore(editingShopperProductId, payload);
+        setShopperStoreSuccessMsg(`Successfully updated "${shopperFormVegName}" in Shopper Store.`);
+      } else {
+        // Create new
+        const newId = `v-${Date.now()}`;
+        const finalProduct = { ...payload, id: newId };
+        await addProductToFirestore(finalProduct);
+        setShopperStoreSuccessMsg(`Successfully added "${shopperFormVegName}" to Shopper Store.`);
+      }
+      
+      // Reset form & reload
+      resetShopperForm();
+      await fetchShopperProducts();
+      
+      // Increment app version on backend for instant live syncing
+      fetch('/api/app-version/increment', { method: 'POST' })
+        .then(res => res.json())
+        .catch(err => console.warn(err));
+        
+      setTimeout(() => setShopperStoreSuccessMsg(''), 4000);
+    } catch (err: any) {
+      setShopperStoreErrorMsg('Failed to save shopper product: ' + err.message);
+    } finally {
+      setLoadingShopperProducts(false);
+    }
+  };
+
+  const handleDeleteShopperProduct = async (productId: string) => {
+    if (!confirm('Are you sure you want to permanently delete this product from the Shopper Store?')) {
+      return;
+    }
+    setLoadingShopperProducts(true);
+    try {
+      await deleteProductFromFirestore(productId);
+      setShopperProducts(prev => prev.filter(p => p.id !== productId));
+      setShopperStoreSuccessMsg('Product deleted successfully.');
+      setTimeout(() => setShopperStoreSuccessMsg(''), 3000);
+      
+      // Increment app version on backend
+      fetch('/api/app-version/increment', { method: 'POST' })
+        .then(res => res.json())
+        .catch(err => console.warn(err));
+    } catch (err: any) {
+      setShopperStoreErrorMsg('Failed to delete product: ' + err.message);
+    } finally {
+      setLoadingShopperProducts(false);
+    }
+  };
+
+  const handleToggleShopperProductVisibility = async (productId: string, currentVal: boolean) => {
+    try {
+      const updatedVal = currentVal === false ? true : false;
+      await updateProductInFirestore(productId, { isVisible: updatedVal });
+      
+      // Update local state instantly
+      setShopperProducts(prev => prev.map(p => p.id === productId ? { ...p, isVisible: updatedVal } : p));
+      
+      // Increment app version on backend
+      fetch('/api/app-version/increment', { method: 'POST' })
+        .then(res => res.json())
+        .catch(err => console.warn(err));
+
+      setShopperStoreSuccessMsg(`Visibility updated successfully.`);
+      setTimeout(() => setShopperStoreSuccessMsg(''), 3000);
+    } catch (err: any) {
+      setShopperStoreErrorMsg('Failed to update visibility: ' + err.message);
+    }
+  };
+
+  const handleImportFromMasterCrop = async (crop: MasterCrop) => {
+    setLoadingShopperProducts(true);
+    setShopperStoreErrorMsg('');
+    try {
+      // Check if product with this name already exists in Shopper Store
+      const exists = shopperProducts.some(p => p.vegetableName.toLowerCase() === crop.vegetableName.toLowerCase());
+      if (exists) {
+        setShopperStoreErrorMsg(`A product named "${crop.vegetableName}" already exists in the Shopper Store.`);
+        setLoadingShopperProducts(false);
+        return;
+      }
+      
+      const newId = `v-${Date.now()}`;
+      const newProduct = {
+        id: newId,
+        vegetableName: crop.vegetableName,
+        category: crop.category,
+        sellingPrice: crop.sellingPrice,
+        costPrice: crop.costPrice,
+        stock: 50, // default starting stock
+        unit: 'kg', // default unit
+        emoji: getVegEmoji(crop.vegetableName), // map standard emoji
+        minStockThreshold: crop.minStockThreshold,
+        isVisible: true
+      };
+      
+      await addProductToFirestore(newProduct);
+      setShopperStoreSuccessMsg(`Successfully onboarded "${crop.vegetableName}" from Master Catalog to Shopper Store.`);
+      await fetchShopperProducts();
+      
+      // Increment app version on backend
+      fetch('/api/app-version/increment', { method: 'POST' })
+        .then(res => res.json())
+        .catch(err => console.warn(err));
+      
+      setTimeout(() => setShopperStoreSuccessMsg(''), 4000);
+    } catch (err: any) {
+      setShopperStoreErrorMsg('Failed to import master crop: ' + err.message);
+    } finally {
+      setLoadingShopperProducts(false);
+    }
+  };
+
+  const handleResetShopperProducts = async () => {
+    if (!confirm('Are you sure you want to reset the Shopper Store items? This will delete all current products in the store and restore the 12 default organic items.')) {
+      return;
+    }
+    setLoadingShopperProducts(true);
+    setShopperStoreErrorMsg('');
+    try {
+      await resetShopperProductsInFirestore();
+      setShopperStoreSuccessMsg('Successfully reset Shopper Store to 12 default items!');
+      await fetchShopperProducts();
+      
+      // Increment app version on backend
+      fetch('/api/app-version/increment', { method: 'POST' })
+        .then(res => res.json())
+        .catch(err => console.warn(err));
+        
+      setTimeout(() => setShopperStoreSuccessMsg(''), 4000);
+    } catch (err: any) {
+      setShopperStoreErrorMsg('Failed to reset shopper products: ' + err.message);
+    } finally {
+      setLoadingShopperProducts(false);
+    }
+  };
 
   const [sandboxPresetName, setSandboxPresetName] = useState<string>(() => {
     try {
@@ -2016,6 +2251,18 @@ export default function HeadOffice({
             }`}
           >
             <span>🌍</span> Geolocation Sandbox
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('shopper-store')}
+            className={`px-3 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'shopper-store' 
+                ? 'bg-slate-900 text-white shadow-sm' 
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            }`}
+          >
+            <span>🛍️</span> Shopper Store Control
           </button>
         </div>
 
@@ -6316,6 +6563,425 @@ export default function HeadOffice({
 
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'shopper-store' && (
+        <div className="space-y-6 animate-fade-in text-slate-800">
+          
+          {/* Header Card */}
+          <div className="bg-gradient-to-br from-emerald-950 to-teal-900 rounded-3xl p-6 text-white shadow-lg border border-emerald-800/30 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6">
+            <div className="space-y-2 text-left">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                  <Tag className="h-5 w-5" />
+                </span>
+                <h3 className="font-extrabold text-lg">Shopper Store Control</h3>
+              </div>
+              <p className="text-xs text-emerald-100 max-w-2xl font-semibold leading-relaxed">
+                Real-time control over the live customer storefront. Synchronize stock updates, manage consumer price listings, toggle visibility of organic produce, and instantly import crop presets from the Central Master Catalog.
+              </p>
+            </div>
+            
+            <div className="flex flex-wrap gap-2.5 shrink-0 self-start md:self-auto">
+              <button
+                type="button"
+                onClick={handleResetShopperProducts}
+                className="bg-white/10 hover:bg-white/20 border border-white/20 text-white font-black text-xs px-4 py-3 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow"
+              >
+                <RefreshCw className="h-4 w-4" /> Reset Default Produce
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  resetShopperForm();
+                  setIsAddingShopperProduct(true);
+                }}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-4 py-3 rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Plus className="h-4 w-4 stroke-[3px]" /> Add Custom Product
+              </button>
+            </div>
+          </div>
+
+          {/* Success / Error Messages */}
+          {shopperStoreSuccessMsg && (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-bold text-emerald-800 animate-pulse flex items-center gap-2">
+              <span className="text-base">✨</span>
+              <span>{shopperStoreSuccessMsg}</span>
+            </div>
+          )}
+          {shopperStoreErrorMsg && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-bold text-rose-800 flex items-center gap-2">
+              <span className="text-base">⚠️</span>
+              <span>{shopperStoreErrorMsg}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            
+            {/* Left side: Live Shopper Store Inventory (2 cols) */}
+            <div className="xl:col-span-2 space-y-6">
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                  <div>
+                    <h4 className="text-sm uppercase font-black tracking-wider text-slate-700">Live Store Catalog</h4>
+                    <p className="text-[10px] text-slate-400 font-bold mt-0.5 uppercase tracking-wide">
+                      {shopperProducts.length} items loaded from cloud database
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchShopperProducts}
+                    disabled={loadingShopperProducts}
+                    className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                    title="Reload live store catalogue"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${loadingShopperProducts ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+
+                {loadingShopperProducts && shopperProducts.length === 0 ? (
+                  <div className="py-12 flex flex-col items-center justify-center gap-2.5 text-slate-400">
+                    <RefreshCw className="h-6 w-6 text-emerald-600 animate-spin" />
+                    <p className="text-xs font-bold font-mono">Connecting to Live Firestore database...</p>
+                  </div>
+                ) : shopperProducts.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                    <p className="text-xs font-bold uppercase tracking-wider">No products found in the Live Store.</p>
+                    <p className="text-[10px] mt-1 text-slate-400">Click "Reset Default Produce" above to initialize or pull crops from the Master Catalog on the right.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {shopperProducts.map((item) => {
+                      const isVisible = item.isVisible !== false;
+                      const grossMargin = item.sellingPrice > 0 
+                        ? (((item.sellingPrice - item.costPrice) / item.sellingPrice) * 100).toFixed(0)
+                        : '0';
+                      
+                      return (
+                        <div 
+                          key={item.id} 
+                          className={`border rounded-2xl p-4 transition-all flex flex-col justify-between relative ${
+                            !isVisible 
+                              ? 'bg-slate-50 border-slate-200/80 opacity-70' 
+                              : 'bg-white border-slate-150 shadow-3xs hover:shadow hover:border-emerald-500/30'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex gap-3">
+                              <span className="text-3xl p-2 bg-slate-50 border border-slate-100 rounded-xl select-none shrink-0 flex items-center justify-center w-12 h-12">
+                                {item.emoji || getVegEmoji(item.vegetableName)}
+                              </span>
+                              <div className="text-left">
+                                <h5 className="font-extrabold text-slate-800 text-xs tracking-tight leading-snug uppercase line-clamp-1">{item.vegetableName}</h5>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span className="inline-block text-[8px] font-black uppercase text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    {item.category || 'Vegetable'}
+                                  </span>
+                                  {item.stock > 0 ? (
+                                    <span className="inline-block text-[8.5px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                      {item.stock} {item.unit || 'kg'} left
+                                    </span>
+                                  ) : (
+                                    <span className="inline-block text-[8.5px] font-black uppercase bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded">
+                                      Out of stock
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Visibility Quick Toggle */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleShopperProductVisibility(item.id, isVisible)}
+                              className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
+                                isVisible 
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100' 
+                                  : 'bg-slate-100 border-slate-200 text-slate-400 hover:bg-slate-200'
+                              }`}
+                              title={isVisible ? "Hide from Shopper Store" : "Show in Shopper Store"}
+                            >
+                              {isVisible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                            </button>
+                          </div>
+
+                          {/* Pricing and margin row */}
+                          <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2 text-left">
+                            <div>
+                              <span className="block text-[8px] text-slate-400 font-extrabold uppercase">Cost Price</span>
+                              <span className="text-xs font-extrabold font-mono text-slate-600">₹{item.costPrice}</span>
+                            </div>
+                            <div>
+                              <span className="block text-[8px] text-slate-400 font-extrabold uppercase">Selling Price</span>
+                              <span className="text-xs font-black font-mono text-slate-900">₹{item.sellingPrice}</span>
+                            </div>
+                            <div>
+                              <span className="block text-[8px] text-slate-400 font-extrabold uppercase">Margin</span>
+                              <span className={`text-[10px] font-black font-mono ${Number(grossMargin) >= 30 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                {grossMargin}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Action row */}
+                          <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center gap-2">
+                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wide font-mono">ID: {item.id}</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditShopperProduct(item)}
+                                className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg text-[9px] font-black uppercase transition cursor-pointer flex items-center gap-1"
+                              >
+                                <Edit className="h-3 w-3" /> Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteShopperProduct(item.id)}
+                                className="px-2.5 py-1.5 bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-600 rounded-lg text-[9px] font-black uppercase transition cursor-pointer flex items-center gap-1"
+                              >
+                                <Trash2 className="h-3 w-3" /> Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right side: Central Master Catalog Presets for quick onboarding (1 col) */}
+            <div className="space-y-6">
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm text-left">
+                <div className="pb-3 border-b border-slate-100 mb-4">
+                  <h4 className="text-sm uppercase font-black tracking-wider text-slate-700">Master Presets Sync</h4>
+                  <p className="text-[10px] text-slate-400 font-bold mt-0.5 uppercase tracking-wide font-mono">
+                    {masterCrops.length} blueprints in master catalog
+                  </p>
+                </div>
+
+                <p className="text-[11px] text-slate-500 mb-4 leading-relaxed font-semibold">
+                  Onboard any centralized crop from the master catalog templates directly into the Shopper Store with 1-click preset mapping.
+                </p>
+
+                {masterCrops.length === 0 ? (
+                  <div className="py-6 text-center text-slate-400 border border-dashed border-slate-150 rounded-2xl bg-slate-50 text-[11px] font-semibold">
+                    No crops configured in the Master Catalog. Add crops inside the "Master Catalog" tab first.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 scrollbar-thin">
+                    {masterCrops.map((crop) => {
+                      const alreadyInStore = shopperProducts.some(p => p.vegetableName.toLowerCase() === crop.vegetableName.toLowerCase());
+                      
+                      return (
+                        <div 
+                          key={crop.id} 
+                          className={`p-3 border rounded-2xl flex items-center justify-between gap-3 transition-colors ${
+                            alreadyInStore 
+                              ? 'bg-emerald-50/40 border-emerald-100 opacity-75' 
+                              : 'bg-white border-slate-150 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 text-left">
+                            <span className="text-2xl shrink-0 p-1 bg-slate-50 rounded-lg border border-slate-100 select-none">
+                              {getVegEmoji(crop.vegetableName)}
+                            </span>
+                            <div className="min-w-0">
+                              <h5 className="font-extrabold text-[11px] text-slate-800 uppercase tracking-tight truncate leading-tight">{crop.vegetableName}</h5>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5 font-mono">
+                                {crop.category} • C: ₹{crop.costPrice} • S: ₹{crop.sellingPrice}
+                              </p>
+                            </div>
+                          </div>
+
+                          {alreadyInStore ? (
+                            <span className="text-[8px] font-black text-emerald-700 uppercase bg-emerald-100/60 px-2 py-1 rounded-lg shrink-0 font-mono">
+                              Active
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleImportFromMasterCrop(crop)}
+                              disabled={loadingShopperProducts}
+                              className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-[9px] font-black uppercase transition-all shadow-3xs cursor-pointer shrink-0"
+                            >
+                              Onboard
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Product Config Form Modal */}
+          {isAddingShopperProduct && (
+            <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+              <div className="relative max-w-md w-full bg-white border border-slate-150 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-800">
+                <button
+                  type="button"
+                  onClick={resetShopperForm}
+                  className="absolute top-4 right-4 h-8 w-8 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 rounded-full flex items-center justify-center font-black cursor-pointer text-xs transition"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+
+                <div className="text-left">
+                  <h4 className="text-sm font-black uppercase tracking-tight text-slate-800 flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-emerald-500" />
+                    {editingShopperProductId ? 'Edit Shopper Product' : 'Onboard Custom Shopper Product'}
+                  </h4>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide mt-0.5">
+                    Configure a custom crop listing directly in real-time Firestore database
+                  </p>
+                </div>
+
+                <form onSubmit={handleSaveShopperProduct} className="space-y-4 text-left">
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-extrabold uppercase text-slate-400">Produce Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={shopperFormVegName}
+                      onChange={e => setShopperFormVegName(e.target.value)}
+                      placeholder="e.g. Organic Seedless Watermelon"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 animate-fade-in"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-extrabold uppercase text-slate-400">Category</label>
+                      <select
+                        value={shopperFormCategory}
+                        onChange={e => setShopperFormCategory(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                      >
+                        <option value="Vegetable">Vegetable 🥦</option>
+                        <option value="Fruit">Fruit 🍎</option>
+                        <option value="Herbs">Herbs 🌿</option>
+                        <option value="Grocery">Grocery 🌾</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-extrabold uppercase text-slate-400">Unit Type</label>
+                      <input
+                        type="text"
+                        required
+                        value={shopperFormUnit}
+                        onChange={e => setShopperFormUnit(e.target.value)}
+                        placeholder="e.g. kg, pcs, bunch, box"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-extrabold uppercase text-slate-400">Cost (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        required
+                        value={shopperFormCostPrice}
+                        onChange={e => setShopperFormCostPrice(parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-extrabold uppercase text-slate-400">Selling (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        required
+                        value={shopperFormSellingPrice}
+                        onChange={e => setShopperFormSellingPrice(parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-extrabold uppercase text-slate-400">Initial Stock</label>
+                      <input
+                        type="number"
+                        min="0"
+                        required
+                        value={shopperFormStock}
+                        onChange={e => setShopperFormStock(parseInt(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 items-center pt-2">
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-extrabold uppercase text-slate-400">Custom Emoji</label>
+                      <div className="flex gap-2 items-center">
+                        <span className="text-2xl p-1 border border-slate-150 rounded-lg select-none bg-slate-50 shrink-0 w-10 h-10 flex items-center justify-center">
+                          {shopperFormEmoji || '🥦'}
+                        </span>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          value={shopperFormEmoji}
+                          onChange={e => setShopperFormEmoji(e.target.value)}
+                          placeholder="🥦"
+                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-center text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-4 select-none">
+                      <input
+                        type="checkbox"
+                        id="form-is-visible"
+                        checked={shopperFormIsVisible}
+                        onChange={e => setShopperFormIsVisible(e.target.checked)}
+                        className="rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 h-4 w-4"
+                      />
+                      <label htmlFor="form-is-visible" className="text-xs font-bold text-slate-600 cursor-pointer">
+                        Visible to shoppers
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={resetShopperForm}
+                      className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loadingShopperProducts}
+                      className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shadow"
+                    >
+                      {loadingShopperProducts ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Saving...
+                        </>
+                      ) : (
+                        'Save Listing'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
         </div>
       )}
 

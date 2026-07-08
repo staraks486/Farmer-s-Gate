@@ -770,7 +770,8 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.vegetableName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const isVisible = p.isVisible !== false; // Only show if isVisible is not explicitly false
+    return matchesSearch && matchesCategory && isVisible;
   });
 
   return (

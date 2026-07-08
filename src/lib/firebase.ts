@@ -184,6 +184,23 @@ export async function deleteProductFromFirestore(productId: string) {
   }
 }
 
+// Reset shopper products collection to default produce in Firestore
+export async function resetShopperProductsInFirestore() {
+  try {
+    const colRef = collection(db, 'products');
+    const snapshot = await getDocs(colRef);
+    for (const docSnap of snapshot.docs) {
+      await deleteDoc(docSnap.ref);
+    }
+    for (const item of DEFAULT_PRODUCE) {
+      await setDoc(doc(db, 'products', item.id), item);
+    }
+  } catch (err) {
+    console.error('Error resetting shopper products in firestore:', err);
+    throw err;
+  }
+}
+
 // Create custom order in Firestore
 export interface FirebaseOrder {
   id?: string;
