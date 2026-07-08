@@ -126,7 +126,7 @@ const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   activeCity: 'Bengaluru'
 };
 
-export default function ManagementSuite({ user, isStorePosPortal }: { user: any; isStorePosPortal?: boolean }) {
+export default function ManagementSuite({ user, isStorePosPortal, appVersion }: { user: any; isStorePosPortal?: boolean; appVersion?: string }) {
   const roleInfo = getUserRole(user?.email);
   let allowedTabs = roleInfo.allowedTabs || ['dashboard', 'headoffice', 'store', 'suppliers', 'accounts', 'admin'];
   if (isStorePosPortal) {
@@ -201,14 +201,16 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
         }
       }
 
-      if (isStorePosPortal && fetchedStores.length > 0 && !selectedStore) {
+      if (isStorePosPortal && fetchedStores.length > 0) {
         const params = new URLSearchParams(window.location.search);
         const queryStoreId = params.get('storeId');
-        if (queryStoreId) {
-          const match = fetchedStores.find(st => st.id === queryStoreId);
-          if (match) {
-            setSelectedStore(match);
-          }
+        const match = queryStoreId 
+          ? fetchedStores.find(st => st.id === queryStoreId) 
+          : fetchedStores.find(st => st.isActive) || fetchedStores[0];
+        
+        if (match) {
+          setSelectedStore(match);
+          setUnlockedStoreId(match.id);
         }
       }
       setSales(fetchedSales);
@@ -249,7 +251,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
 
   useEffect(() => {
     loadAllData();
-  }, []);
+  }, [appVersion]);
 
   useEffect(() => {
     const unsubOrders = subscribeToOrders((orders) => {
@@ -289,163 +291,172 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
     }
   };
 
+  const triggerDataUpdate = async () => {
+    await loadAllData();
+    try {
+      fetch('/api/app-version/increment', { method: 'POST' })
+        .then(res => res.json())
+        .catch(err => console.warn(err));
+    } catch (e) {}
+  };
+
   // CRUD Handlers for Stores
   const handleAddStore = async (store: Store) => {
     await dbAddStore(store);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleUpdateStore = async (store: Store) => {
     await dbUpdateStore(store);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeleteStore = async (id: string) => {
     await dbDeleteStore(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // CRUD Handlers for Requirements
   const handleAddRequirement = async (req: Requirement) => {
     await dbAddRequirement(req);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleUpdateRequirementStatus = async (id: string, status: 'Pending' | 'Ordered' | 'Fulfilled') => {
     const req = requirements.find(r => r.id === id);
     if (req) {
       await dbUpdateRequirement({ ...req, status });
-      await loadAllData();
+      await triggerDataUpdate();
     }
   };
 
   const handleUpdateRequirement = async (req: Requirement) => {
     await dbUpdateRequirement(req);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeleteRequirement = async (id: string) => {
     await dbDeleteRequirement(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // Sales
   const handleAddSale = async (sale: Sale) => {
     await dbAddSale(sale);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeleteSale = async (id: string) => {
     await dbDeleteSale(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // Purchases
   const handleAddPurchase = async (p: Purchase) => {
     await dbAddPurchase(p);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeletePurchase = async (id: string) => {
     await dbDeletePurchase(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // Inventory
   const handleUpdateInventoryItem = async (item: InventoryItem) => {
     await dbAddOrUpdateInventoryItem(item);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // Master Crops
   const handleUpdateMasterCrop = async (crop: MasterCrop) => {
     await dbAddOrUpdateMasterCrop(crop);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeleteMasterCrop = async (id: string) => {
     await dbDeleteMasterCrop(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // Staff and Attendance Handlers
   const handleAddStaff = async (member: StaffMember) => {
     await dbAddStaffMember(member);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleUpdateStaff = async (member: StaffMember) => {
     await dbUpdateStaffMember(member);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeleteStaff = async (id: string) => {
     await dbDeleteStaffMember(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleSaveAttendance = async (record: AttendanceRecord) => {
     await dbSaveAttendanceRecord(record);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // Company Officials Handlers
   const handleAddOfficial = async (official: CompanyOfficial) => {
     await dbAddCompanyOfficial(official);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleUpdateOfficial = async (official: CompanyOfficial) => {
     await dbUpdateCompanyOfficial(official);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeleteOfficial = async (id: string) => {
     await dbDeleteCompanyOfficial(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // Suppliers
   const handleAddSupplier = async (s: Supplier) => {
     await dbAddSupplier(s);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleUpdateSupplier = async (s: Supplier) => {
     await dbUpdateSupplier(s);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeleteSupplier = async (id: string) => {
     await dbDeleteSupplier(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // POs
   const handleAddPurchaseOrder = async (po: PurchaseOrder) => {
     await dbAddPurchaseOrder(po);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleUpdatePurchaseOrder = async (po: PurchaseOrder) => {
     await dbUpdatePurchaseOrder(po);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeletePurchaseOrder = async (id: string) => {
     await dbDeletePurchaseOrder(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // Customer Orders
   const handleUpdateCustomerOrder = async (order: CustomerOrder) => {
     await dbUpdateCustomerOrder(order);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleDeleteCustomerOrder = async (id: string) => {
     await dbDeleteCustomerOrder(id);
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleFulfillCustomerOrder = async (order: CustomerOrder) => {
@@ -482,7 +493,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
       });
     }
 
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   const handleReceivePOInventory = async (po: PurchaseOrder) => {
@@ -532,7 +543,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
       paidAmount: po.totalAmount
     });
 
-    await loadAllData();
+    await triggerDataUpdate();
   };
 
   // Cpanel / Settings
@@ -721,6 +732,7 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
                   onSaveAttendance={handleSaveAttendance}
                   onUpdateStaff={handleUpdateStaff}
                   stores={stores}
+                  masterCrops={masterCrops}
                 />
               ) : (
                 /* Beautiful, fully responsive secure branch login PIN register screen */

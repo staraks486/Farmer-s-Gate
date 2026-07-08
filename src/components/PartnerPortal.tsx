@@ -33,7 +33,7 @@ import {
   FirebaseOrder
 } from '../lib/firebase';
 
-export default function PartnerPortal() {
+export default function PartnerPortal({ appVersion }: { appVersion?: string }) {
   const [orders, setOrders] = useState<FirebaseOrder[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
@@ -150,7 +150,7 @@ export default function PartnerPortal() {
     return () => {
       unsubscribeOrders();
     };
-  }, [selectedOrder?.id]);
+  }, [selectedOrder?.id, appVersion]);
 
   const refreshProducts = async () => {
     setLoadingProducts(true);

@@ -38,7 +38,7 @@ import {
   Users
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification, StaffMember, AttendanceRecord, AccountEntry, AttendancePunch } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification, StaffMember, AttendanceRecord, AccountEntry, AttendancePunch, MasterCrop } from '../types';
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
 import { subscribeToNotifications } from '../lib/firebase';
 import { QrScanner } from './QrScanner';
@@ -71,6 +71,7 @@ interface StoreManagerProps {
   onUpdateStaff?: (member: StaffMember) => Promise<void> | void;
   stores?: Store[];
   cpanelSettings?: CpanelSettings;
+  masterCrops?: MasterCrop[];
 }
 
 interface PosCartItem {
@@ -180,7 +181,8 @@ export default function StoreManager({
   onSaveAttendance,
   onUpdateStaff,
   stores = [],
-  cpanelSettings
+  cpanelSettings,
+  masterCrops = []
 }: StoreManagerProps) {
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
   const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report' | 'stock-transfer' | 'stock-waste'>('sale');
@@ -2021,6 +2023,28 @@ export default function StoreManager({
 
   // Quick seed standard items to inventory
   const handleBulkSeedCrops = async () => {
+    if (masterCrops && masterCrops.length > 0) {
+      let addedCount = 0;
+      for (const crop of masterCrops) {
+        const exists = storeInventory.some(i => i.vegetableName.toLowerCase() === crop.vegetableName.toLowerCase());
+        if (!exists) {
+          await onUpdateInventoryItem({
+            id: `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            storeId: store.id,
+            vegetableName: crop.vegetableName,
+            quantity: 100, // default starting stock
+            costPrice: crop.costPrice,
+            sellingPrice: crop.sellingPrice,
+            minStockThreshold: crop.minStockThreshold || 10,
+            lastUpdated: new Date().toISOString()
+          });
+          addedCount++;
+        }
+      }
+      alert(`Successfully synchronized store inventory with the Master Catalog! Added ${addedCount} new crops.`);
+      return;
+    }
+
     const defaultCrops = [
       { name: 'APPLE FUJI', price: 350, qty: 100, min: 10 },
       { name: 'APPLE INDIAN', price: 260, qty: 150, min: 15 },
@@ -3125,11 +3149,30 @@ export default function StoreManager({
                         );
                       })}
 
-                    {storeInventory.filter(item => item.vegetableName.toLowerCase().includes(posSearch.toLowerCase())).length === 0 && (
+                    {storeInventory.length === 0 ? (
+                      <div className="py-12 px-6 text-center bg-slate-50 border border-dashed border-slate-200 rounded-2xl space-y-4 animate-in fade-in duration-200">
+                        <div className="mx-auto w-12 h-12 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 text-xl">
+                          📦
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-sm font-black text-slate-800">Your Store Inventory is Empty</h4>
+                          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                            To start billing, you need to register crops in your branch inventory. You can instantly sync and onboard all active items from the corporate Master Catalog.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleBulkSeedCrops}
+                          className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl text-xs transition-all cursor-pointer shadow-sm"
+                        >
+                          🔄 Sync with Master Catalog
+                        </button>
+                      </div>
+                    ) : storeInventory.filter(item => item.vegetableName.toLowerCase().includes(posSearch.toLowerCase())).length === 0 ? (
                       <div className="py-16 text-center text-slate-400 bg-white border border-slate-150 rounded-2xl">
                         <p className="text-xs font-bold">No matching crops found</p>
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Persistent Sticky Cart Summary Bar at bottom */}
@@ -4232,13 +4275,30 @@ export default function StoreManager({
               );
             })}
 
-            {searchedInventory.length === 0 && (
+            {storeInventory.length === 0 ? (
+              <div className="sm:col-span-2 lg:col-span-3 py-16 px-6 text-center text-zinc-500 border border-dashed border-zinc-200 rounded-2xl bg-white space-y-4">
+                <Package className="h-12 w-12 text-zinc-300 mx-auto" />
+                <div className="space-y-1">
+                  <p className="text-sm font-black text-zinc-805">Your Store Inventory is Empty</p>
+                  <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                    Configure your branch inventory instantly by importing and syncing all active crop catalog categories from the corporate Master Catalog.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleBulkSeedCrops}
+                  className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2.5 rounded-xl text-xs transition-all cursor-pointer shadow-sm"
+                >
+                  🔄 Sync with Master Catalog
+                </button>
+              </div>
+            ) : searchedInventory.length === 0 ? (
               <div className="sm:col-span-2 lg:col-span-3 py-20 text-center text-zinc-400 border border-dashed border-zinc-200 rounded-2xl bg-white">
                 <Package className="h-10 w-10 text-zinc-300 mx-auto mb-2" />
                 <p className="text-sm font-semibold">No crop categories found</p>
                 <p className="text-xs text-zinc-500 mt-1">Initialize a crop line or register a supplier purchase to populate stock!</p>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}
@@ -5051,7 +5111,7 @@ export default function StoreManager({
                   onClick={handleBulkSeedCrops}
                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-4 py-2.5 rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-950/20"
                 >
-                  🌾 Bulk Seed Standard Crops Catalog
+                  🔄 {masterCrops && masterCrops.length > 0 ? "Sync Store with Master Catalog" : "Bulk Seed Standard Crops Catalog"}
                 </button>
                 <button
                   type="button"

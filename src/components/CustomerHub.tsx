@@ -54,7 +54,7 @@ import InteractiveMap from './customer/InteractiveMap';
 import ReviewsWall from './customer/ReviewsWall';
 import FarmersGateLogo from './FarmersGateLogo';
 
-export default function CustomerHub({ changePortal }: { changePortal?: (portal: 'customer' | 'partner' | 'management') => void }) {
+export default function CustomerHub({ changePortal, appVersion }: { changePortal?: (portal: 'customer' | 'partner' | 'management' | 'executive' | 'store_pos') => void, appVersion?: string }) {
   const [activeTab, setActiveTab] = useState<'shop' | 'track' | 'profile'>('shop');
   const [products, setProducts] = useState<any[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
@@ -152,7 +152,7 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
       setLoadingProducts(false);
     };
     initData();
-  }, []);
+  }, [appVersion]);
 
   // Listen for category URL search param or hash param to auto-filter catalog
   useEffect(() => {

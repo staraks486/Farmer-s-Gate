@@ -40,7 +40,7 @@ import {
 } from '../lib/supabase';
 import Dashboard from './Dashboard';
 
-export default function ExecutivePortal({ isAdmin = false }: { isAdmin?: boolean }) {
+export default function ExecutivePortal({ isAdmin = false, appVersion }: { isAdmin?: boolean; appVersion?: string }) {
   const [stores, setStores] = useState<Store[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -94,7 +94,7 @@ export default function ExecutivePortal({ isAdmin = false }: { isAdmin?: boolean
       unsubOrders();
       unsubNotifications();
     };
-  }, []);
+  }, [appVersion]);
 
   const handleSync = async () => {
     setSyncing(true);

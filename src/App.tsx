@@ -782,7 +782,7 @@ export default function App() {
               transition={{ duration: 0.18 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <CustomerHub changePortal={changePortal} />
+              <CustomerHub changePortal={changePortal} appVersion={appVersion} />
             </motion.div>
           ) : activePortal === 'executive' ? (
             <motion.div
@@ -793,7 +793,7 @@ export default function App() {
               transition={{ duration: 0.18 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <ExecutivePortal />
+              <ExecutivePortal appVersion={appVersion} />
             </motion.div>
           ) : activePortal === 'store_pos' ? (
             user && ['admin', 'store_pos'].includes(userRole.role) ? (
@@ -805,7 +805,7 @@ export default function App() {
                 transition={{ duration: 0.18 }}
                 className="flex-1 flex flex-col overflow-hidden"
               >
-                <ManagementSuite user={user} isStorePosPortal={true} />
+                <ManagementSuite user={user} isStorePosPortal={true} appVersion={appVersion} />
               </motion.div>
             ) : (
               <motion.div
@@ -903,7 +903,7 @@ export default function App() {
                 transition={{ duration: 0.18 }}
                 className="flex-1 flex flex-col overflow-hidden"
               >
-                <PartnerPortal />
+                <PartnerPortal appVersion={appVersion} />
               </motion.div>
             ) : (
               <motion.div
@@ -1000,7 +1000,7 @@ export default function App() {
               transition={{ duration: 0.18 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <ManagementSuite user={user} />
+              <ManagementSuite user={user} appVersion={appVersion} />
             </motion.div>
           ) : (
             <motion.div
