@@ -592,6 +592,11 @@ export async function dbGetStores(): Promise<Store[]> {
 export async function dbAddStore(store: Store): Promise<Store> {
   const config = getSupabaseConfig();
   
+  // Set initial version if not present
+  if (store.version === undefined) {
+    store.version = 1;
+  }
+  
   // Always update local storage first so that the UI can update instantly and reliably
   const local = localStorage.getItem('fg_stores');
   const stores = local ? JSON.parse(local) : [];
@@ -603,10 +608,10 @@ export async function dbAddStore(store: Store): Promise<Store> {
   if (config.isConnected && supabaseInstance) {
     try {
       const { data, error } = await supabaseInstance
-        .from('stores')
-        .insert([store])
-        .select()
-        .single();
+         .from('stores')
+         .insert([store])
+         .select()
+         .single();
       if (error) throw error;
       return data as Store;
     } catch (e) {
@@ -623,6 +628,9 @@ export async function dbAddStore(store: Store): Promise<Store> {
 export async function dbUpdateStore(store: Store): Promise<Store> {
   const config = getSupabaseConfig();
   
+  // Increment version on every modification
+  store.version = (store.version || 0) + 1;
+  
   // Always update local storage first
   const local = localStorage.getItem('fg_stores');
   const stores = local ? JSON.parse(local) : [];
@@ -635,11 +643,11 @@ export async function dbUpdateStore(store: Store): Promise<Store> {
   if (config.isConnected && supabaseInstance) {
     try {
       const { data, error } = await supabaseInstance
-        .from('stores')
-        .update(store)
-        .eq('id', store.id)
-        .select()
-        .single();
+         .from('stores')
+         .update(store)
+         .eq('id', store.id)
+         .select()
+         .single();
       if (error) throw error;
       return data as Store;
     } catch (e) {

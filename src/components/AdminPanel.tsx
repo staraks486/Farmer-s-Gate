@@ -859,7 +859,8 @@ export default function AdminPanel({
           password: storePassword || undefined,
           lat: storeLat !== '' ? storeLat : undefined,
           lng: storeLng !== '' ? storeLng : undefined,
-          googleMapsUrl: storeGoogleMapsUrl || undefined
+          googleMapsUrl: storeGoogleMapsUrl || undefined,
+          version: (match.version || 0) + 1
         });
       }
     } else {
@@ -873,7 +874,8 @@ export default function AdminPanel({
         password: storePassword || undefined,
         lat: storeLat !== '' ? storeLat : undefined,
         lng: storeLng !== '' ? storeLng : undefined,
-        googleMapsUrl: storeGoogleMapsUrl || undefined
+        googleMapsUrl: storeGoogleMapsUrl || undefined,
+        version: 1
       };
       onAddStore(newStore);
     }
@@ -1376,7 +1378,8 @@ export default function AdminPanel({
                     onClick={() => {
                       onUpdateStore({
                         ...store,
-                        isActive: !store.isActive
+                        isActive: !store.isActive,
+                        version: (store.version || 0) + 1
                       });
                     }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${

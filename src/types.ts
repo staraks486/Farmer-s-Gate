@@ -9,6 +9,7 @@ export interface Store {
   lat?: number;
   lng?: number;
   googleMapsUrl?: string;
+  version?: number;
 }
 
 export interface Sale {
