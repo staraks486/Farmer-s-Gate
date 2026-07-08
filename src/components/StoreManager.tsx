@@ -2021,6 +2021,35 @@ export default function StoreManager({
   const storeInventory = inventory.filter(i => i.storeId === store.id);
   const storeRequirements = requirements.filter(r => r.storeId === store.id);
 
+  // Background Sync: Automatically synchronize store inventory with Master Catalog in background
+  useEffect(() => {
+    if (!masterCrops || masterCrops.length === 0 || !store?.id) return;
+    
+    const syncInBackground = async () => {
+      const missingCrops = masterCrops.filter(crop => 
+        !storeInventory.some(i => i.vegetableName.toLowerCase() === crop.vegetableName.toLowerCase())
+      );
+      
+      if (missingCrops.length > 0) {
+        console.log(`[Background Sync] Seeding ${missingCrops.length} missing master crops into store ${store.name}`);
+        for (const crop of missingCrops) {
+          await onUpdateInventoryItem({
+            id: `item-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
+            storeId: store.id,
+            vegetableName: crop.vegetableName,
+            quantity: 100, // default starting stock
+            costPrice: crop.costPrice,
+            sellingPrice: crop.sellingPrice,
+            minStockThreshold: crop.minStockThreshold || 10,
+            lastUpdated: new Date().toISOString()
+          });
+        }
+      }
+    };
+    
+    syncInBackground();
+  }, [store?.id, masterCrops, storeInventory.length]);
+
   // Quick seed standard items to inventory
   const handleBulkSeedCrops = async () => {
     if (masterCrops && masterCrops.length > 0) {
