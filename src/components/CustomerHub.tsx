@@ -787,7 +787,7 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
           
           {/* Left Block: Delivery Estimate & Location address */}
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-600 text-white shadow-md hover:scale-105 transition-transform duration-300">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-600 text-white shadow-md">
               <ShoppingBag className="h-5 w-5" />
             </div>
             <div>
@@ -797,37 +797,10 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
                   FASTEST
                 </span>
               </div>
-              <button 
-                onClick={() => setIsMapModalOpen(true)}
-                className="text-[10.5px] font-bold text-slate-500 hover:text-purple-600 uppercase tracking-tight flex items-center gap-1 cursor-pointer text-left bg-transparent border-none p-0 outline-none group"
-                title="Click to open Interactive Range Map Simulator"
-              >
-                📍 {customAddress || 'Green Meadows, Sector 4, Bangalore'} <span className="text-purple-600 font-extrabold text-[8.5px] group-hover:translate-y-0.5 transition-transform">▼ (Change Delivery Pin)</span>
-              </button>
+              <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-tight flex items-center gap-1">
+                📍 {customAddress || 'Green Meadows, Sector 4, Bangalore'}
+              </span>
             </div>
-          </div>
-
-          {/* Indian City Quick Selector chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none max-w-full md:max-w-md bg-white/40 p-1 rounded-2xl border border-purple-150/30">
-            <span className="text-[9px] font-black uppercase text-purple-700 px-2 shrink-0">City Hub:</span>
-            {indianCitiesList.map((city) => {
-              const isSelected = customAddress && customAddress.toLowerCase().includes(city.name.toLowerCase());
-              return (
-                <button
-                  key={city.name}
-                  type="button"
-                  onClick={() => handleSwitchCity(city)}
-                  className={`px-2.5 py-1 rounded-xl text-[9px] font-extrabold uppercase shrink-0 transition flex items-center gap-1 cursor-pointer border ${
-                    isSelected
-                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                      : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200/60'
-                  }`}
-                >
-                  <span>{city.icon}</span>
-                  <span>{city.name}</span>
-                </button>
-              );
-            })}
           </div>
 
           {/* Right Block: Instant Perspective Sub-brand Selector and user profile */}
@@ -972,7 +945,7 @@ export default function CustomerHub({ changePortal }: { changePortal?: (portal: 
                         }}
                         className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 group focus:outline-none"
                       >
-                        <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl transition-all shadow-3xs ${cat.color} ${
+                        <div className={`w-14 h-14 rounded-full border-2 flex items-center justify-center text-2xl transition-all shadow-3xs ${cat.color} ${
                           isActive 
                             ? 'ring-2 ring-emerald-500 ring-offset-2 scale-105 font-black' 
                             : 'hover:scale-105 hover:shadow-xs'

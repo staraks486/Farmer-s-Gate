@@ -190,6 +190,9 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
       const config = getSupabaseConfig();
 
       setStores(fetchedStores);
+      try {
+        localStorage.setItem('fg_cached_stores', JSON.stringify(fetchedStores));
+      } catch (e) {}
       if (isStorePosPortal && fetchedStores.length > 0 && !selectedStore) {
         const params = new URLSearchParams(window.location.search);
         const queryStoreId = params.get('storeId');

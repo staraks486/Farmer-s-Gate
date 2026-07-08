@@ -559,6 +559,7 @@ export default function AdminPanel({
   const [storesSearchQuery, setStoresSearchQuery] = useState('');
   const [storeWhatsapp, setStoreWhatsapp] = useState('');
   const [storePassword, setStorePassword] = useState('');
+  const [storeGoogleMapsUrl, setStoreGoogleMapsUrl] = useState('');
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
 
   // Store Messaging State
@@ -790,6 +791,58 @@ export default function AdminPanel({
     setTimeout(() => setCopiedOrderText(false), 2000);
   };
 
+  const handleConvertStoreMapLink = (url: string) => {
+    if (!url.trim()) return;
+    
+    // Regex 1: /@30.3398,76.3869
+    let match = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    let coords: { lat: number; lng: number } | null = null;
+    if (match) {
+      coords = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+    } else {
+      // Regex 2: ?q=30.3398,76.3869
+      match = url.match(/[?&](?:q|daddr|ll|query)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (match) {
+        coords = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+      } else {
+        // Regex 3: /place/30.3398+76.3869
+        match = url.match(/\/place\/(-?\d+\.\d+)[+,](-?\d+\.\d+)/);
+        if (match) {
+          coords = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+        } else {
+          // Regex 4: any coordinates
+          const anyCoords = url.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+          if (anyCoords) {
+            const lat = parseFloat(anyCoords[1]);
+            const lng = parseFloat(anyCoords[2]);
+            if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+              coords = { lat, lng };
+            }
+          }
+        }
+      }
+    }
+
+    if (coords) {
+      setStoreLat(parseFloat(coords.lat.toFixed(5)));
+      setStoreLng(parseFloat(coords.lng.toFixed(5)));
+      
+      // Attempt to extract place name
+      let locName = "Custom Coordinated Hub";
+      try {
+        const urlObj = new URL(url);
+        const placeSegment = urlObj.pathname.split('/place/')[1];
+        if (placeSegment) {
+          locName = decodeURIComponent(placeSegment.split('/')[0]).replace(/\+/g, ' ');
+        }
+      } catch (e) {}
+      
+      setStoreLocation(`${locName} (Google Maps Decoded)`);
+    } else {
+      alert("❌ Could not parse coordinates from this Google Maps Link. Please make sure it contains latitude and longitude or matches a standard Google Maps URL.");
+    }
+  };
+
   // Handle Save Store Form
   const handleSaveStore = (e: React.FormEvent) => {
     e.preventDefault();
@@ -805,7 +858,8 @@ export default function AdminPanel({
           whatsappNumber: storeWhatsapp.replace(/[^\d+]/g, ''), // clean phone input
           password: storePassword || undefined,
           lat: storeLat !== '' ? storeLat : undefined,
-          lng: storeLng !== '' ? storeLng : undefined
+          lng: storeLng !== '' ? storeLng : undefined,
+          googleMapsUrl: storeGoogleMapsUrl || undefined
         });
       }
     } else {
@@ -818,7 +872,8 @@ export default function AdminPanel({
         createdAt: new Date().toISOString(),
         password: storePassword || undefined,
         lat: storeLat !== '' ? storeLat : undefined,
-        lng: storeLng !== '' ? storeLng : undefined
+        lng: storeLng !== '' ? storeLng : undefined,
+        googleMapsUrl: storeGoogleMapsUrl || undefined
       };
       onAddStore(newStore);
     }
@@ -832,6 +887,7 @@ export default function AdminPanel({
     setGeocodeResults([]);
     setStoreWhatsapp('');
     setStorePassword('');
+    setStoreGoogleMapsUrl('');
     setEditingStoreId(null);
     setStoreFormOpen(false);
   };
@@ -844,6 +900,7 @@ export default function AdminPanel({
     setStoreLng(store.lng ?? '');
     setStoreWhatsapp(store.whatsappNumber);
     setStorePassword(store.password || '');
+    setStoreGoogleMapsUrl(store.googleMapsUrl || '');
     setStoreFormOpen(true);
   };
 
@@ -1094,6 +1151,33 @@ export default function AdminPanel({
                   </div>
                 </div>
 
+                <div>
+                  <label htmlFor="store-gmaps-url-input" className="block text-xs font-bold text-zinc-600 uppercase tracking-wide mb-1">Google Maps Link (Convert & Save)</label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-zinc-400 text-xs">
+                        🔗
+                      </span>
+                      <input
+                        id="store-gmaps-url-input"
+                        type="url"
+                        placeholder="Paste Google Maps link (e.g., https://goo.gl/maps/...)"
+                        value={storeGoogleMapsUrl}
+                        onChange={(e) => setStoreGoogleMapsUrl(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800 font-medium"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleConvertStoreMapLink(storeGoogleMapsUrl)}
+                      className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold px-3.5 py-2 text-xs uppercase tracking-wider cursor-pointer shadow-sm transition shrink-0"
+                    >
+                      Convert
+                    </button>
+                  </div>
+                  <span className="text-[10px] text-zinc-400 mt-1 block">Paste any Google Maps URL and click "Convert" to instantly decode precise coordinate points and address location into the fields below!</span>
+                </div>
+
                 <StoreMapSelector
                   lat={storeLat}
                   lng={storeLng}
@@ -1237,6 +1321,14 @@ export default function AdminPanel({
                     {store.lat !== undefined && store.lng !== undefined && (
                       <div className="flex items-center gap-2 text-[10px] text-emerald-700 font-mono bg-emerald-50/70 border border-emerald-100 rounded-lg px-2 py-0.5 w-fit">
                         <span>🌐 Coordinates: {store.lat.toFixed(5)}, {store.lng.toFixed(5)}</span>
+                      </div>
+                    )}
+                    {store.googleMapsUrl && (
+                      <div className="flex items-center gap-2 text-[10px] text-blue-700 font-semibold bg-blue-50/70 border border-blue-100 rounded-lg px-2.5 py-0.5 w-fit">
+                        <span>🔗 Map Link:</span>
+                        <a href={store.googleMapsUrl} target="_blank" rel="noreferrer" className="underline hover:text-blue-900 truncate max-w-[220px]">
+                          {store.googleMapsUrl}
+                        </a>
                       </div>
                     )}
                     <div className="flex items-center gap-2 text-xs text-zinc-500">

@@ -78,6 +78,44 @@ export default function App() {
       return;
     }
 
+    const getLocationsToCheck = () => {
+      const hq = { 
+        name: settings.headOfficeName || "Bangalore Corporate HQ", 
+        lat: Number(settings.headOfficeLat) || 12.9716, 
+        lng: Number(settings.headOfficeLng) || 77.5946 
+      };
+      
+      let dynamicStores: any[] = [];
+      try {
+        const saved = localStorage.getItem('fg_cached_stores');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            dynamicStores = parsed.map((s: any) => ({
+              name: s.name,
+              lat: Number(s.lat) || 12.9716,
+              lng: Number(s.lng) || 77.5946
+            }));
+          }
+        }
+      } catch (e) {}
+
+      if (dynamicStores.length > 0) {
+        return [hq, ...dynamicStores];
+      }
+
+      return [
+        hq,
+        { name: "Whitefield Store", lat: 12.9698, lng: 77.7500 },
+        { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412 },
+        { name: "Koramangala Store", lat: 12.9279, lng: 77.6271 },
+        { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824 },
+        { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806 },
+        { name: "Hebbal Store", lat: 13.0354, lng: 77.5988 },
+        { name: "Patiala Store", lat: 30.3398, lng: 76.3869 }
+      ];
+    };
+
     // Intercept with Geolocation Sandbox Simulation
     try {
       const sandboxStr = localStorage.getItem('farmersgate_geo_sandbox_settings');
@@ -94,16 +132,7 @@ export default function App() {
             setUserLocation(coords);
             setIsCheckingGeo(false);
 
-            const locations = [
-              { name: settings.headOfficeName || "Bangalore Corporate HQ", lat: Number(settings.headOfficeLat) || 12.9716, lng: Number(settings.headOfficeLng) || 77.5946 },
-              { name: "Whitefield Store", lat: 12.9698, lng: 77.7500 },
-              { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412 },
-              { name: "Koramangala Store", lat: 12.9279, lng: 77.6271 },
-              { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824 },
-              { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806 },
-              { name: "Hebbal Store", lat: 13.0354, lng: 77.5988 },
-              { name: "Patiala Store", lat: 30.3398, lng: 76.3869 }
-            ];
+            const locations = getLocationsToCheck();
 
             const radius = settings.allowedLocalRadiusKm || 10;
             let nearestDist = Infinity;
@@ -142,16 +171,7 @@ export default function App() {
         setIsCheckingGeo(false);
 
         // Compute distance to branches
-        const locations = [
-          { name: settings.headOfficeName || "Bangalore Corporate HQ", lat: Number(settings.headOfficeLat) || 12.9716, lng: Number(settings.headOfficeLng) || 77.5946 },
-          { name: "Whitefield Store", lat: 12.9698, lng: 77.7500 },
-          { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412 },
-          { name: "Koramangala Store", lat: 12.9279, lng: 77.6271 },
-          { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824 },
-          { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806 },
-          { name: "Hebbal Store", lat: 13.0354, lng: 77.5988 },
-          { name: "Patiala Store", lat: 30.3398, lng: 76.3869 }
-        ];
+        const locations = getLocationsToCheck();
 
         const radius = settings.allowedLocalRadiusKm || 10;
         let nearestDist = Infinity;

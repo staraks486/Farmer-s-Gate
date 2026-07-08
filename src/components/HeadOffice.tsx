@@ -252,6 +252,23 @@ export default function HeadOffice({
     return R * c;
   };
 
+  const colorsList = [
+    "bg-teal-50 border-teal-200 text-teal-700",
+    "bg-indigo-50 border-indigo-200 text-indigo-700",
+    "bg-purple-50 border-purple-200 text-purple-700",
+    "bg-amber-50 border-amber-200 text-amber-700",
+    "bg-orange-50 border-orange-200 text-orange-700",
+    "bg-rose-50 border-rose-200 text-rose-700",
+    "bg-emerald-50 border-emerald-200 text-emerald-700"
+  ];
+
+  const dynamicSandboxStores = (stores || []).map((s, idx) => ({
+    name: s.name,
+    lat: Number(s.lat) || 12.9716,
+    lng: Number(s.lng) || 77.5946,
+    color: colorsList[idx % colorsList.length]
+  }));
+
   const sandboxLocations = [
     { 
       name: sandboxCpanelSettings.headOfficeName || "Bangalore Corporate HQ", 
@@ -259,13 +276,15 @@ export default function HeadOffice({
       lng: Number(sandboxCpanelSettings.headOfficeLng) || 77.5946, 
       color: "bg-blue-50 border-blue-200 text-blue-700" 
     },
-    { name: "Whitefield Store", lat: 12.9698, lng: 77.7500, color: "bg-teal-50 border-teal-200 text-teal-700" },
-    { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412, color: "bg-indigo-50 border-indigo-200 text-indigo-700" },
-    { name: "Koramangala Store", lat: 12.9279, lng: 77.6271, color: "bg-purple-50 border-purple-200 text-purple-700" },
-    { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824, color: "bg-amber-50 border-amber-200 text-amber-700" },
-    { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806, color: "bg-orange-50 border-orange-200 text-orange-700" },
-    { name: "Hebbal Store", lat: 13.0354, lng: 77.5988, color: "bg-rose-50 border-rose-200 text-rose-700" },
-    { name: "Patiala Store", lat: 30.3398, lng: 76.3869, color: "bg-emerald-50 border-emerald-200 text-emerald-700" }
+    ...(dynamicSandboxStores.length > 0 ? dynamicSandboxStores : [
+      { name: "Whitefield Store", lat: 12.9698, lng: 77.7500, color: "bg-teal-50 border-teal-200 text-teal-700" },
+      { name: "Indiranagar Store", lat: 12.9719, lng: 77.6412, color: "bg-indigo-50 border-indigo-200 text-indigo-700" },
+      { name: "Koramangala Store", lat: 12.9279, lng: 77.6271, color: "bg-purple-50 border-purple-200 text-purple-700" },
+      { name: "Jayanagar Store", lat: 12.9299, lng: 77.5824, color: "bg-amber-50 border-amber-200 text-amber-700" },
+      { name: "Sarjapur Store", lat: 12.9038, lng: 77.6806, color: "bg-orange-50 border-orange-200 text-orange-700" },
+      { name: "Hebbal Store", lat: 13.0354, lng: 77.5988, color: "bg-rose-50 border-rose-200 text-rose-700" },
+      { name: "Patiala Store", lat: 30.3398, lng: 76.3869, color: "bg-emerald-50 border-emerald-200 text-emerald-700" }
+    ])
   ];
 
   const fetchRealGps = () => {

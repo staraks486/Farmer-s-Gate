@@ -8,6 +8,7 @@ export interface Store {
   password?: string;
   lat?: number;
   lng?: number;
+  googleMapsUrl?: string;
 }
 
 export interface Sale {
