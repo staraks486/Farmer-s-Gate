@@ -3308,11 +3308,23 @@ export default function HeadOffice({
                     
                     {/* Basic details */}
                     <div className="grid grid-cols-2 gap-3.5 text-xs">
-                      <div className="space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                        <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Branch Location</p>
-                        <p className="font-extrabold text-slate-850 flex items-center gap-1 text-[11px]">
-                          📍 {store.location || 'Not Specified'}
-                        </p>
+                      <div className="space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col justify-between">
+                        <div>
+                          <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Branch Location</p>
+                          <p className="font-extrabold text-slate-850 flex items-center gap-1 text-[11px] truncate" title={store.location}>
+                            📍 {store.location || 'Not Specified'}
+                          </p>
+                        </div>
+                        {store.googleMapsUrl && (
+                          <a 
+                            href={store.googleMapsUrl} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="text-[9px] text-purple-600 hover:text-purple-800 font-extrabold underline flex items-center gap-0.5 mt-1"
+                          >
+                            🔗 View Google Map
+                          </a>
+                        )}
                       </div>
 
                       <div className="space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">

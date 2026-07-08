@@ -193,6 +193,14 @@ export default function ManagementSuite({ user, isStorePosPortal }: { user: any;
       try {
         localStorage.setItem('fg_cached_stores', JSON.stringify(fetchedStores));
       } catch (e) {}
+      
+      if (selectedStore) {
+        const updatedSelected = fetchedStores.find(s => s.id === selectedStore.id);
+        if (updatedSelected) {
+          setSelectedStore(updatedSelected);
+        }
+      }
+
       if (isStorePosPortal && fetchedStores.length > 0 && !selectedStore) {
         const params = new URLSearchParams(window.location.search);
         const queryStoreId = params.get('storeId');

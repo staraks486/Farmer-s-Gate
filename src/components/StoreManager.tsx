@@ -3507,9 +3507,21 @@ export default function StoreManager({
                       <h4 className="text-xs font-black tracking-wider uppercase text-slate-400">Branch Configuration</h4>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs text-slate-700">
-                        <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-200/80 flex justify-between items-center">
-                          <span className="text-slate-400 font-bold">Location Desk:</span>
-                          <span className="font-extrabold text-slate-800">{store.location || 'Not Specified'}</span>
+                        <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-200/80 flex flex-col justify-center gap-1">
+                          <div className="flex justify-between items-center w-full">
+                            <span className="text-slate-400 font-bold">Location Desk:</span>
+                            <span className="font-extrabold text-slate-800">{store.location || 'Not Specified'}</span>
+                          </div>
+                          {store.googleMapsUrl && (
+                            <a 
+                              href={store.googleMapsUrl} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="text-[10px] text-purple-600 hover:text-purple-800 font-black self-end underline flex items-center gap-0.5"
+                            >
+                              🔗 View Google Map
+                            </a>
+                          )}
                         </div>
                         <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-200/80 flex justify-between items-center">
                           <span className="text-slate-400 font-bold">WhatsApp Hotline:</span>
@@ -4999,9 +5011,21 @@ export default function StoreManager({
             <div className="border-t border-slate-800 pt-5 space-y-3.5">
               <h4 className="text-xs uppercase font-black tracking-widest text-slate-400">Branch Configuration</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="bg-slate-850/50 p-3.5 rounded-xl border border-slate-800 flex justify-between items-center">
-                  <span className="text-slate-400">Location Desk:</span>
-                  <span className="font-bold text-slate-100">{store.location || 'Not Specified'}</span>
+                <div className="bg-slate-850/50 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center gap-1">
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-slate-400">Location Desk:</span>
+                    <span className="font-bold text-slate-100">{store.location || 'Not Specified'}</span>
+                  </div>
+                  {store.googleMapsUrl && (
+                    <a 
+                      href={store.googleMapsUrl} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="text-[10px] text-purple-400 hover:text-purple-300 font-bold self-end underline flex items-center gap-0.5"
+                    >
+                      🔗 View Google Map
+                    </a>
+                  )}
                 </div>
                 <div className="bg-slate-850/50 p-3.5 rounded-xl border border-slate-800 flex justify-between items-center">
                   <span className="text-slate-400">Contact Number:</span>
