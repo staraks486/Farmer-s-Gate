@@ -569,29 +569,20 @@ export async function dbSyncLocalCache(): Promise<{ success: boolean; syncedCoun
 
 // STORES
 export async function dbGetStores(): Promise<Store[]> {
-  const config = getSupabaseConfig();
-  if (config.isConnected && supabaseInstance) {
-    try {
-      const { data, error } = await supabaseInstance
-        .from('stores')
-        .select('*')
-        .order('name', { ascending: true });
-      if (error) throw error;
-      if (data) {
-        localStorage.setItem('fg_stores', JSON.stringify(data));
-      }
-      return data as Store[];
-    } catch (e) {
-      console.warn('Supabase fetch failed, falling back to local storage:', e);
-    }
+  try {
+    const res = await fetch("/api/stores");
+    if (!res.ok) throw new Error("Failed to fetch stores from backend");
+    const data = await res.json();
+    localStorage.setItem('fg_stores', JSON.stringify(data));
+    return data as Store[];
+  } catch (e) {
+    console.warn('Backend fetch failed, falling back to local storage:', e);
+    const local = localStorage.getItem('fg_stores');
+    return local ? JSON.parse(local) : [];
   }
-  const local = localStorage.getItem('fg_stores');
-  return local ? JSON.parse(local) : [];
 }
 
 export async function dbAddStore(store: Store): Promise<Store> {
-  const config = getSupabaseConfig();
-  
   // Set initial version if not present
   if (store.version === undefined) {
     store.version = 1;
@@ -605,29 +596,25 @@ export async function dbAddStore(store: Store): Promise<Store> {
     localStorage.setItem('fg_stores', JSON.stringify(stores));
   }
 
-  if (config.isConnected && supabaseInstance) {
-    try {
-      const { data, error } = await supabaseInstance
-         .from('stores')
-         .insert([store])
-         .select()
-         .single();
-      if (error) throw error;
-      return data as Store;
-    } catch (e) {
-      console.warn('Supabase save failed, writing to local storage as fallback:', e);
-      dbAddUnsyncedOp('stores', 'insert', store);
+  try {
+    const res = await fetch("/api/stores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(store)
+    });
+    if (!res.ok) throw new Error("Backend save failed");
+    const result = await res.json();
+    if (result && result.store) {
+      return result.store as Store;
     }
-  } else {
-    dbAddUnsyncedOp('stores', 'insert', store);
+  } catch (e) {
+    console.warn('Backend save failed, keeping in local storage:', e);
   }
   
   return store;
 }
 
 export async function dbUpdateStore(store: Store): Promise<Store> {
-  const config = getSupabaseConfig();
-  
   // Increment version on every modification
   store.version = (store.version || 0) + 1;
   
@@ -640,50 +627,38 @@ export async function dbUpdateStore(store: Store): Promise<Store> {
     localStorage.setItem('fg_stores', JSON.stringify(stores));
   }
 
-  if (config.isConnected && supabaseInstance) {
-    try {
-      const { data, error } = await supabaseInstance
-         .from('stores')
-         .update(store)
-         .eq('id', store.id)
-         .select()
-         .single();
-      if (error) throw error;
-      return data as Store;
-    } catch (e) {
-      console.warn('Supabase update failed, falling back to local storage as fallback:', e);
-      dbAddUnsyncedOp('stores', 'update', store);
+  try {
+    const res = await fetch(`/api/stores/${store.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(store)
+    });
+    if (!res.ok) throw new Error("Backend update failed");
+    const result = await res.json();
+    if (result && result.store) {
+      return result.store as Store;
     }
-  } else {
-    dbAddUnsyncedOp('stores', 'update', store);
+  } catch (e) {
+    console.warn('Backend update failed, keeping in local storage:', e);
   }
 
   return store;
 }
 
 export async function dbDeleteStore(id: string): Promise<void> {
-  const config = getSupabaseConfig();
-  
   // Always update local storage first
   const local = localStorage.getItem('fg_stores');
   const stores = local ? JSON.parse(local) : [];
   const filtered = stores.filter((s: Store) => s.id !== id);
   localStorage.setItem('fg_stores', JSON.stringify(filtered));
 
-  if (config.isConnected && supabaseInstance) {
-    try {
-      const { error } = await supabaseInstance
-        .from('stores')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      return;
-    } catch (e) {
-      console.warn('Supabase delete failed, writing to local storage as fallback:', e);
-      dbAddUnsyncedOp('stores', 'delete', { id });
-    }
-  } else {
-    dbAddUnsyncedOp('stores', 'delete', { id });
+  try {
+    const res = await fetch(`/api/stores/${id}`, {
+      method: "DELETE"
+    });
+    if (!res.ok) throw new Error("Backend delete failed");
+  } catch (e) {
+    console.warn('Backend delete failed, keeping in local storage:', e);
   }
 }
 

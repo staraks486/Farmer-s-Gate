@@ -1,8 +1,83 @@
 import express from "express";
 import path from "path";
 import compression from "compression";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+
+const STORES_FILE = path.join(process.cwd(), "stores.json");
+const VERSION_FILE = path.join(process.cwd(), "app_version.json");
+
+function initFiles() {
+  if (!fs.existsSync(VERSION_FILE)) {
+    fs.writeFileSync(VERSION_FILE, JSON.stringify({ version: "2.3.0" }, null, 2));
+  }
+  if (!fs.existsSync(STORES_FILE)) {
+    const defaultStores = [
+      {
+        id: 'store-1',
+        name: "Farmer's Gate - Mumbai Bandra",
+        location: "Bandra West, Link Road, Mumbai",
+        whatsappNumber: "919876543210",
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        password: "bandra123",
+        version: 1
+      },
+      {
+        id: 'store-2',
+        name: "Farmer's Gate - Delhi Karol Bagh",
+        location: "Karol Bagh Metro Stn, New Delhi",
+        whatsappNumber: "919876543211",
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        password: "karol123",
+        version: 1
+      },
+      {
+        id: 'store-3',
+        name: "Farmer's Gate - Bangalore Indiranagar",
+        location: "100 Feet Rd, Indiranagar, Bangalore",
+        whatsappNumber: "919876543212",
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        password: "indira123",
+        version: 1
+      }
+    ];
+    fs.writeFileSync(STORES_FILE, JSON.stringify(defaultStores, null, 2));
+  }
+}
+
+function incrementAppVersion() {
+  try {
+    let currentVersion = "2.3.0";
+    if (fs.existsSync(VERSION_FILE)) {
+      const data = JSON.parse(fs.readFileSync(VERSION_FILE, "utf-8"));
+      currentVersion = data.version || "2.3.0";
+    }
+    const parts = currentVersion.replace(/^v/, "").split(".");
+    if (parts.length === 3) {
+      const patch = parseInt(parts[2], 10);
+      if (!isNaN(patch)) {
+        parts[2] = (patch + 1).toString();
+      } else {
+        parts[2] = "1";
+      }
+    } else {
+      parts.push("1");
+    }
+    const nextVersion = parts.join(".");
+    fs.writeFileSync(VERSION_FILE, JSON.stringify({ version: nextVersion }, null, 2));
+    console.log(`App version incremented from ${currentVersion} to ${nextVersion}`);
+    return nextVersion;
+  } catch (err) {
+    console.error("Error incrementing app version:", err);
+    return "2.3.1";
+  }
+}
+
+initFiles();
 
 let geminiClient: any = null;
 
@@ -41,6 +116,116 @@ async function startServer() {
   // Simple API health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // GET /api/app-version
+  app.get("/api/app-version", (req, res) => {
+    try {
+      let version = "2.3.0";
+      if (fs.existsSync(VERSION_FILE)) {
+        const data = JSON.parse(fs.readFileSync(VERSION_FILE, "utf-8"));
+        version = data.version || "2.3.0";
+      }
+      res.json({ version });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to read app version" });
+    }
+  });
+
+  // GET /api/stores
+  app.get("/api/stores", (req, res) => {
+    try {
+      initFiles();
+      const data = JSON.parse(fs.readFileSync(STORES_FILE, "utf-8"));
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to load stores" });
+    }
+  });
+
+  // POST /api/stores (Create new store)
+  app.post("/api/stores", (req, res) => {
+    try {
+      initFiles();
+      const newStore = req.body;
+      if (!newStore.name) {
+        return res.status(400).json({ error: "Store name is required" });
+      }
+      
+      const stores = JSON.parse(fs.readFileSync(STORES_FILE, "utf-8"));
+      // Generate a unique ID if not provided
+      if (!newStore.id) {
+        newStore.id = `store-${Date.now()}`;
+      }
+      newStore.version = 1;
+      newStore.createdAt = newStore.createdAt || new Date().toISOString();
+      
+      stores.push(newStore);
+      fs.writeFileSync(STORES_FILE, JSON.stringify(stores, null, 2));
+      
+      // Increment app version on every modification
+      const nextVer = incrementAppVersion();
+      
+      res.json({ success: true, store: newStore, appVersion: nextVer });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to create store: " + err.message });
+    }
+  });
+
+  // PUT /api/stores/:id (Update existing store)
+  app.put("/api/stores/:id", (req, res) => {
+    try {
+      initFiles();
+      const storeId = req.params.id;
+      const updatedFields = req.body;
+      
+      const stores = JSON.parse(fs.readFileSync(STORES_FILE, "utf-8"));
+      const index = stores.findIndex((s: any) => s.id === storeId);
+      if (index === -1) {
+        return res.status(404).json({ error: "Store not found" });
+      }
+      
+      const existingStore = stores[index];
+      const updatedStore = {
+        ...existingStore,
+        ...updatedFields,
+        version: (existingStore.version || 0) + 1
+      };
+      
+      stores[index] = updatedStore;
+      fs.writeFileSync(STORES_FILE, JSON.stringify(stores, null, 2));
+      
+      // Increment app version on every modification
+      const nextVer = incrementAppVersion();
+      
+      res.json({ success: true, store: updatedStore, appVersion: nextVer });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to update store: " + err.message });
+    }
+  });
+
+  // DELETE /api/stores/:id (Delete store)
+  app.delete("/api/stores/:id", (req, res) => {
+    try {
+      initFiles();
+      const storeId = req.params.id;
+      
+      const stores = JSON.parse(fs.readFileSync(STORES_FILE, "utf-8"));
+      const filtered = stores.filter((s: any) => s.id !== storeId);
+      
+      if (stores.length === filtered.length) {
+        return res.status(404).json({ error: "Store not found" });
+      }
+      
+      fs.writeFileSync(STORES_FILE, JSON.stringify(filtered, null, 2));
+      
+      // Increment app version on every modification
+      const nextVer = incrementAppVersion();
+      
+      res.json({ success: true, appVersion: nextVer });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to delete store: " + err.message });
+    }
   });
 
   // API endpoint for parsing stock invoices, delivery notes, or produce images via Gemini AI
