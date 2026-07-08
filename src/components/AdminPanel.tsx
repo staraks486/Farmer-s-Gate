@@ -1178,6 +1178,25 @@ export default function AdminPanel({
                   <span className="text-[10px] text-zinc-400 mt-1 block">Paste any Google Maps URL and click "Convert" to instantly decode precise coordinate points and address location into the fields below!</span>
                 </div>
 
+                <div>
+                  <label htmlFor="store-location-input" className="block text-xs font-bold text-zinc-600 uppercase tracking-wide mb-1">Store Address / Location (Manual Entry or Decoded)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-zinc-400">📍</span>
+                    <input
+                      id="store-location-input"
+                      type="text"
+                      required
+                      placeholder="e.g. Ground Floor, Sector 3, HSR Layout, Bangalore"
+                      value={storeLocation}
+                      onChange={(e) => setStoreLocation(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800 font-medium"
+                    />
+                  </div>
+                  <span className="text-[10px] text-zinc-400 mt-1 block">
+                    This address is displayed to visitors. You can type/edit this manually, or let it populate automatically by pasting a Google Maps link above or clicking on the interactive map below.
+                  </span>
+                </div>
+
                 <StoreMapSelector
                   lat={storeLat}
                   lng={storeLng}
