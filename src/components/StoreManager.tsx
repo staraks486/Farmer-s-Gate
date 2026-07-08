@@ -1391,6 +1391,12 @@ export default function StoreManager({
     setPosCart({});
     setPosCustomerName('');
     setSalespersonName('');
+    setBillingTabs(prev => prev.map(t => {
+      if (t.id === activeBillingTabId) {
+        return { ...t, cart: {}, customerName: '', whatsappPhone: '' };
+      }
+      return t;
+    }));
     setShowCheckoutModal(false);
   };
 
