@@ -569,16 +569,58 @@ export async function dbSyncLocalCache(): Promise<{ success: boolean; syncedCoun
 
 // STORES
 export async function dbGetStores(): Promise<Store[]> {
+  const localStr = localStorage.getItem('fg_stores');
+  const localStores: Store[] = localStr ? JSON.parse(localStr) : [];
+
   try {
     const res = await fetch("/api/stores");
     if (!res.ok) throw new Error("Failed to fetch stores from backend");
-    const data = await res.json();
-    localStorage.setItem('fg_stores', JSON.stringify(data));
-    return data as Store[];
+    const serverStores: Store[] = await res.json();
+
+    // Start with local stores to preserve custom user stores and modifications
+    const mergedStoresMap = new Map<string, Store>();
+    for (const s of localStores) {
+      mergedStoresMap.set(s.id, s);
+    }
+
+    // Merge in server stores
+    for (const serverStore of serverStores) {
+      const existing = mergedStoresMap.get(serverStore.id);
+      if (!existing) {
+        // If a default store from server is missing locally, add it
+        mergedStoresMap.set(serverStore.id, serverStore);
+      } else {
+        // If both exist, keep the one with the higher version
+        if ((serverStore.version || 0) > (existing.version || 0)) {
+          mergedStoresMap.set(serverStore.id, serverStore);
+        }
+      }
+    }
+
+    const finalStores = Array.from(mergedStoresMap.values());
+
+    // Proactively upload any custom local stores (not present on the server) to the server 
+    // so that the server remains in sync and has all the custom stores.
+    for (const localStore of localStores) {
+      const onServer = serverStores.some(s => s.id === localStore.id);
+      if (!onServer) {
+        try {
+          await fetch("/api/stores", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(localStore)
+          });
+        } catch (uploadErr) {
+          console.warn(`[Auto-Sync] Failed to upload custom store ${localStore.name} to server:`, uploadErr);
+        }
+      }
+    }
+
+    localStorage.setItem('fg_stores', JSON.stringify(finalStores));
+    return finalStores;
   } catch (e) {
     console.warn('Backend fetch failed, falling back to local storage:', e);
-    const local = localStorage.getItem('fg_stores');
-    return local ? JSON.parse(local) : [];
+    return localStores;
   }
 }
 
