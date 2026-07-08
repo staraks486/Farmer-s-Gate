@@ -4,6 +4,14 @@ import { FirebaseOrder, updateOrderStatusInFirestore, addNotificationToFirestore
 import QRCode from 'qrcode';
 import { QrScanner } from './QrScanner';
 import GeofenceD3Map from './admin/GeofenceD3Map';
+import {
+  initSheetsAuth,
+  signInWithGoogleSheets,
+  getSheetsAccessToken,
+  clearSheetsAuth,
+  createAndExportGoogleSheet,
+  fetchGoogleSheetValues
+} from '../lib/googleSheets';
 import { 
   Building2, 
   TrendingUp, 
@@ -90,6 +98,32 @@ export default function HeadOffice({
   // Main and sub layout tabs
   const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog' | 'customer-orders' | 'qr-catalog' | 'geo-sandbox'>('requirements');
   const [reqSubTab, setReqSubTab] = useState<'itemized' | 'consolidated'>('itemized');
+  const [expandedStoreStock, setExpandedStoreStock] = useState<Record<string, boolean>>({});
+
+  // Google Sheets API Integration State
+  const [sheetsUser, setSheetsUser] = useState<any>(null);
+  const [sheetsToken, setSheetsToken] = useState<string | null>(null);
+  const [sheetsMode, setSheetsMode] = useState<'api' | 'paste'>('api');
+  const [importSpreadsheetId, setImportSpreadsheetId] = useState<string>('');
+  const [importRange, setImportRange] = useState<string>('Sheet1!A1:E100');
+  const [isExportingSheet, setIsExportingSheet] = useState<boolean>(false);
+  const [isImportingSheet, setIsImportingSheet] = useState<boolean>(false);
+  const [sheetsSuccessLink, setSheetsSuccessLink] = useState<string | null>(null);
+  const [sheetsErrorMsg, setSheetsErrorMsg] = useState<string>('');
+
+  useEffect(() => {
+    const unsubscribe = initSheetsAuth(
+      (user, token) => {
+        setSheetsUser(user);
+        setSheetsToken(token);
+      },
+      () => {
+        setSheetsUser(null);
+        setSheetsToken(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   // Geolocation Sandbox State
   const [sandboxEnabled, setSandboxEnabled] = useState<boolean>(() => {
@@ -989,10 +1023,160 @@ export default function HeadOffice({
       });
     });
 
+    // Automatically trigger backend app version update for real-time synchronization
+    fetch('/api/app-version/increment', { method: 'POST' })
+      .then(res => res.json())
+      .then(data => console.log('Backend app version synchronized:', data))
+      .catch(err => console.warn('Failed to increment app version on backend:', err));
+
     setCatalogSuccessMsg(`Successfully imported ${valid.length} crops from Google Sheet cells.`);
     setCatalogSheetParsedItems([]);
     setCatalogSheetText('');
     setCatalogSmartTab(null);
+  };
+
+  const handleGoogleSheetsSignIn = async () => {
+    try {
+      setSheetsErrorMsg('');
+      const result = await signInWithGoogleSheets();
+      if (result) {
+        setSheetsUser(result.user);
+        setSheetsToken(result.accessToken);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setSheetsErrorMsg(err.message || 'Failed to sign in with Google Sheets.');
+    }
+  };
+
+  const handleGoogleSheetsSignOut = async () => {
+    await clearSheetsAuth();
+    setSheetsUser(null);
+    setSheetsToken(null);
+    setSheetsSuccessLink(null);
+  };
+
+  const handleExportCatalogToGoogleSheets = async () => {
+    if (!sheetsToken) {
+      setSheetsErrorMsg('Please connect your Google account first.');
+      return;
+    }
+    try {
+      setIsExportingSheet(true);
+      setSheetsErrorMsg('');
+      setSheetsSuccessLink(null);
+
+      const headers = ['Crop Name', 'Category', 'Wholesale Cost Price', 'Retail Selling Price', 'Min Stock Threshold'];
+      const rows = masterCrops.map(c => [c.vegetableName, c.category, c.costPrice, c.sellingPrice, c.minStockThreshold]);
+
+      const title = `FarmersGate Central Master Catalog - ${new Date().toLocaleDateString('en-IN')}`;
+      const url = await createAndExportGoogleSheet(sheetsToken, title, headers, rows);
+      setSheetsSuccessLink(url);
+    } catch (err: any) {
+      console.error(err);
+      setSheetsErrorMsg(err.message || 'Failed to export master catalog.');
+    } finally {
+      setIsExportingSheet(false);
+    }
+  };
+
+  const handleImportCatalogFromGoogleSheets = async () => {
+    if (!sheetsToken) {
+      setSheetsErrorMsg('Please connect your Google account first.');
+      return;
+    }
+    if (!importSpreadsheetId.trim()) {
+      setSheetsErrorMsg('Please enter a Google Spreadsheet ID or URL.');
+      return;
+    }
+    
+    let spreadsheetId = importSpreadsheetId.trim();
+    if (spreadsheetId.includes('docs.google.com/spreadsheets')) {
+      const parts = spreadsheetId.split('/d/');
+      if (parts[1]) {
+        spreadsheetId = parts[1].split('/')[0];
+      }
+    }
+
+    try {
+      setIsImportingSheet(true);
+      setSheetsErrorMsg('');
+      setSheetsSuccessLink(null);
+      const values = await fetchGoogleSheetValues(sheetsToken, spreadsheetId, importRange);
+      
+      if (values.length <= 1) {
+        setSheetsErrorMsg('No rows or only headers found in the specified range (expecting headers in row 1, crops in row 2+).');
+        return;
+      }
+
+      const rows = values.slice(1);
+      const parsed: typeof catalogSheetParsedItems = [];
+      
+      rows.forEach(row => {
+        const rawName = row[0] ? String(row[0]).trim() : '';
+        const rawCat = row[1] ? String(row[1]).trim() : 'Vegetable';
+        const rawCost = row[2] ? String(row[2]).trim() : '0';
+        const rawPrice = row[3] ? String(row[3]).trim() : '0';
+        const rawMin = row[4] ? String(row[4]).trim() : '20';
+
+        if (!rawName) return;
+
+        const cleanCat = normalizeCategory(rawCat);
+        const cost = parseFloat(rawCost) || 0;
+        const price = parseFloat(rawPrice) || 0;
+        const minVal = parseInt(rawMin) || 20;
+
+        let isValid = true;
+        let errorMsg = '';
+        if (price <= 0) {
+          isValid = false;
+          errorMsg = 'Selling price must be > 0';
+        }
+
+        parsed.push({
+          vegetableName: rawName,
+          category: cleanCat,
+          costPrice: cost,
+          sellingPrice: price,
+          minStockThreshold: minVal,
+          isValid,
+          error: errorMsg || undefined
+        });
+      });
+
+      if (parsed.length === 0) {
+        setSheetsErrorMsg('No valid crops could be parsed from Google Sheet.');
+      } else {
+        setCatalogSheetParsedItems(parsed);
+        setCatalogSuccessMsg(`Successfully imported ${parsed.length} crops from Google Sheets range. Verify the diagnostic preview grid below and click Bulk Save to apply!`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setSheetsErrorMsg(err.message || 'Failed to import Google Sheet. Please verify spreadsheet permissions and range.');
+    } finally {
+      setIsImportingSheet(false);
+    }
+  };
+
+  const downloadCatalogAsCSV = () => {
+    const headers = ['Crop Name', 'Category', 'Wholesale Cost Price', 'Retail Selling Price', 'Min Stock Threshold'];
+    const rows = masterCrops.map(c => [
+      c.vegetableName.replace(/"/g, '""'), 
+      c.category, 
+      c.costPrice, 
+      c.sellingPrice, 
+      c.minStockThreshold
+    ]);
+    const csvRows = [headers, ...rows];
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + csvRows.map(e => e.map(val => `"${val}"`).join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `farmers_gate_master_catalog_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // 4. High-Accuracy Bulk Shorthand Paste Parsing
@@ -3410,6 +3594,57 @@ export default function HeadOffice({
                       )}
                     </div>
 
+                    {/* Collapsible Stock Display */}
+                    <div className="border-t border-slate-100 pt-3 space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedStoreStock(prev => ({
+                            ...prev,
+                            [store.id]: !prev[store.id]
+                          }));
+                        }}
+                        className="w-full flex items-center justify-between text-[11px] font-black uppercase text-purple-600 hover:text-purple-800 bg-purple-50/50 hover:bg-purple-100/50 px-3 py-2 rounded-xl border border-purple-100 transition-all cursor-pointer"
+                      >
+                        <span>{expandedStoreStock[store.id] ? 'Hide' : 'Show'} All Active Stock Items ({items.length})</span>
+                        <span>{expandedStoreStock[store.id] ? '▲' : '▼'}</span>
+                      </button>
+
+                      {expandedStoreStock[store.id] && (
+                        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-2 max-h-[180px] overflow-y-auto animate-fade-in">
+                          {items.length === 0 ? (
+                            <p className="text-[10px] text-slate-400 text-center py-4 font-bold">No items in this store's inventory yet.</p>
+                          ) : (
+                            <table className="min-w-full text-[10px] text-left">
+                              <thead className="text-[8px] uppercase tracking-wider text-slate-400 font-bold border-b border-slate-200">
+                                <tr>
+                                  <th className="pb-1">Crop</th>
+                                  <th className="pb-1 text-right">Stock</th>
+                                  <th className="pb-1 text-right">Cost</th>
+                                  <th className="pb-1 text-right">Selling</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700 font-bold">
+                                {items.map((item) => (
+                                  <tr key={item.id} className="hover:bg-white/40">
+                                    <td className="py-1 flex items-center gap-1">
+                                      <span>{getVegEmoji(item.vegetableName)}</span>
+                                      <span className="truncate max-w-[80px]">{item.vegetableName}</span>
+                                    </td>
+                                    <td className={`py-1 text-right font-mono ${item.quantity <= item.minStockThreshold ? 'text-rose-600 font-black' : 'text-slate-800'}`}>
+                                      {item.quantity} kg
+                                    </td>
+                                    <td className="py-1 text-right font-mono text-slate-400">₹{item.costPrice}</td>
+                                    <td className="py-1 text-right font-mono text-emerald-600">₹{item.sellingPrice}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                   </div>
 
                   {/* Card Actions Footer */}
@@ -3933,38 +4168,205 @@ export default function HeadOffice({
             )}
 
             {catalogSmartTab === 'sheet' && (
-              <div className="space-y-4 animate-fade-in">
+              <div className="space-y-4 animate-fade-in bg-slate-50/50 p-4 rounded-3xl border border-slate-200/50">
+                
+                {/* Mode Selector */}
+                <div className="flex border-b border-slate-200 pb-2 mb-2 justify-between items-center">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSheetsMode('api')}
+                      className={`text-xs font-black px-3 py-1.5 rounded-lg transition-all ${
+                        sheetsMode === 'api'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      🟢 Google Sheets Live API
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSheetsMode('paste')}
+                      className={`text-xs font-black px-3 py-1.5 rounded-lg transition-all ${
+                        sheetsMode === 'paste'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      📋 Manual Cells Paste
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={downloadCatalogAsCSV}
+                    className="text-[11px] font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 px-3 py-1.5 rounded-xl transition flex items-center gap-1"
+                  >
+                    <Download className="h-3 w-3" /> Download CSV Backup
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-slate-600">Paste Cells from Google Sheet / Excel</label>
-                    <p className="text-[10px] text-slate-400">
-                      Standard columns: <span className="font-semibold text-slate-500">Crop Name | Category | Wholesale Cost | Retail Selling Price | Min Alert kg</span>
-                    </p>
-                    <textarea
-                      value={catalogSheetText}
-                      onChange={(e) => handleCatalogSheetTextChange(e.target.value)}
-                      placeholder="e.g.&#10;Golden Pear	Fruit	70	120	15&#10;Premium Broccoli	Vegetable	50	85	10&#10;Organic Parsley	Herbs	12	24	8"
-                      rows={6}
-                      className="w-full text-xs font-mono p-3 rounded-2xl border border-slate-200 focus:outline-none focus:border-slate-400 bg-white"
-                    />
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] text-slate-400 font-semibold">Supports Tab-separated or Comma/Pipe values</span>
-                      <button
-                        type="button"
-                        onClick={saveCatalogSheetItems}
-                        className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800"
-                      >
-                        Bulk Save Valid Rows ({catalogSheetParsedItems.filter(i=>i.isValid).length})
-                      </button>
-                    </div>
+                  <div className="space-y-3">
+                    {sheetsMode === 'api' ? (
+                      <div className="space-y-4">
+                        {/* Sheets API Control Interface */}
+                        {!sheetsToken ? (
+                          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center space-y-3">
+                            <div className="mx-auto h-10 w-10 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
+                              <FileSpreadsheet className="h-6 w-6" />
+                            </div>
+                            <div className="space-y-1">
+                              <h4 className="text-xs font-extrabold text-slate-800">Connect Google Sheets Account</h4>
+                              <p className="text-[10px] text-slate-400 max-w-sm mx-auto leading-relaxed">
+                                Authorize secure connection to read from or export directly into Google Sheets in your Google Account.
+                              </p>
+                            </div>
+                            
+                            {/* Google Sign-In Styled Button */}
+                            <button
+                              type="button"
+                              onClick={handleGoogleSheetsSignIn}
+                              className="mx-auto flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-xl shadow-sm hover:bg-slate-50 transition text-xs font-black text-slate-700 cursor-pointer"
+                            >
+                              <svg className="h-4 w-4 shrink-0" viewBox="0 0 48 48">
+                                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                              </svg>
+                              <span>Link Google Sheets</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                            <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                              <div className="flex items-center gap-2">
+                                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                                <span className="text-[11px] font-bold text-slate-700 truncate max-w-[150px]" title={sheetsUser?.email}>
+                                  Linked: {sheetsUser?.email || 'Google Sheet Client'}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleGoogleSheetsSignOut}
+                                className="text-[10px] text-rose-600 hover:text-rose-700 font-extrabold uppercase tracking-wide cursor-pointer"
+                              >
+                                Disconnect
+                              </button>
+                            </div>
+
+                            {/* Export / Import Section */}
+                            <div className="grid grid-cols-1 gap-3 pt-1">
+                              {/* 1. Export Action */}
+                              <div className="border border-slate-100 rounded-xl p-3 bg-emerald-50/20 hover:bg-emerald-50/45 transition">
+                                <span className="block text-[11px] font-black uppercase text-emerald-800 mb-1">Export Action</span>
+                                <button
+                                  type="button"
+                                  disabled={isExportingSheet}
+                                  onClick={handleExportCatalogToGoogleSheets}
+                                  className="w-full flex items-center justify-center gap-1.5 py-2 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-300 text-white font-black text-xs rounded-xl shadow transition"
+                                >
+                                  {isExportingSheet ? 'Generating Spreadsheet...' : '🚀 Create & Export Catalog to Google Sheets'}
+                                </button>
+                              </div>
+
+                              {/* 2. Import Action */}
+                              <div className="border border-slate-100 rounded-xl p-3 bg-slate-50/50 space-y-2">
+                                <span className="block text-[11px] font-black uppercase text-slate-800">Import Action</span>
+                                <div className="space-y-1.5">
+                                  <label className="text-[9px] font-bold text-slate-400 block uppercase">Google Sheet URL or Spreadsheet ID</label>
+                                  <input
+                                    type="text"
+                                    value={importSpreadsheetId}
+                                    onChange={e => setImportSpreadsheetId(e.target.value)}
+                                    placeholder="Paste URL or Spreadsheet ID"
+                                    className="w-full text-xs font-semibold py-1.5 px-3 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-400 bg-white"
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-[9px] font-bold text-slate-400 block uppercase">Sheet Range (e.g. Sheet1!A1:E100)</label>
+                                  <input
+                                    type="text"
+                                    value={importRange}
+                                    onChange={e => setImportRange(e.target.value)}
+                                    placeholder="Sheet1!A1:E100"
+                                    className="w-full text-xs font-mono py-1.5 px-3 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-400 bg-white"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={isImportingSheet}
+                                  onClick={handleImportCatalogFromGoogleSheets}
+                                  className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-black text-xs rounded-xl shadow transition"
+                                >
+                                  {isImportingSheet ? 'Fetching Data...' : '📥 Read & Load Crops Catalog'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Errors and Success links inside sheets area */}
+                        {sheetsErrorMsg && (
+                          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold animate-shake">
+                            ⚠️ {sheetsErrorMsg}
+                          </div>
+                        )}
+
+                        {sheetsSuccessLink && (
+                          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 shadow-sm animate-bounce space-y-2 text-center">
+                            <p className="text-xs font-black">🎉 GOOGLE SHEET EXPORTED SUCCESSFULLY!</p>
+                            <a
+                              href={sheetsSuccessLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-block text-xs font-black px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 rounded-xl shadow"
+                            >
+                              Open Exported Google Sheet ➔
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* Manual Cells Paste Mode */
+                      <div className="space-y-2 animate-fade-in">
+                        <label className="block text-xs font-bold text-slate-600">Paste Cells from Google Sheet / Excel</label>
+                        <p className="text-[10px] text-slate-400">
+                          Standard columns: <span className="font-semibold text-slate-500">Crop Name | Category | Wholesale Cost | Retail Selling Price | Min Alert kg</span>
+                        </p>
+                        <textarea
+                          value={catalogSheetText}
+                          onChange={(e) => handleCatalogSheetTextChange(e.target.value)}
+                          placeholder="e.g.&#10;Golden Pear	Fruit	70	120	15&#10;Premium Broccoli	Vegetable	50	85	10&#10;Organic Parsley	Herbs	12	24	8"
+                          rows={6}
+                          className="w-full text-xs font-mono p-3 rounded-2xl border border-slate-200 focus:outline-none focus:border-slate-400 bg-white"
+                        />
+                        <div className="flex justify-between items-center pt-1">
+                          <span className="text-[10px] text-slate-400 font-semibold">Supports Tab-separated values</span>
+                          <button
+                            type="button"
+                            onClick={saveCatalogSheetItems}
+                            className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800"
+                          >
+                            Bulk Save Valid Rows ({catalogSheetParsedItems.filter(i=>i.isValid).length})
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
                     <span className="block text-xs font-bold text-slate-600">Parser Live Diagnostics Review</span>
-                    <div className="bg-white border border-slate-200 rounded-2xl h-[170px] overflow-y-auto overflow-x-auto">
+                    <div className="bg-white border border-slate-200 rounded-2xl h-[230px] overflow-y-auto overflow-x-auto">
                       {catalogSheetParsedItems.length === 0 ? (
-                        <div className="p-8 text-center text-slate-400 text-xs italic">
-                          Parsed grid output will be shown here in real time.
+                        <div className="p-12 text-center text-slate-400 text-xs italic space-y-2">
+                          <p>Parsed grid output will be shown here in real time.</p>
+                          <p className="text-[10px] text-slate-300">
+                            {sheetsMode === 'api' 
+                              ? "Connect Sheets and click 'Load Crops' to pull database rows automatically." 
+                              : "Copy cells from Sheets and paste them in the text box above."}
+                          </p>
                         </div>
                       ) : (
                         <table className="w-full text-left border-collapse text-[11px]">

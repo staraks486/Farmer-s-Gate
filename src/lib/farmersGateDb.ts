@@ -37,6 +37,7 @@ export interface StockWaste {
   approxValue: number;
   reason: string;
   createdAt: string;
+  photoUrl?: string;
 }
 
 export interface ChatMessage {

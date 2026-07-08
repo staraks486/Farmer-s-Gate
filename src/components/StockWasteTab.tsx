@@ -6,7 +6,11 @@ import {
   Info, 
   Calendar,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Camera,
+  Upload,
+  X,
+  Eye
 } from 'lucide-react';
 import { Store, InventoryItem } from '../types';
 import { logStockWaste, subscribeToWaste, StockWaste } from '../lib/farmersGateDb';
@@ -44,6 +48,12 @@ export default function StockWasteTab({
   const [reason, setReason] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [successMsg, setSuccessMsg] = useState<string>('');
+  
+  // Camera & Photo States
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [activeLogWithPhoto, setActiveLogWithPhoto] = useState<StockWaste | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
+  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
 
   // Subscribe to waste logs
   useEffect(() => {
@@ -77,6 +87,62 @@ export default function StockWasteTab({
       }
     }
   };
+
+  const startCamera = async () => {
+    setErrorMsg('');
+    setIsCameraActive(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      setVideoStream(stream);
+    } catch (err) {
+      console.error('Error starting camera stream:', err);
+      setErrorMsg('Could not open camera. Please use the upload photo option instead.');
+      setIsCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+      setVideoStream(null);
+    }
+    setIsCameraActive(false);
+  };
+
+  const captureSnapshot = (videoEl: HTMLVideoElement | null) => {
+    if (!videoEl) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoEl.videoWidth || 640;
+    canvas.height = videoEl.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      setPhotoBase64(dataUrl);
+      stopCamera();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoBase64(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [videoStream]);
 
   const handleSubmitWaste = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,6 +202,7 @@ export default function StockWasteTab({
         quantity: qtyNum,
         approxValue: valNum,
         reason,
+        photoUrl: photoBase64 || undefined,
         createdAt: new Date().toISOString()
       });
 
@@ -147,6 +214,8 @@ export default function StockWasteTab({
       setQuantity('');
       setApproxValue('');
       setReason('');
+      setPhotoBase64(null);
+      stopCamera();
     } catch (err) {
       console.error(err);
       setErrorMsg('Failed to record waste entry. Please try again.');
@@ -294,6 +363,92 @@ export default function StockWasteTab({
               </select>
             </div>
 
+            {/* Camera & Photo Section */}
+            <div className="space-y-2 border-t border-slate-100 pt-3">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Spoilage Proof / Photo (Optional)</span>
+              
+              {isCameraActive ? (
+                <div className="relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-800 flex flex-col items-center">
+                  <video 
+                    ref={(el) => {
+                      if (el && videoStream && el.srcObject !== videoStream) {
+                        el.srcObject = videoStream;
+                        el.play().catch(err => console.error(err));
+                      }
+                    }}
+                    className="w-full h-44 object-cover"
+                    playsInline
+                  />
+                  <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const video = e.currentTarget.parentElement?.previousElementSibling as HTMLVideoElement;
+                        captureSnapshot(video);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wider px-3.5 py-1.5 rounded-lg shadow cursor-pointer"
+                    >
+                      📸 CAPTURE
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        stopCamera();
+                      }}
+                      className="bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[10px] uppercase tracking-wider px-3.5 py-1.5 rounded-lg cursor-pointer"
+                    >
+                      CANCEL
+                    </button>
+                  </div>
+                </div>
+              ) : photoBase64 ? (
+                <div className="relative rounded-2xl overflow-hidden bg-slate-50 border border-slate-200/60 p-1 flex items-center gap-3">
+                  <img src={photoBase64} alt="Spoilage proof thumbnail" className="h-14 w-14 object-cover rounded-xl" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-black text-slate-700 truncate font-sans">Captured Image Attached</p>
+                    <p className="text-[9px] text-slate-400 font-bold font-mono">Image size: ~{(photoBase64.length / 1024).toFixed(1)} KB</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setPhotoBase64(null);
+                    }}
+                    className="h-7 w-7 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg flex items-center justify-center shrink-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      startCamera();
+                    }}
+                    className="flex flex-col items-center justify-center p-3 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 border-dashed rounded-xl gap-1 text-[11px] font-bold text-slate-600 transition-all cursor-pointer"
+                  >
+                    <Camera className="h-4.5 w-4.5 text-emerald-600" />
+                    <span>Direct Camera</span>
+                  </button>
+                  
+                  <label className="flex flex-col items-center justify-center p-3 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 border-dashed rounded-xl gap-1 text-[11px] font-bold text-slate-600 transition-all cursor-pointer">
+                    <Upload className="h-4.5 w-4.5 text-purple-600 animate-pulse" />
+                    <span>Upload Image</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleFileChange} 
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
             <button
               type="submit"
               className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm shadow-rose-200 cursor-pointer"
@@ -326,6 +481,7 @@ export default function StockWasteTab({
                     <th className="px-3 py-2.5 text-right">Qty</th>
                     <th className="px-3 py-2.5 text-right">Loss</th>
                     <th className="px-3 py-2.5">Reason</th>
+                    <th className="px-3 py-2.5 text-center">Proof</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-bold text-slate-600">
@@ -340,8 +496,22 @@ export default function StockWasteTab({
                       <td className="px-3 py-3 text-slate-900 font-extrabold">{log.itemName}</td>
                       <td className="px-3 py-3 text-right font-mono text-slate-500">{log.quantity}</td>
                       <td className="px-3 py-3 text-right font-mono text-rose-600">{currencySymbol}{log.approxValue.toFixed(2)}</td>
-                      <td className="px-3 py-3 text-slate-500 font-semibold max-w-[150px] truncate" title={log.reason}>
+                      <td className="px-3 py-3 text-slate-500 font-semibold max-w-[120px] truncate" title={log.reason}>
                         {log.reason}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {log.photoUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setActiveLogWithPhoto(log)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-100 text-emerald-700 transition-all cursor-pointer"
+                            title="View Spoilage Photo"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <span className="text-slate-300 font-normal text-[10px]">-</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -351,6 +521,65 @@ export default function StockWasteTab({
           )}
         </div>
       </div>
+
+      {/* Spoilage Photo Lightbox Modal */}
+      {activeLogWithPhoto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs animate-fade-in">
+          <div className="relative max-w-lg w-full bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-100 space-y-4">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div>
+                <h4 className="font-black text-xs uppercase tracking-wider text-rose-400">Waste Log Photo Proof</h4>
+                <p className="font-extrabold text-sm truncate">{activeLogWithPhoto.itemName} - {activeLogWithPhoto.reason}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveLogWithPhoto(null)}
+                className="h-8 w-8 rounded-lg bg-white/15 hover:bg-white/25 flex items-center justify-center text-white cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            <div className="p-4 flex flex-col items-center">
+              <img 
+                src={activeLogWithPhoto.photoUrl} 
+                alt={`${activeLogWithPhoto.itemName} Spoilage Proof`} 
+                className="max-h-[300px] w-auto object-contain rounded-2xl border border-slate-200"
+              />
+              
+              <div className="w-full grid grid-cols-3 gap-2 text-center text-xs mt-4">
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-2">
+                  <span className="text-[8px] uppercase font-black tracking-wider text-slate-400 block">Quantity</span>
+                  <strong className="text-slate-800">{activeLogWithPhoto.quantity} units</strong>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-2">
+                  <span className="text-[8px] uppercase font-black tracking-wider text-slate-400 block">Total Loss</span>
+                  <strong className="text-rose-600">{currencySymbol}{activeLogWithPhoto.approxValue.toFixed(2)}</strong>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-2">
+                  <span className="text-[8px] uppercase font-black tracking-wider text-slate-400 block">Logged Date</span>
+                  <strong className="text-slate-800 font-mono text-[10px]">
+                    {new Date(activeLogWithPhoto.createdAt).toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'short'
+                    })}
+                  </strong>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-slate-50 px-4 py-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setActiveLogWithPhoto(null)}
+                className="px-4 py-1.5 bg-slate-850 hover:bg-slate-900 text-white font-extrabold text-xs rounded-xl shadow-sm cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -132,6 +132,16 @@ async function startServer() {
     }
   });
 
+  // POST /api/app-version/increment (Frontend-driven app version increment)
+  app.post("/api/app-version/increment", (req, res) => {
+    try {
+      const nextVer = incrementAppVersion();
+      res.json({ success: true, version: nextVer });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to increment app version on backend: " + err.message });
+    }
+  });
+
   // GET /api/stores
   app.get("/api/stores", (req, res) => {
     try {

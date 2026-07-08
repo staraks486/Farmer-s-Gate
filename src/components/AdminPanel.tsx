@@ -110,6 +110,92 @@ export default function AdminPanel({
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
   const [importFeedback, setImportFeedback] = useState<{ type: 'success' | 'error' | 'info' | null; text: string }>({ type: null, text: '' });
 
+  // Database Backup & Restore States
+  const [backupFileError, setBackupFileError] = useState<string>('');
+  const [backupFileSuccess, setBackupFileSuccess] = useState<string>('');
+
+  const handleDownloadBackup = () => {
+    const backupKeys = [
+      'fg_stores',
+      'fg_sales',
+      'fg_purchases',
+      'fg_requirements',
+      'fg_suppliers',
+      'fg_purchase_orders',
+      'fg_customer_orders',
+      'fg_inventory',
+      'fg_master_crops',
+      'fg_staff_members',
+      'fg_attendance_records',
+      'fg_company_officials',
+      'farmersgate_cpanel_settings'
+    ];
+    const backupData: Record<string, any> = {
+      backupVersion: "v1.4",
+      backupTimestamp: new Date().toISOString()
+    };
+    backupKeys.forEach(key => {
+      const val = localStorage.getItem(key);
+      if (val) {
+        try {
+          backupData[key] = JSON.parse(val);
+        } catch {
+          backupData[key] = val;
+        }
+      }
+    });
+
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `farmersgate_db_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.removeChild(downloadAnchor);
+  };
+
+  const handleRestoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setBackupFileError('');
+    setBackupFileSuccess('');
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const backupData = JSON.parse(text);
+        
+        if (typeof backupData !== 'object' || backupData === null) {
+          throw new Error("Invalid backup file format.");
+        }
+
+        const hasCoreKeys = Object.keys(backupData).some(k => k.startsWith('fg_') || k === 'farmersgate_cpanel_settings');
+        if (!hasCoreKeys) {
+          throw new Error("The selected file is not a valid FarmersGate database backup.");
+        }
+
+        const confirmRestore = window.confirm(
+          `Found system backup from ${new Date(backupData.backupTimestamp || Date.now()).toLocaleDateString('en-IN')}.\n` +
+          `Are you sure you want to completely RESTORE this backup? This will overwrite all of your current active data.`
+        );
+        if (!confirmRestore) return;
+
+        Object.entries(backupData).forEach(([key, value]) => {
+          if (key === 'backupVersion' || key === 'backupTimestamp') return;
+          const valStr = typeof value === 'string' ? value : JSON.stringify(value);
+          localStorage.setItem(key, valStr);
+        });
+
+        setBackupFileSuccess("System database restored successfully! Please reload the page to refresh all active modules.");
+      } catch (err: any) {
+        console.error(err);
+        setBackupFileError(err.message || "Failed to parse backup JSON file.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1850,6 +1936,77 @@ export default function AdminPanel({
               <pre className="text-[10px] font-mono text-zinc-500 bg-zinc-950 p-4 rounded-xl max-h-[220px] overflow-auto select-all leading-relaxed whitespace-pre scrollbar-thin scrollbar-thumb-zinc-800">
                 {getSupabaseSQLSchema()}
               </pre>
+            </div>
+
+            {/* System Database Backup & Recovery Console */}
+            <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm space-y-4">
+              <div className="flex items-center gap-3 border-b border-zinc-100 pb-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                  <Database className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-zinc-800 text-sm">System Database Backup & Recovery Console</h4>
+                  <p className="text-[11px] text-zinc-400">Download system states as offline JSON snapshots, or restore from a previous backup file.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Backup export section */}
+                <div className="rounded-xl border border-zinc-100 p-4 bg-zinc-50/50 space-y-3">
+                  <div>
+                    <span className="block text-xs font-black uppercase text-zinc-700">Offline Cold Backup snapshot</span>
+                    <span className="block text-[10px] text-zinc-400 mt-0.5">Generate and download a complete cryptographic snapshot of all local stores, master catalog items, sales metrics, staff records, and control configurations.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDownloadBackup}
+                    className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs rounded-xl shadow transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download System Backup (.json)
+                  </button>
+                </div>
+
+                {/* Backup restore section */}
+                <div className="rounded-xl border border-zinc-100 p-4 bg-zinc-50/50 space-y-3">
+                  <div>
+                    <span className="block text-xs font-black uppercase text-zinc-700">Restore System State</span>
+                    <span className="block text-[10px] text-zinc-400 mt-0.5">Upload a previously generated database backup JSON file to overwrite and restore the entire system state.</span>
+                  </div>
+                  
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleRestoreBackup}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                    <div className="w-full py-2.5 px-4 border border-dashed border-zinc-300 rounded-xl bg-white text-center hover:bg-zinc-50 transition">
+                      <span className="text-xs font-bold text-zinc-600">📁 Select Backup File</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status messages */}
+              {backupFileError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-xs font-bold animate-shake">
+                  ⚠️ {backupFileError}
+                </div>
+              )}
+
+              {backupFileSuccess && (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold text-center space-y-2">
+                  <p>🎉 {backupFileSuccess}</p>
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-lg transition-all"
+                  >
+                    Reload System Now 🔄
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
