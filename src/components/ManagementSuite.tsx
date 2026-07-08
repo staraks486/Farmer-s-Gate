@@ -264,6 +264,17 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   }, [appVersion]);
 
   useEffect(() => {
+    // Background auto-update every 8 seconds
+    const intervalId = setInterval(() => {
+      loadAllData(true);
+    }, 8000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [selectedStore, isStorePosPortal]);
+
+  useEffect(() => {
     const unsubOrders = subscribeToOrders((orders) => {
       setFirebaseOrders(orders);
     });
@@ -609,7 +620,10 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
       <aside className="w-full md:w-64 bg-emerald-950 text-white shrink-0 flex flex-col border-b md:border-b-0 md:border-r border-emerald-900/60">
         <div className="p-4 border-b border-emerald-900/60 flex justify-between items-center shrink-0">
           <div>
-            <h2 className="text-sm font-black uppercase tracking-wider text-emerald-400">HQ OPERATIONS</h2>
+            <h2 className="text-sm font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+              HQ OPERATIONS
+              <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" title="Live Auto-Sync Active (Background)" />
+            </h2>
             <p className="text-[10px] text-emerald-300 font-semibold uppercase">FarmersGate HQ</p>
           </div>
           <button 

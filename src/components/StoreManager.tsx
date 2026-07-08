@@ -732,6 +732,7 @@ export default function StoreManager({
 
   // Search and Filters
   const [vegSearchQuery, setVegSearchQuery] = useState('');
+  const [activeInventoryCategoryFilter, setActiveInventoryCategoryFilter] = useState<'ALL' | 'VEGGIES' | 'FRUITS' | 'GROCERY'>('ALL');
 
   // 1. STATE FOR SALE TAB
   const [saleVegName, setSaleVegName] = useState('');
@@ -2211,9 +2212,16 @@ export default function StoreManager({
   };
 
   // Search matching vegetables
-  const searchedInventory = storeInventory.filter(item => 
-    item.vegetableName.toLowerCase().includes(vegSearchQuery.toLowerCase())
-  );
+  const searchedInventory = storeInventory
+    .filter(item => item.vegetableName.toLowerCase().includes(vegSearchQuery.toLowerCase()))
+    .filter(item => {
+      if (activeInventoryCategoryFilter === 'ALL') return true;
+      const category = getItemCategory(item.vegetableName);
+      if (activeInventoryCategoryFilter === 'VEGGIES') return category === 'Vegetable';
+      if (activeInventoryCategoryFilter === 'FRUITS') return category === 'Fruit';
+      if (activeInventoryCategoryFilter === 'GROCERY') return category === 'Grocery';
+      return true;
+    });
 
   // Auto-fill price and check stock when vegetable is selected on Sales Form
   const handleSaleVegSelect = (vegName: string) => {
@@ -4234,6 +4242,31 @@ export default function StoreManager({
               </form>
             </div>
           )}
+
+          {/* Categories Tabs Selector */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none shrink-0 bg-zinc-50 p-2 rounded-2xl border border-zinc-200 shadow-sm">
+            {(['ALL', 'VEGGIES', 'FRUITS', 'GROCERY'] as const).map((cat) => {
+              const isActive = activeInventoryCategoryFilter === cat;
+              const icon = cat === 'ALL' ? '🌾' : cat === 'VEGGIES' ? '🥦' : cat === 'FRUITS' ? '🍎' : '🛒';
+              const label = cat === 'ALL' ? 'All Items' : cat === 'VEGGIES' ? 'Vegetables' : cat === 'FRUITS' ? 'Fruits' : 'Groceries';
+              
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setActiveInventoryCategoryFilter(cat)}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    isActive
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
+                  }`}
+                >
+                  <span className="text-sm">{icon}</span>
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </div>
 
           {/* Grid of Crop Cards */}
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
