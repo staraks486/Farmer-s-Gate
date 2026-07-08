@@ -259,7 +259,8 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   };
 
   useEffect(() => {
-    loadAllData();
+    const isInitial = stores.length === 0;
+    loadAllData(!isInitial);
   }, [appVersion]);
 
   useEffect(() => {

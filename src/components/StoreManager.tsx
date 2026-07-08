@@ -2094,9 +2094,13 @@ export default function StoreManager({
             costPrice: parseFloat((c.sellingPrice * 0.75).toFixed(2))
           }));
 
-      // Find any crops that are missing from storeInventory
+      // Find any crops that are missing from storeInventory, ignoring case and matching similar/substring names to prevent duplicate seeding
       const missingCrops = cropsToSync.filter(crop => 
-        !storeInventory.some(i => i.vegetableName.toLowerCase() === crop.vegetableName.toLowerCase())
+        !storeInventory.some(i => {
+          const invName = i.vegetableName.toLowerCase();
+          const syncName = crop.vegetableName.toLowerCase();
+          return invName === syncName || invName.includes(syncName) || syncName.includes(invName);
+        })
       );
 
       if (missingCrops.length > 0) {
@@ -2131,7 +2135,11 @@ export default function StoreManager({
     if (masterCrops && masterCrops.length > 0) {
       let addedCount = 0;
       for (const crop of masterCrops) {
-        const exists = storeInventory.some(i => i.vegetableName.toLowerCase() === crop.vegetableName.toLowerCase());
+        const exists = storeInventory.some(i => {
+          const invName = i.vegetableName.toLowerCase();
+          const syncName = crop.vegetableName.toLowerCase();
+          return invName === syncName || invName.includes(syncName) || syncName.includes(invName);
+        });
         if (!exists) {
           await onUpdateInventoryItem({
             id: `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -2181,7 +2189,11 @@ export default function StoreManager({
     ];
 
     for (const crop of defaultCrops) {
-      const exists = storeInventory.some(i => i.vegetableName.toLowerCase() === crop.name.toLowerCase());
+      const exists = storeInventory.some(i => {
+        const invName = i.vegetableName.toLowerCase();
+        const syncName = crop.name.toLowerCase();
+        return invName === syncName || invName.includes(syncName) || syncName.includes(invName);
+      });
       if (!exists) {
         await onUpdateInventoryItem({
           id: `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
