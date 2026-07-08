@@ -148,9 +148,8 @@ export default function InternalChatDrawer({ currentStoreName }: InternalChatDra
   // Predefined identities list for easy demo testing
   const identitiesList = [
     'Corporate Head Office',
-    'Bandra West Outlet',
-    'Karol Bagh Outlet',
-    'Indiranagar Outlet',
+    'Patiala Model Town Outlet',
+    'Patiala Urban Estate Outlet',
     'Logistics & Courier Hub',
     'Arvind Kumar Shukla (CEO)'
   ];

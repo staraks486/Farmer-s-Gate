@@ -16,32 +16,22 @@ function initFiles() {
     const defaultStores = [
       {
         id: 'store-1',
-        name: "Farmer's Gate - Mumbai Bandra",
-        location: "Bandra West, Link Road, Mumbai",
+        name: "Farmer's Gate - Patiala Model Town",
+        location: "Model Town, Patiala, Punjab",
         whatsappNumber: "919876543210",
         isActive: true,
         createdAt: new Date().toISOString(),
-        password: "bandra123",
+        password: "patiala123",
         version: 1
       },
       {
         id: 'store-2',
-        name: "Farmer's Gate - Delhi Karol Bagh",
-        location: "Karol Bagh Metro Stn, New Delhi",
+        name: "Farmer's Gate - Patiala Urban Estate",
+        location: "Urban Estate Phase II, Patiala, Punjab",
         whatsappNumber: "919876543211",
         isActive: true,
         createdAt: new Date().toISOString(),
-        password: "karol123",
-        version: 1
-      },
-      {
-        id: 'store-3',
-        name: "Farmer's Gate - Bangalore Indiranagar",
-        location: "100 Feet Rd, Indiranagar, Bangalore",
-        whatsappNumber: "919876543212",
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        password: "indira123",
+        password: "urban123",
         version: 1
       }
     ];

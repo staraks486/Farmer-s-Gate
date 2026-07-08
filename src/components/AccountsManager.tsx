@@ -31,7 +31,7 @@ const DEFAULT_ACCOUNTS: AccountEntry[] = [
     type: 'Expense',
     category: 'Rent',
     amount: 15000,
-    description: 'Monthly store rental for Mumbai Bandra outlet',
+    description: 'Monthly store rental for Patiala Model Town outlet',
     entryDate: new Date(Date.now() - 3600000 * 24 * 5).toISOString()
   },
   {
@@ -40,7 +40,7 @@ const DEFAULT_ACCOUNTS: AccountEntry[] = [
     type: 'Expense',
     category: 'Electricity',
     amount: 3200,
-    description: 'Power & refrigeration bill - Bandra',
+    description: 'Power & refrigeration bill - Model Town',
     entryDate: new Date(Date.now() - 3600000 * 24 * 3).toISOString()
   },
   {
@@ -441,7 +441,7 @@ export default function AccountsManager({ stores, sales, purchases, role }: Acco
                 id="form-desc"
                 type="text"
                 required
-                placeholder="e.g. Paid rental check to building landlord for Bandra space"
+                placeholder="e.g. Paid rental check to building landlord for Patiala space"
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
                 className="w-full text-xs font-semibold rounded-xl border border-slate-200 p-2.5 bg-slate-50/50 text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"

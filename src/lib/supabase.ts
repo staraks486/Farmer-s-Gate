@@ -22,35 +22,26 @@ const DEFAULT_MASTER_CROPS: MasterCrop[] = [
 const DEFAULT_STORES: Store[] = [
   {
     id: 'store-1',
-    name: "Farmer's Gate - Mumbai Bandra",
-    location: "Bandra West, Link Road, Mumbai",
+    name: "Farmer's Gate - Patiala Model Town",
+    location: "Model Town, Patiala, Punjab",
     whatsappNumber: "919876543210",
     isActive: true,
     createdAt: new Date().toISOString(),
-    password: "bandra123"
+    password: "patiala123"
   },
   {
     id: 'store-2',
-    name: "Farmer's Gate - Delhi Karol Bagh",
-    location: "Karol Bagh Metro Stn, New Delhi",
+    name: "Farmer's Gate - Patiala Urban Estate",
+    location: "Urban Estate Phase II, Patiala, Punjab",
     whatsappNumber: "919876543211",
     isActive: true,
     createdAt: new Date().toISOString(),
-    password: "karol123"
-  },
-  {
-    id: 'store-3',
-    name: "Farmer's Gate - Bangalore Indiranagar",
-    location: "100 Feet Rd, Indiranagar, Bangalore",
-    whatsappNumber: "919876543212",
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    password: "indira123"
+    password: "urban123"
   }
 ];
 
 const DEFAULT_INVENTORY: InventoryItem[] = [
-  // Store 1 Inventory (Mumbai Bandra)
+  // Store 1 Inventory (Patiala Model Town)
   { id: 'inv-1-1', storeId: 'store-1', vegetableName: 'Tomatoes (Tamatar)', quantity: 145, minStockThreshold: 40, costPrice: 25, sellingPrice: 35, lastUpdated: new Date().toISOString() },
   { id: 'inv-1-2', storeId: 'store-1', vegetableName: 'Potatoes (Aloo)', quantity: 220, minStockThreshold: 50, costPrice: 15, sellingPrice: 22, lastUpdated: new Date().toISOString() },
   { id: 'inv-1-3', storeId: 'store-1', vegetableName: 'Onions (Pyaj)', quantity: 18, minStockThreshold: 45, costPrice: 22, sellingPrice: 30, lastUpdated: new Date().toISOString() }, // Low Stock!
@@ -60,29 +51,23 @@ const DEFAULT_INVENTORY: InventoryItem[] = [
   { id: 'inv-1-7', storeId: 'store-1', vegetableName: 'Bananas (Kela)', quantity: 180, minStockThreshold: 40, costPrice: 25, sellingPrice: 35, lastUpdated: new Date().toISOString() },
   { id: 'inv-1-8', storeId: 'store-1', vegetableName: 'Apples (Seb)', quantity: 95, minStockThreshold: 25, costPrice: 90, sellingPrice: 130, lastUpdated: new Date().toISOString() },
 
-  // Store 2 Inventory (Delhi Karol Bagh)
-  { id: 'inv-2-1', storeId: 'store-2', vegetableName: 'Tomatoes (Tamatar)', quantity: 55, minStockThreshold: 40, costPrice: 25, sellingPrice: 35, lastUpdated: new Date().toISOString() },
-  { id: 'inv-2-2', storeId: 'store-2', vegetableName: 'Potatoes (Aloo)', quantity: 185, minStockThreshold: 50, costPrice: 15, sellingPrice: 22, lastUpdated: new Date().toISOString() },
-  { id: 'inv-2-3', storeId: 'store-2', vegetableName: 'Onions (Pyaj)', quantity: 160, minStockThreshold: 45, costPrice: 22, sellingPrice: 30, lastUpdated: new Date().toISOString() },
-  { id: 'inv-2-4', storeId: 'store-2', vegetableName: 'Mangoes (Aam)', quantity: 45, minStockThreshold: 30, costPrice: 80, sellingPrice: 110, lastUpdated: new Date().toISOString() },
-  { id: 'inv-2-5', storeId: 'store-2', vegetableName: 'Apples (Seb)', quantity: 60, minStockThreshold: 25, costPrice: 90, sellingPrice: 130, lastUpdated: new Date().toISOString() },
-
-  // Store 3 Inventory (Bangalore Indiranagar)
-  { id: 'inv-3-1', storeId: 'store-3', vegetableName: 'Tomatoes (Tamatar)', quantity: 90, minStockThreshold: 40, costPrice: 25, sellingPrice: 35, lastUpdated: new Date().toISOString() },
-  { id: 'inv-3-2', storeId: 'store-3', vegetableName: 'Potatoes (Aloo)', quantity: 140, minStockThreshold: 50, costPrice: 15, sellingPrice: 22, lastUpdated: new Date().toISOString() },
-  { id: 'inv-3-3', storeId: 'store-3', vegetableName: 'Bananas (Kela)', quantity: 190, minStockThreshold: 40, costPrice: 25, sellingPrice: 35, lastUpdated: new Date().toISOString() },
-  { id: 'inv-3-4', storeId: 'store-3', vegetableName: 'Spinach (Palak)', quantity: 75, minStockThreshold: 20, costPrice: 18, sellingPrice: 25, lastUpdated: new Date().toISOString() }
+  // Store 2 Inventory (Patiala Urban Estate)
+  { id: 'inv-2-1', storeId: 'store-2', vegetableName: 'Tomatoes (Tamatar)', quantity: 110, minStockThreshold: 40, costPrice: 25, sellingPrice: 35, lastUpdated: new Date().toISOString() },
+  { id: 'inv-2-2', storeId: 'store-2', vegetableName: 'Potatoes (Aloo)', quantity: 195, minStockThreshold: 50, costPrice: 15, sellingPrice: 22, lastUpdated: new Date().toISOString() },
+  { id: 'inv-2-3', storeId: 'store-2', vegetableName: 'Onions (Pyaj)', quantity: 130, minStockThreshold: 45, costPrice: 22, sellingPrice: 30, lastUpdated: new Date().toISOString() },
+  { id: 'inv-2-4', storeId: 'store-2', vegetableName: 'Mangoes (Aam)', quantity: 50, minStockThreshold: 30, costPrice: 80, sellingPrice: 110, lastUpdated: new Date().toISOString() },
+  { id: 'inv-2-5', storeId: 'store-2', vegetableName: 'Apples (Seb)', quantity: 70, minStockThreshold: 25, costPrice: 90, sellingPrice: 130, lastUpdated: new Date().toISOString() }
 ];
 
 const DEFAULT_SALES: Sale[] = [
-  { id: 'sale-1', storeId: 'store-1', vegetableName: 'Tomatoes (Tamatar)', quantity: 10, pricePerKg: 35, totalPrice: 350, customerName: 'Rajesh Kumar', saleDate: new Date(Date.now() - 3600000 * 2).toISOString() },
-  { id: 'sale-2', storeId: 'store-1', vegetableName: 'Potatoes (Aloo)', quantity: 20, pricePerKg: 22, totalPrice: 440, customerName: 'Amit Sharma', saleDate: new Date(Date.now() - 3600000 * 4).toISOString() },
-  { id: 'sale-3', storeId: 'store-2', vegetableName: 'Tomatoes (Tamatar)', quantity: 5, pricePerKg: 35, totalPrice: 175, customerName: 'Priya Patel', saleDate: new Date(Date.now() - 3600000 * 6).toISOString() }
+  { id: 'sale-1', storeId: 'store-1', vegetableName: 'Tomatoes (Tamatar)', quantity: 10, pricePerKg: 35, totalPrice: 350, customerName: 'Harpreet Singh', saleDate: new Date(Date.now() - 3600000 * 2).toISOString() },
+  { id: 'sale-2', storeId: 'store-1', vegetableName: 'Potatoes (Aloo)', quantity: 20, pricePerKg: 22, totalPrice: 440, customerName: 'Gurpreet Kaur', saleDate: new Date(Date.now() - 3600000 * 4).toISOString() },
+  { id: 'sale-3', storeId: 'store-2', vegetableName: 'Tomatoes (Tamatar)', quantity: 5, pricePerKg: 35, totalPrice: 175, customerName: 'Manpreet Singh', saleDate: new Date(Date.now() - 3600000 * 6).toISOString() }
 ];
 
 const DEFAULT_PURCHASES: Purchase[] = [
-  { id: 'pur-1', storeId: 'store-1', vegetableName: 'Tomatoes (Tamatar)', quantity: 100, costPerKg: 25, totalCost: 2500, supplierName: 'Sardar Patel Veg Mandi', purchaseDate: new Date(Date.now() - 3600000 * 24).toISOString() },
-  { id: 'pur-2', storeId: 'store-1', vegetableName: 'Onions (Pyaj)', quantity: 120, costPerKg: 22, totalCost: 2640, supplierName: 'Nashik Wholesale Farms', purchaseDate: new Date(Date.now() - 3600000 * 30).toISOString() }
+  { id: 'pur-1', storeId: 'store-1', vegetableName: 'Tomatoes (Tamatar)', quantity: 100, costPerKg: 25, totalCost: 2500, supplierName: 'Patiala Sabzi Mandi (APMC)', purchaseDate: new Date(Date.now() - 3600000 * 24).toISOString() },
+  { id: 'pur-2', storeId: 'store-1', vegetableName: 'Onions (Pyaj)', quantity: 120, costPerKg: 22, totalCost: 2640, supplierName: 'Malwa Farmer Producers', purchaseDate: new Date(Date.now() - 3600000 * 30).toISOString() }
 ];
 
 const DEFAULT_REQUIREMENTS: Requirement[] = [
@@ -94,22 +79,22 @@ const DEFAULT_REQUIREMENTS: Requirement[] = [
 const DEFAULT_SUPPLIERS: Supplier[] = [
   {
     id: 'sup-1',
-    name: 'Sardar Patel Veg Mandi',
-    contactName: 'Ramesh Patel',
+    name: 'Patiala Sabzi Mandi (APMC)',
+    contactName: 'Sardar Gurnam Singh',
     phone: '919811223344',
-    email: 'orders@mandi.in',
-    address: 'APMC Market Yard, Vashi, Navi Mumbai',
+    email: 'patiala@apmc-mandi.gov.in',
+    address: 'Sanaur Road APMC Mandi, Patiala, Punjab',
     paymentTerms: 'COD',
     isActive: true,
     createdAt: new Date().toISOString()
   },
   {
     id: 'sup-2',
-    name: 'Nashik Wholesale Farms',
-    contactName: 'Sanjay Shinde',
+    name: 'Malwa Farmer Producers',
+    contactName: 'Jagtar Singh',
     phone: '919855667788',
-    email: 'sanjay@nashikfarms.in',
-    address: 'Pimpalgaon Baswant, Nashik, Maharashtra',
+    email: 'contact@malwafarms.co.in',
+    address: 'Nabha Road, Patiala District, Punjab',
     paymentTerms: 'Net 15',
     isActive: true,
     createdAt: new Date().toISOString()
@@ -121,7 +106,7 @@ const DEFAULT_PURCHASE_ORDERS: PurchaseOrder[] = [
     id: 'po-1',
     poNumber: 'PO-2026-001',
     supplierId: 'sup-1',
-    supplierName: 'Sardar Patel Veg Mandi',
+    supplierName: 'Patiala Sabzi Mandi (APMC)',
     storeId: 'store-1',
     orderDate: new Date(Date.now() - 3600000 * 24).toISOString(),
     items: [
@@ -131,14 +116,14 @@ const DEFAULT_PURCHASE_ORDERS: PurchaseOrder[] = [
     paymentStatus: 'Paid',
     totalAmount: 2500,
     paidAmount: 2500,
-    notes: 'Premium greenhouse red tomatoes',
+    notes: 'Premium local organic red tomatoes',
     createdAt: new Date(Date.now() - 3600000 * 24).toISOString()
   },
   {
     id: 'po-2',
     poNumber: 'PO-2026-002',
     supplierId: 'sup-2',
-    supplierName: 'Nashik Wholesale Farms',
+    supplierName: 'Malwa Farmer Producers',
     storeId: 'store-1',
     orderDate: new Date(Date.now() - 3600000 * 12).toISOString(),
     items: [
@@ -159,9 +144,9 @@ const DEFAULT_CUSTOMER_ORDERS: CustomerOrder[] = [
     id: 'co-1',
     orderNumber: 'FG-CUST-1001',
     storeId: 'store-1',
-    customerName: 'Aishwarya Roy',
+    customerName: 'Sardar Jaswant Singh',
     customerPhone: '919833445566',
-    customerAddress: 'Flat 502, Sea Breeze Apts, Bandra',
+    customerAddress: 'House 402, Sector 3, Urban Estate, Patiala',
     items: [
       { vegetableName: 'Tomatoes (Tamatar)', quantity: 4, pricePerKg: 35, totalPrice: 140 },
       { vegetableName: 'Potatoes (Aloo)', quantity: 10, pricePerKg: 22, totalPrice: 220 }

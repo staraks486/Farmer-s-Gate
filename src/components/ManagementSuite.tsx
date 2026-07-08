@@ -264,10 +264,10 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   }, [appVersion]);
 
   useEffect(() => {
-    // Background auto-update every 8 seconds
+    // Background auto-update every 15 seconds
     const intervalId = setInterval(() => {
       loadAllData(true);
-    }, 8000);
+    }, 15000);
 
     return () => {
       clearInterval(intervalId);

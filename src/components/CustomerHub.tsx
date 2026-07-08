@@ -104,12 +104,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
   // Indian Cities & Market Regions Switcher
   const [cityToastMsg, setCityToastMsg] = useState<string | null>(null);
   const indianCitiesList = [
-    { name: 'Bengaluru', address: '100 Feet Rd, Indiranagar, Bengaluru, Karnataka 560038', code: 'BLR', icon: '🌳' },
-    { name: 'Mumbai', address: 'Linking Road, Bandra West, Mumbai, Maharashtra 400050', code: 'BOM', icon: '🌊' },
-    { name: 'New Delhi', address: 'Connaught Circle, Connaught Place, New Delhi, Delhi 110001', code: 'DEL', icon: '🏛️' },
-    { name: 'Hyderabad', address: 'Road No 36, Jubilee Hills, Hyderabad, Telangana 500081', code: 'HYD', icon: '🕌' },
-    { name: 'Chennai', address: 'Usman Road, T. Nagar, Chennai, Tamil Nadu 600017', code: 'MAA', icon: '🏝️' },
-    { name: 'Pune', address: 'North Main Road, Koregaon Park, Pune, Maharashtra 411001', code: 'PNQ', icon: '⛰️' },
+    { name: 'Patiala', address: 'Model Town, Patiala, Punjab 147001', code: 'PAT', icon: '🌾' },
   ];
 
   const handleSwitchCity = (city: { name: string; address: string; code: string; icon: string }) => {

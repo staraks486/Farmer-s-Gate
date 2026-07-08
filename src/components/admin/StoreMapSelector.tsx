@@ -14,128 +14,6 @@ export interface CityConfig {
 
 export const INDIAN_CITIES_MAP_CONFIGS: CityConfig[] = [
   {
-    name: 'Bengaluru',
-    code: 'BLR',
-    icon: '🌳',
-    latMin: 12.9000,
-    latMax: 13.0400,
-    lngMin: 77.5000,
-    lngMax: 77.7600,
-    landmarks: [
-      { name: 'Indiranagar 100 Feet Rd', lat: 12.9719, lng: 77.6412 },
-      { name: 'Koramangala 3rd Block', lat: 12.9279, lng: 77.6271 },
-      { name: 'Whitefield ITPL Main Road', lat: 12.9698, lng: 77.7500 },
-      { name: 'HSR Layout Sector 4', lat: 12.9100, lng: 77.6450 },
-      { name: 'Rajajinagar Block 4', lat: 12.9900, lng: 77.5500 },
-      { name: 'Jayanagar 4th T Block', lat: 12.9300, lng: 77.5800 },
-      { name: 'Hebbal Flyover Junction', lat: 13.0350, lng: 77.5900 },
-      { name: 'MG Road Metro Station', lat: 12.9750, lng: 77.6010 }
-    ]
-  },
-  {
-    name: 'Mumbai',
-    code: 'BOM',
-    icon: '🌊',
-    latMin: 18.9000,
-    latMax: 19.2500,
-    lngMin: 72.7500,
-    lngMax: 72.9800,
-    landmarks: [
-      { name: 'Bandra West Linking Road', lat: 19.0596, lng: 72.8295 },
-      { name: 'Colaba Causeway', lat: 18.9067, lng: 72.8147 },
-      { name: 'Andheri West Lokhandwala', lat: 19.1200, lng: 72.8300 },
-      { name: 'Juhu Tara Road', lat: 19.1000, lng: 72.8200 },
-      { name: 'Dadar TT Circle', lat: 19.0178, lng: 72.8478 },
-      { name: 'Nariman Point Marine Drive', lat: 18.9250, lng: 72.8200 },
-      { name: 'Thane West Teen Hath Naka', lat: 19.2183, lng: 72.9781 }
-    ]
-  },
-  {
-    name: 'New Delhi',
-    code: 'DEL',
-    icon: '🏛️',
-    latMin: 28.5000,
-    latMax: 28.7500,
-    lngMin: 77.0500,
-    lngMax: 77.3000,
-    landmarks: [
-      { name: 'Connaught Place Outer Circle', lat: 28.6304, lng: 77.2177 },
-      { name: 'Karol Bagh Arya Samaj Road', lat: 28.6430, lng: 77.1887 },
-      { name: 'South Extension Part II', lat: 28.5680, lng: 77.2200 },
-      { name: 'Chandni Chowk Market', lat: 28.6506, lng: 77.2300 },
-      { name: 'Vasant Kunj Sector C', lat: 28.5400, lng: 77.1500 },
-      { name: 'Dwarka Sector 10', lat: 28.5800, lng: 77.0600 },
-      { name: 'Noida Sector 62 Hub', lat: 28.6200, lng: 77.3600 }
-    ]
-  },
-  {
-    name: 'Hyderabad',
-    code: 'HYD',
-    icon: '🕌',
-    latMin: 17.3000,
-    latMax: 17.5500,
-    lngMin: 78.3000,
-    lngMax: 78.6000,
-    landmarks: [
-      { name: 'Jubilee Hills Road No 36', lat: 17.4483, lng: 78.3741 },
-      { name: 'Gachibowli Financial District', lat: 17.4401, lng: 78.3489 },
-      { name: 'HITEC City Cyber Towers', lat: 17.4500, lng: 78.3800 },
-      { name: 'Banjara Hills Road No 1', lat: 17.4150, lng: 78.4300 },
-      { name: 'Begumpet Airport Zone', lat: 17.4400, lng: 78.4600 },
-      { name: 'Charminar Heritage Plaza', lat: 17.3616, lng: 78.4747 }
-    ]
-  },
-  {
-    name: 'Chennai',
-    code: 'MAA',
-    icon: '☕',
-    latMin: 12.9000,
-    latMax: 13.1500,
-    lngMin: 80.1500,
-    lngMax: 80.3000,
-    landmarks: [
-      { name: 'T. Nagar Usman Road', lat: 13.0405, lng: 80.2337 },
-      { name: 'Adyar Besant Nagar Beach', lat: 13.0003, lng: 80.2667 },
-      { name: 'Nungambakkam High Road', lat: 13.0600, lng: 80.2400 },
-      { name: 'Velachery Phoenix Mall', lat: 12.9900, lng: 80.2200 },
-      { name: 'Anna Nagar West Depot', lat: 13.0850, lng: 80.2100 },
-      { name: 'Mylapore Kapaleeshwarar Temple', lat: 13.0333, lng: 80.2700 }
-    ]
-  },
-  {
-    name: 'Pune',
-    code: 'PNQ',
-    icon: '⛰️',
-    latMin: 18.4500,
-    latMax: 18.6500,
-    lngMin: 73.7500,
-    lngMax: 73.9500,
-    landmarks: [
-      { name: 'Koregaon Park North Main Rd', lat: 18.5362, lng: 73.8930 },
-      { name: 'Kalyani Nagar Jogger\'s Park', lat: 18.5460, lng: 73.9050 },
-      { name: 'Kothrud Ideal Colony', lat: 18.5080, lng: 73.8150 },
-      { name: 'Hinjawadi Phase 1 InfoTech', lat: 18.5900, lng: 73.7400 },
-      { name: 'Shivaji Nagar FC Road', lat: 18.5200, lng: 73.8400 },
-      { name: 'Viman Nagar Symbiosis campus', lat: 18.5650, lng: 73.9120 }
-    ]
-  },
-  {
-    name: 'Kolkata',
-    code: 'CCU',
-    icon: '🌉',
-    latMin: 22.4500,
-    latMax: 22.6500,
-    lngMin: 88.3000,
-    lngMax: 88.4800,
-    landmarks: [
-      { name: 'Salt Lake Sector V Central', lat: 22.5726, lng: 88.4339 },
-      { name: 'Park Street Main Avenue', lat: 22.5485, lng: 88.3530 },
-      { name: 'New Town Eco Park Entrance', lat: 22.6000, lng: 88.4700 },
-      { name: 'Gariahat South Market Crossing', lat: 22.5200, lng: 88.3700 },
-      { name: 'Howrah Bridge Terminus', lat: 22.5850, lng: 88.3400 }
-    ]
-  },
-  {
     name: 'Patiala',
     code: 'PAT',
     icon: '🌾',
@@ -543,7 +421,7 @@ export default function StoreMapSelector({ lat, lng, location, onChangeLocation 
             <input
               id="geo-search-input"
               type="text"
-              placeholder="Enter neighborhood or area (e.g. Indiranagar, Bandra, Connaught Place)..."
+              placeholder="Enter neighborhood or area (e.g. Model Town, Urban Estate, Sanaur Road)..."
               value={searchAreaQuery}
               onChange={(e) => setSearchAreaQuery(e.target.value)}
               onKeyDown={(e) => {

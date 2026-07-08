@@ -994,18 +994,9 @@ export default function AdminPanel({
 
   // Indian cities & sub-market neighborhoods directory for auto-complete location search
   const INDIAN_COORDINATE_DICTIONARY = [
-    { name: "Farmer's Gate HQ - 100 Feet Rd, Indiranagar, Bengaluru, Karnataka 560038", lat: 12.9716, lng: 77.6412, tags: ['bangalore', 'indiranagar', 'bengaluru', '100 feet', 'hq'] },
-    { name: "Whitefield Store - ITPL Main Road, Bangalore, Karnataka 560066", lat: 12.9698, lng: 77.7500, tags: ['bangalore', 'whitefield', 'bengaluru', 'itpl'] },
-    { name: "Koramangala Store - 80 Feet Rd, Koramangala 3rd Block, Bangalore 560034", lat: 12.9279, lng: 77.6271, tags: ['bangalore', 'koramangala', 'bengaluru'] },
-    { name: "Bandra West Dispatch - Linking Road, Bandra West, Mumbai, Maharashtra 400050", lat: 19.0596, lng: 72.8295, tags: ['mumbai', 'bandra', 'west', 'linking'] },
-    { name: "Karol Bagh Outlet - Arya Samaj Road, Karol Bagh, New Delhi, Delhi 110005", lat: 28.6430, lng: 77.1887, tags: ['delhi', 'karol bagh', 'metro', 'new delhi'] },
-    { name: "Connaught Place Hub - Connaught Circle, Block A, New Delhi, Delhi 110001", lat: 28.6304, lng: 77.2177, tags: ['delhi', 'connaught', 'cp', 'new delhi'] },
-    { name: "Jubilee Hills Central - Road No 36, Jubilee Hills, Hyderabad, Telangana 500081", lat: 17.4483, lng: 78.3741, tags: ['hyderabad', 'jubilee', 'hitec'] },
-    { name: "Gachibowli Darkstore - Financial District, Gachibowli, Hyderabad, Telangana 500032", lat: 17.4401, lng: 78.3489, tags: ['hyderabad', 'gachibowli', 'financial'] },
-    { name: "T. Nagar Market - Usman Road, T. Nagar, Chennai, Tamil Nadu 600017", lat: 13.0405, lng: 80.2337, tags: ['chennai', 't. nagar', 't nagar', 'usman'] },
-    { name: "Koregaon Park Branch - North Main Road, Koregaon Park, Pune, Maharashtra 411001", lat: 18.5362, lng: 73.8930, tags: ['pune', 'koregaon', 'park', 'maharashtra'] },
-    { name: "Salt Lake Sector V - Salt Lake City, Kolkata, West Bengal 700091", lat: 22.5726, lng: 88.4339, tags: ['kolkata', 'salt lake', 'sector v', 'bengal'] },
-    { name: "Vastrapur Outlet - Vastrapur Lake Road, Ahmedabad, Gujarat 380015", lat: 23.0373, lng: 72.5252, tags: ['ahmedabad', 'vastrapur', 'gujarat'] }
+    { name: "Farmer's Gate Model Town - Bhupindra Road, Model Town, Patiala, Punjab 147001", lat: 30.3398, lng: 76.3869, tags: ['patiala', 'model town', 'bhupindra', 'punjab'] },
+    { name: "Farmer's Gate Urban Estate - Sector 3, Urban Estate, Patiala, Punjab 147002", lat: 30.3350, lng: 76.4210, tags: ['patiala', 'urban estate', 'punjab'] },
+    { name: "Farmer's Gate Chhoti Baradari - Chhoti Baradari, Patiala, Punjab 147001", lat: 30.3420, lng: 76.3820, tags: ['patiala', 'chhoti baradari', 'punjab'] }
   ];
 
   const handleLocationGeocodeSearch = () => {
@@ -2459,10 +2450,6 @@ export default function AdminPanel({
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Fast Presets:</span>
                 {[
-                  { name: 'Bengaluru Hub', details: { headOfficeName: 'FarmersGate South HQ - Bangalore Hub', headOfficeLocation: '100 Feet Rd, Indiranagar, Bengaluru, Karnataka 560038', headOfficeLat: 12.9716, headOfficeLng: 77.5946, activeCity: 'Bengaluru' } },
-                  { name: 'Mumbai Hub', details: { headOfficeName: 'FarmersGate West HQ - Bandra Hub', headOfficeLocation: 'Linking Road, Bandra West, Mumbai, Maharashtra 400050', headOfficeLat: 19.0596, headOfficeLng: 72.8295, activeCity: 'Mumbai' } },
-                  { name: 'Delhi Hub', details: { headOfficeName: 'FarmersGate North HQ - Connaught Hub', headOfficeLocation: 'Connaught Circle, New Delhi, Delhi 110001', headOfficeLat: 28.6304, headOfficeLng: 77.2177, activeCity: 'New Delhi' } },
-                  { name: 'Hyderabad Hub', details: { headOfficeName: 'FarmersGate Central Deccan HQ - HITEC Hub', headOfficeLocation: 'Road No 36, Jubilee Hills, Hyderabad, Telangana 500081', headOfficeLat: 17.4483, headOfficeLng: 78.3741, activeCity: 'Hyderabad' } },
                   { name: 'Patiala Hub', details: { headOfficeName: 'FarmersGate Punjab HQ - Patiala Hub', headOfficeLocation: 'Bhupindra Road, Patiala, Punjab 147001', headOfficeLat: 30.3398, headOfficeLng: 76.3869, activeCity: 'Patiala' } }
                 ].map((preset) => (
                   <button
