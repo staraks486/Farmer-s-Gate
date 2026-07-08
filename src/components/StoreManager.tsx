@@ -2038,32 +2038,86 @@ export default function StoreManager({
   const storeRequirements = requirements.filter(r => r.storeId === store.id);
 
   // Background Sync: Automatically synchronize store inventory with Master Catalog in background
+  const syncsAttemptedRef = React.useRef<Record<string, boolean>>({});
+
   useEffect(() => {
-    if (!masterCrops || masterCrops.length === 0 || !store?.id) return;
+    if (!store?.id) return;
     
-    const syncInBackground = async () => {
-      const missingCrops = masterCrops.filter(crop => 
+    // If we already synced or are currently syncing this store in this mount session, skip
+    if (syncsAttemptedRef.current[store.id]) return;
+    
+    const syncStoreInventory = async () => {
+      // Mark as synced to prevent any parallel or re-triggered loops
+      syncsAttemptedRef.current[store.id] = true;
+      
+      // Determine what crop list to use: Headquarters master catalog or local default crops
+      const cropsToSync = (masterCrops && masterCrops.length > 0) 
+        ? masterCrops.map(c => ({
+            vegetableName: c.vegetableName,
+            quantity: 100,
+            costPrice: c.costPrice,
+            sellingPrice: c.sellingPrice,
+            minStockThreshold: c.minStockThreshold || 10
+          }))
+        : [
+            { vegetableName: 'Potato', sellingPrice: 30, quantity: 150, minStockThreshold: 20 },
+            { vegetableName: 'Onion', sellingPrice: 40, quantity: 120, minStockThreshold: 15 },
+            { vegetableName: 'Tomato', sellingPrice: 50, quantity: 80, minStockThreshold: 10 },
+            { vegetableName: 'Carrot', sellingPrice: 60, quantity: 60, minStockThreshold: 10 },
+            { vegetableName: 'Garlic', sellingPrice: 120, quantity: 40, minStockThreshold: 5 },
+            { vegetableName: 'Ginger', sellingPrice: 140, quantity: 35, minStockThreshold: 5 },
+            { vegetableName: 'Spinach', sellingPrice: 25, quantity: 30, minStockThreshold: 5 },
+            { vegetableName: 'Cabbage', sellingPrice: 35, quantity: 50, minStockThreshold: 8 },
+            { vegetableName: 'Cauliflower', sellingPrice: 45, quantity: 45, minStockThreshold: 8 },
+            { vegetableName: 'Green Chili', sellingPrice: 80, quantity: 25, minStockThreshold: 4 },
+            { vegetableName: 'Lemon', sellingPrice: 100, quantity: 20, minStockThreshold: 3 },
+            { vegetableName: 'Coriander', sellingPrice: 30, quantity: 15, minStockThreshold: 3 },
+            { vegetableName: 'APPLE FUJI', sellingPrice: 350, quantity: 100, minStockThreshold: 10 },
+            { vegetableName: 'APPLE INDIAN', sellingPrice: 260, quantity: 150, minStockThreshold: 15 },
+            { vegetableName: 'BLUEBERRY', sellingPrice: 290, quantity: 50, minStockThreshold: 5 },
+            { vegetableName: 'BOX KIWI GOLD ZESPRI', sellingPrice: 460, quantity: 40, minStockThreshold: 4 },
+            { vegetableName: 'BOX KIWI GREEN', sellingPrice: 400, quantity: 45, minStockThreshold: 4 },
+            { vegetableName: 'CHERRY', sellingPrice: 400, quantity: 30, minStockThreshold: 3 },
+            { vegetableName: 'STRAWBERRY', sellingPrice: 220, quantity: 60, minStockThreshold: 6 },
+            { vegetableName: 'ORANGE MALTA', sellingPrice: 180, quantity: 120, minStockThreshold: 12 },
+            { vegetableName: 'POMEGRANATE', sellingPrice: 240, quantity: 85, minStockThreshold: 8 },
+            { vegetableName: 'BANANA ROBUSTA', sellingPrice: 60, quantity: 200, minStockThreshold: 20 },
+            { vegetableName: 'AVOCADO', sellingPrice: 320, quantity: 25, minStockThreshold: 3 },
+            { vegetableName: 'BROCCOLI PREMIUM', sellingPrice: 150, quantity: 50, minStockThreshold: 5 },
+            { vegetableName: 'MUSHROOM BUTTON', sellingPrice: 90, quantity: 75, minStockThreshold: 7 },
+            { vegetableName: 'CAPSICUM RED', sellingPrice: 140, quantity: 40, minStockThreshold: 4 },
+            { vegetableName: 'CAPSICUM YELLOW', sellingPrice: 150, quantity: 40, minStockThreshold: 4 }
+          ].map(c => ({
+            ...c,
+            costPrice: parseFloat((c.sellingPrice * 0.75).toFixed(2))
+          }));
+
+      // Find any crops that are missing from storeInventory
+      const missingCrops = cropsToSync.filter(crop => 
         !storeInventory.some(i => i.vegetableName.toLowerCase() === crop.vegetableName.toLowerCase())
       );
-      
+
       if (missingCrops.length > 0) {
-        console.log(`[Background Sync] Seeding ${missingCrops.length} missing master crops into store ${store.name}`);
-        for (const crop of missingCrops) {
+        console.log(`[Background Sync] Quietly seeding ${missingCrops.length} crops into store ${store.name}`);
+        
+        // Add them sequentially to avoid concurrent write issues
+        for (let idx = 0; idx < missingCrops.length; idx++) {
+          const crop = missingCrops[idx];
           await onUpdateInventoryItem({
-            id: `item-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
+            id: `item-${Date.now()}-${idx}-${Math.floor(Math.random() * 100000)}`,
             storeId: store.id,
             vegetableName: crop.vegetableName,
-            quantity: 100, // default starting stock
+            quantity: crop.quantity,
             costPrice: crop.costPrice,
             sellingPrice: crop.sellingPrice,
-            minStockThreshold: crop.minStockThreshold || 10,
+            minStockThreshold: crop.minStockThreshold,
             lastUpdated: new Date().toISOString()
           });
         }
       }
     };
-    
-    syncInBackground();
+
+    syncStoreInventory();
   }, [store?.id, masterCrops, storeInventory.length]);
 
   // Quick seed standard items to inventory
