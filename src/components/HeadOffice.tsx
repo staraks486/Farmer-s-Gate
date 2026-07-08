@@ -2004,6 +2004,17 @@ export default function HeadOffice({
     onUpdateRequirementStatus(req.id, 'Fulfilled');
 
     const sName = stores.find(s => s.id === req.storeId)?.name.replace("Farmer's Gate - ", "") || 'Outlet';
+    
+    // Add real-time notification
+    addNotificationToFirestore({
+      title: `Stock Requirement Dispatched`,
+      message: `HQ Supply Office has dispatched ${req.quantity} kg of ${req.vegetableName} to the "${sName}" branch. Live inventory updated.`,
+      timestamp: new Date().toISOString(),
+      severity: 'success',
+      type: 'requirement',
+      meta: { storeId: req.storeId }
+    }).catch(err => console.error("Failed to add dispatch notification:", err));
+
     alert(`⚡ HQ Dispatch Success!\nSent ${req.quantity} kg of ${req.vegetableName} directly to ${sName}'s live storefront cash registers.`);
   };
 
@@ -2045,6 +2056,17 @@ export default function HeadOffice({
     onUpdateInventoryItem(updatedItem);
 
     const targetStoreName = stores.find(s => s.id === distStoreId)?.name.replace("Farmer's Gate - ", "") || 'Store';
+    
+    // Add real-time notification
+    addNotificationToFirestore({
+      title: `Direct Stock Dispatched`,
+      message: `HQ Supply Office has directly allocated and dispatched ${distQty} kg of ${distCropName} to the "${targetStoreName}" branch.`,
+      timestamp: new Date().toISOString(),
+      severity: 'info',
+      type: 'requirement',
+      meta: { storeId: distStoreId }
+    }).catch(err => console.error("Failed to add direct dispatch notification:", err));
+
     setDistSuccessMsg(`Allocated & dispatched ${distQty} kg of ${distCropName} directly to ${targetStoreName}!`);
     setTimeout(() => setDistSuccessMsg(''), 5000);
 

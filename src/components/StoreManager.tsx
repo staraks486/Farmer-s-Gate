@@ -187,6 +187,16 @@ export default function StoreManager({
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
   const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report' | 'stock-transfer' | 'stock-waste'>('sale');
   
+  // Dynamically compute the selection catalog of crop names by combining HQ master crops and predefined list
+  const cropCatalogNames = React.useMemo(() => {
+    if (masterCrops && masterCrops.length > 0) {
+      const masterNames = masterCrops.map(c => c.vegetableName);
+      const combined = Array.from(new Set([...masterNames, ...PREDEFINED_REQS]));
+      return combined.sort((a, b) => a.localeCompare(b));
+    }
+    return PREDEFINED_REQS;
+  }, [masterCrops]);
+  
   // Store Expenses states
   const [localExpenses, setLocalExpenses] = useState<AccountEntry[]>([]);
   const [expenseCategory, setExpenseCategory] = useState<'Rent' | 'Electricity' | 'Wages' | 'Other Expense'>('Other Expense');
@@ -4356,8 +4366,8 @@ export default function StoreManager({
                     onChange={(e) => setReqVegName(e.target.value)}
                     className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-zinc-700 cursor-pointer"
                   >
-                    <option value="" disabled>-- Select a predefined item --</option>
-                    {PREDEFINED_REQS.map(item => (
+                    <option value="" disabled>-- Select an item --</option>
+                    {cropCatalogNames.map(item => (
                       <option key={item} value={item}>{item}</option>
                     ))}
                   </select>
@@ -4431,6 +4441,58 @@ export default function StoreManager({
                 )}
               </div>
             </div>
+
+            {/* HQ Corporate Catalog & Reference Prices */}
+            {masterCrops && masterCrops.length > 0 && (
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm space-y-3.5 text-left">
+                <div>
+                  <h3 className="font-bold text-zinc-900 text-sm flex items-center gap-1.5">
+                    <span>🏢</span> HQ Master Catalog Reference
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Active price benchmarks and stock rules set by corporate headquarters.
+                  </p>
+                </div>
+
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                  {masterCrops.map(crop => {
+                    const isAlreadyInStock = storeInventory.some(
+                      item => item.vegetableName.toLowerCase() === crop.vegetableName.toLowerCase()
+                    );
+                    return (
+                      <div
+                        key={crop.id}
+                        className="p-2.5 rounded-xl border border-zinc-100 bg-zinc-50/50 flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="space-y-0.5">
+                          <p className="font-bold text-zinc-800 uppercase tracking-tight">{crop.vegetableName}</p>
+                          <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-medium">
+                            <span>Cost: <strong className="text-zinc-700">{currencySymbol}{crop.costPrice}/kg</strong></span>
+                            <span>•</span>
+                            <span>Retail: <strong className="text-emerald-700">{currencySymbol}{crop.sellingPrice}/kg</strong></span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReqVegName(crop.vegetableName);
+                              const qtyField = document.getElementById('req-qty');
+                              if (qtyField) qtyField.focus();
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-0.5"
+                            title="Pre-fill requisition form for this crop"
+                          >
+                            <span>➕</span> Order
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Active Requirements List */}
@@ -4479,7 +4541,7 @@ export default function StoreManager({
                             onChange={(e) => setEditingReqVegName(e.target.value)}
                             className="w-full text-xs font-semibold text-zinc-700 bg-white border border-zinc-200 rounded-lg p-1.5 focus:outline-none"
                           >
-                            {PREDEFINED_REQS.map(item => (
+                            {cropCatalogNames.map(item => (
                               <option key={item} value={item}>{item}</option>
                             ))}
                           </select>
@@ -4864,7 +4926,7 @@ export default function StoreManager({
                         className="w-full rounded-lg border border-zinc-200 p-1.5 text-xs font-semibold focus:outline-none cursor-pointer bg-white"
                       >
                         <option value="">➕ Add extra crop item to this order...</option>
-                        {PREDEFINED_REQS.map(crop => (
+                        {cropCatalogNames.map(crop => (
                           <option key={crop} value={crop}>{crop}</option>
                         ))}
                       </select>
