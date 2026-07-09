@@ -208,6 +208,12 @@ export default function StoreManager({
   const [expenseDate, setExpenseDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [expenseSuccessMsg, setExpenseSuccessMsg] = useState<string>('');
 
+  // Limits for lazy-loading/paginating lists on mobile and tablets to make app light and fast
+  const [visibleSalesCount, setVisibleSalesCount] = useState<number>(15);
+  const [visiblePurchasesCount, setVisiblePurchasesCount] = useState<number>(15);
+  const [visibleInventoryCount, setVisibleInventoryCount] = useState<number>(12);
+  const [visibleExpensesCount, setVisibleExpensesCount] = useState<number>(15);
+
   // Daily Report & Currency Denominator states
   const [reportDate, setReportDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [denom2000, setDenom2000] = useState<string>('');
@@ -2040,22 +2046,42 @@ export default function StoreManager({
   const storeInventory = inventory.filter(i => i.storeId === store.id);
   const storeRequirements = requirements.filter(r => r.storeId === store.id);
 
-  // Background Sync: Automatically synchronize store inventory with Master Catalog in background
-  const syncsAttemptedRef = React.useRef<Record<string, boolean>>({});
+  // Background Sync: Automatically synchronize store inventory with Master Catalog in background using React Refs for light & fast execution
+  const inventoryRef = React.useRef(inventory);
+  const masterCropsRef = React.useRef(masterCrops);
+  const onUpdateInventoryItemsRef = React.useRef(onUpdateInventoryItems);
+  const onUpdateInventoryItemRef = React.useRef(onUpdateInventoryItem);
+
+  useEffect(() => {
+    inventoryRef.current = inventory;
+  }, [inventory]);
+
+  useEffect(() => {
+    masterCropsRef.current = masterCrops;
+  }, [masterCrops]);
+
+  useEffect(() => {
+    onUpdateInventoryItemsRef.current = onUpdateInventoryItems;
+  }, [onUpdateInventoryItems]);
+
+  useEffect(() => {
+    onUpdateInventoryItemRef.current = onUpdateInventoryItem;
+  }, [onUpdateInventoryItem]);
 
   useEffect(() => {
     if (!store?.id) return;
     
-    // If we already synced or are currently syncing this store in this mount session, skip
-    if (syncsAttemptedRef.current[store.id]) return;
-    
     const syncStoreInventory = async () => {
-      // Mark as synced to prevent any parallel or re-triggered loops
-      syncsAttemptedRef.current[store.id] = true;
-      
+      const currentInventory = inventoryRef.current;
+      const currentMasterCrops = masterCropsRef.current;
+      const currentOnUpdateInventoryItems = onUpdateInventoryItemsRef.current;
+      const currentOnUpdateInventoryItem = onUpdateInventoryItemRef.current;
+
+      const currentStoreInventory = currentInventory.filter(i => i.storeId === store.id);
+
       // Determine what crop list to use: Headquarters master catalog or local default crops
-      const cropsToSync = (masterCrops && masterCrops.length > 0) 
-        ? masterCrops.map(c => ({
+      const cropsToSync = (currentMasterCrops && currentMasterCrops.length > 0) 
+        ? currentMasterCrops.map(c => ({
             vegetableName: c.vegetableName,
             quantity: 100,
             costPrice: c.costPrice,
@@ -2095,41 +2121,64 @@ export default function StoreManager({
             costPrice: parseFloat((c.sellingPrice * 0.75).toFixed(2))
           }));
 
-      // Find any crops that are missing from storeInventory, ignoring case and matching similar/substring names to prevent duplicate seeding
-      const missingCrops = cropsToSync.filter(crop => 
-        !storeInventory.some(i => {
+      const itemsToAdd: InventoryItem[] = [];
+      const itemsToUpdate: InventoryItem[] = [];
+
+      for (const mCrop of cropsToSync) {
+        // Find if this crop exists in currentStoreInventory
+        const existing = currentStoreInventory.find(i => {
           const invName = i.vegetableName.toLowerCase();
-          const syncName = crop.vegetableName.toLowerCase();
+          const syncName = mCrop.vegetableName.toLowerCase();
           return invName === syncName || invName.includes(syncName) || syncName.includes(invName);
-        })
-      );
+        });
 
-      if (missingCrops.length > 0) {
-        console.log(`[Background Sync] Quietly seeding ${missingCrops.length} crops into store ${store.name}`);
-        
-        const itemsToUpdate = missingCrops.map((crop, idx) => ({
-          id: `item-${Date.now()}-${idx}-${Math.floor(Math.random() * 100000)}`,
-          storeId: store.id,
-          vegetableName: crop.vegetableName,
-          quantity: crop.quantity,
-          costPrice: crop.costPrice,
-          sellingPrice: crop.sellingPrice,
-          minStockThreshold: crop.minStockThreshold || 10,
-          lastUpdated: new Date().toISOString()
-        }));
-
-        if (onUpdateInventoryItems) {
-          await onUpdateInventoryItems(itemsToUpdate);
+        if (!existing) {
+          itemsToAdd.push({
+            id: `item-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
+            storeId: store.id,
+            vegetableName: mCrop.vegetableName,
+            quantity: mCrop.quantity,
+            costPrice: mCrop.costPrice,
+            sellingPrice: mCrop.sellingPrice,
+            minStockThreshold: mCrop.minStockThreshold,
+            lastUpdated: new Date().toISOString()
+          });
         } else {
-          for (const item of itemsToUpdate) {
-            await onUpdateInventoryItem(item);
+          // Check if selling price, cost price, or threshold differs
+          const priceDiffers = Math.abs(existing.sellingPrice - mCrop.sellingPrice) > 0.01 || 
+                               Math.abs(existing.costPrice - mCrop.costPrice) > 0.01;
+          const thresholdDiffers = existing.minStockThreshold !== mCrop.minStockThreshold;
+
+          if (priceDiffers || thresholdDiffers) {
+            itemsToUpdate.push({
+              ...existing,
+              costPrice: mCrop.costPrice,
+              sellingPrice: mCrop.sellingPrice,
+              minStockThreshold: mCrop.minStockThreshold,
+              lastUpdated: new Date().toISOString()
+            });
+          }
+        }
+      }
+
+      const totalUpdates = [...itemsToAdd, ...itemsToUpdate];
+      if (totalUpdates.length > 0) {
+        console.log(`[Background Sync] Automatically synchronizing ${itemsToAdd.length} new and ${itemsToUpdate.length} updated items in background...`);
+        if (currentOnUpdateInventoryItems) {
+          await currentOnUpdateInventoryItems(totalUpdates);
+        } else {
+          for (const item of totalUpdates) {
+            await currentOnUpdateInventoryItem(item);
           }
         }
       }
     };
 
     syncStoreInventory();
-  }, [store?.id, masterCrops, storeInventory.length]);
+    // Run every 25 seconds instead of 15 seconds to make the app extra light and fast on mobile/tablet
+    const intervalId = setInterval(syncStoreInventory, 25000);
+    return () => clearInterval(intervalId);
+  }, [store?.id]);
 
   // Quick seed standard items to inventory
   const handleBulkSeedCrops = async () => {
@@ -2211,7 +2260,7 @@ export default function StoreManager({
     alert("Successfully registered standard vegetable and premium fruit items in your store inventory!");
   };
 
-  // Search matching vegetables
+  // Search matching vegetables, sorted alphabetically
   const searchedInventory = storeInventory
     .filter(item => item.vegetableName.toLowerCase().includes(vegSearchQuery.toLowerCase()))
     .filter(item => {
@@ -2221,7 +2270,8 @@ export default function StoreManager({
       if (activeInventoryCategoryFilter === 'FRUITS') return category === 'Fruit';
       if (activeInventoryCategoryFilter === 'GROCERY') return category === 'Grocery';
       return true;
-    });
+    })
+    .sort((a, b) => a.vegetableName.localeCompare(b.vegetableName));
 
   // Auto-fill price and check stock when vegetable is selected on Sales Form
   const handleSaleVegSelect = (vegName: string) => {
@@ -2501,13 +2551,13 @@ export default function StoreManager({
     <div className="space-y-4 animate-fade-in text-slate-900">
       
       {/* Categories Tabs Menu - Simplified & Adaptive for all devices */}
-      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto scrollbar-none shrink-0 py-1 bg-white/50 backdrop-blur-md sticky top-0 z-10">
+      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto scrollbar-none shrink-0 py-1 bg-white/50 backdrop-blur-md sticky top-0 z-10 touch-pan-x overscroll-contain">
         <button
           id="tab-sales"
           onClick={() => setActiveSubTab('sale')}
-          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all active:scale-95 duration-100 cursor-pointer ${
             activeSubTab === 'sale'
-              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20 font-black'
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
@@ -2518,9 +2568,9 @@ export default function StoreManager({
         <button
           id="tab-sales-history"
           onClick={() => setActiveSubTab('sales-history')}
-          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all active:scale-95 duration-100 cursor-pointer ${
             activeSubTab === 'sales-history'
-              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20 font-black'
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
@@ -2533,9 +2583,9 @@ export default function StoreManager({
           <button
             id="tab-purchases"
             onClick={() => setActiveSubTab('purchase')}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all active:scale-95 duration-100 cursor-pointer ${
               activeSubTab === 'purchase'
-                ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+                ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20 font-black'
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
@@ -2547,9 +2597,9 @@ export default function StoreManager({
         <button
           id="tab-inventory"
           onClick={() => setActiveSubTab('inventory')}
-          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all cursor-pointer ${
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all active:scale-95 duration-100 cursor-pointer ${
             activeSubTab === 'inventory'
-              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20 font-black'
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
@@ -3048,7 +3098,7 @@ export default function StoreManager({
                   </div>
 
                   {/* Categories Tabs Selector */}
-                  <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none shrink-0 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none shrink-0 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm touch-pan-x overscroll-contain">
                     {(['ALL', 'VEGGIES', 'FRUITS', 'GROCERY'] as const).map((cat) => {
                       const isActive = activeCropFilter === cat;
                       const icon = cat === 'ALL' ? '🌾' : cat === 'VEGGIES' ? '🥦' : cat === 'FRUITS' ? '🍎' : '🛒';
@@ -3059,7 +3109,7 @@ export default function StoreManager({
                           key={cat}
                           type="button"
                           onClick={() => setActiveCropFilter(cat)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 duration-100 cursor-pointer whitespace-nowrap ${
                             isActive
                               ? 'bg-emerald-600 text-white shadow-sm'
                               : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/50'
@@ -3159,6 +3209,7 @@ export default function StoreManager({
                         if (activeCropFilter === 'GROCERY') return category === 'Grocery';
                         return true;
                       })
+                      .sort((a, b) => a.vegetableName.localeCompare(b.vegetableName))
                       .map(item => {
                         const isOutOfStock = item.quantity <= 0;
                         const cartItem = posCart[item.vegetableName];
@@ -3951,7 +4002,7 @@ export default function StoreManager({
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                  {storeSales.map(sale => (
+                  {storeSales.slice(0, visibleSalesCount).map(sale => (
                     <div key={sale.id} className="flex items-center justify-between p-3.5 rounded-xl border border-zinc-100 hover:bg-zinc-50/50 transition-colors">
                       <div className="flex items-center gap-3">
                         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
@@ -3990,6 +4041,18 @@ export default function StoreManager({
                       </div>
                     </div>
                   ))}
+
+                  {storeSales.length > visibleSalesCount && (
+                    <div className="flex justify-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setVisibleSalesCount(prev => prev + 15)}
+                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold px-4 py-2 rounded-xl transition-all cursor-pointer active:scale-95 duration-100 border border-emerald-100"
+                      >
+                        Load More Sales Transactions (+{storeSales.length - visibleSalesCount})
+                      </button>
+                    </div>
+                  )}
 
                   {storeSales.length === 0 && (
                     <div className="py-24 text-center text-zinc-400">
@@ -4097,7 +4160,7 @@ export default function StoreManager({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {storePurchases.map(pur => (
+              {storePurchases.slice(0, visiblePurchasesCount).map(pur => (
                 <div key={pur.id} className="flex items-center justify-between p-3.5 rounded-xl border border-zinc-100 hover:bg-zinc-50/50 transition-colors">
                   <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
@@ -4124,6 +4187,18 @@ export default function StoreManager({
                   </div>
                 </div>
               ))}
+
+              {storePurchases.length > visiblePurchasesCount && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setVisiblePurchasesCount(prev => prev + 15)}
+                    className="bg-blue-50 hover:bg-blue-100 text-blue-800 text-[11px] font-bold px-4 py-2 rounded-xl transition-all cursor-pointer active:scale-95 duration-100 border border-blue-100"
+                  >
+                    Load More Purchases (+{storePurchases.length - visiblePurchasesCount})
+                  </button>
+                </div>
+              )}
 
               {storePurchases.length === 0 && (
                 <div className="py-24 text-center text-zinc-400">
@@ -4270,7 +4345,7 @@ export default function StoreManager({
 
           {/* Grid of Crop Cards */}
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {searchedInventory.map(item => {
+            {searchedInventory.slice(0, visibleInventoryCount).map(item => {
               const isOutOfStock = item.quantity === 0;
               const isLowStock = !isOutOfStock && item.quantity <= item.minStockThreshold;
               const stockValuation = item.quantity * item.costPrice;
@@ -4450,6 +4525,17 @@ export default function StoreManager({
               </div>
             ) : null}
           </div>
+          {searchedInventory.length > visibleInventoryCount && (
+            <div className="flex justify-center mt-6">
+              <button
+                type="button"
+                onClick={() => setVisibleInventoryCount(prev => prev + 12)}
+                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-black px-6 py-3 rounded-xl transition-all cursor-pointer active:scale-95 duration-100 border border-emerald-200/50"
+              >
+                Show More Crops (+{searchedInventory.length - visibleInventoryCount} remaining)
+              </button>
+            </div>
+          )}
         </div>
       )}
 
