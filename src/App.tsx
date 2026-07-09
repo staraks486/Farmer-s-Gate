@@ -1143,70 +1143,65 @@ export default function App() {
       {/* Footer with separate links for each module and developer info */}
       <footer className="bg-white border-t border-slate-200/60 py-3 px-4 shrink-0 z-20">
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider gap-3">
-          {activePortal === 'management' ? (
-            <div className="flex items-center gap-4 flex-wrap justify-center text-center">
-              <span className="text-slate-500 font-black">🔗 Modules:</span>
-              <a 
-                href="#customer" 
-                onClick={(e) => { e.preventDefault(); changePortal('customer'); }}
-                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
-                  activePortal === 'customer' 
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
-                    : 'bg-slate-50 border-slate-150 text-slate-600'
-                }`}
-              >
-                🛍️ Shopper Store
-              </a>
-              <a 
-                href="#partner" 
-                onClick={(e) => { e.preventDefault(); changePortal('partner'); }}
-                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
-                  activePortal === 'partner' 
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
-                    : 'bg-slate-50 border-slate-150 text-slate-600'
-                }`}
-              >
-                📦 Staff Portal
-              </a>
-              <a 
-                href="#management" 
-                onClick={(e) => { e.preventDefault(); changePortal('management'); }}
-                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
-                  activePortal === 'management' 
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
-                    : 'bg-slate-50 border-slate-150 text-slate-600'
-                }`}
-              >
-                🏢 Management HQ
-              </a>
-              <a 
-                href="#store_pos" 
-                onClick={(e) => { e.preventDefault(); changePortal('store_pos'); }}
-                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
-                  activePortal === 'store_pos' 
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
-                    : 'bg-slate-50 border-slate-150 text-slate-600'
-                }`}
-              >
-                🏪 Store POS
-              </a>
-              <a 
-                href="#executive" 
-                onClick={(e) => { e.preventDefault(); changePortal('executive'); }}
-                className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
-                  activePortal === 'executive' 
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
-                    : 'bg-slate-50 border-slate-150 text-slate-600'
-                }`}
-              >
-                📡 Executive Live
-              </a>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 font-black">🏪 FarmersGate Secure Gateway</span>
-            </div>
-          )}
+          <div className="flex items-center gap-4 flex-wrap justify-center text-center">
+            <span className="text-slate-500 font-black">🔗 Modules:</span>
+            <a 
+              href="#customer" 
+              onClick={(e) => { e.preventDefault(); changePortal('customer'); }}
+              className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                activePortal === 'customer' 
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                  : 'bg-slate-50 border-slate-150 text-slate-600'
+              }`}
+              title="Return to home page / shopper storefront"
+            >
+              🏡 Home Page
+            </a>
+            <a 
+              href="#partner" 
+              onClick={(e) => { e.preventDefault(); changePortal('partner'); }}
+              className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                activePortal === 'partner' 
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                  : 'bg-slate-50 border-slate-150 text-slate-600'
+              }`}
+            >
+              📦 Staff Portal
+            </a>
+            <a 
+              href="#management" 
+              onClick={(e) => { e.preventDefault(); changePortal('management'); }}
+              className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                activePortal === 'management' 
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                  : 'bg-slate-50 border-slate-150 text-slate-600'
+              }`}
+            >
+              🏢 Management HQ
+            </a>
+            <a 
+              href="#store_pos" 
+              onClick={(e) => { e.preventDefault(); changePortal('store_pos'); }}
+              className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                activePortal === 'store_pos' 
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                  : 'bg-slate-50 border-slate-150 text-slate-600'
+              }`}
+            >
+              🏪 Store POS
+            </a>
+            <a 
+              href="#executive" 
+              onClick={(e) => { e.preventDefault(); changePortal('executive'); }}
+              className={`hover:text-emerald-600 transition flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                activePortal === 'executive' 
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-extrabold' 
+                  : 'bg-slate-50 border-slate-150 text-slate-600'
+              }`}
+            >
+              📡 Executive Live
+            </a>
+          </div>
 
           <div className="flex items-center gap-3 flex-wrap justify-center text-center">
             <span>Developer: <strong className="text-emerald-700 font-extrabold">Arvind Kumar Shukla</strong></span>

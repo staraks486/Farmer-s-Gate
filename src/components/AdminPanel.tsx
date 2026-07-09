@@ -31,6 +31,28 @@ import {
 import { Store, Requirement, SupabaseConfig, ConsolidatedRequirement, CpanelSettings, StorefrontAd, MasterCrop, InventoryItem, CompanyOfficial } from '../types';
 import StoreMapSelector, { INDIAN_CITIES_MAP_CONFIGS } from './admin/StoreMapSelector';
 import RealTimeGoogleMapTab from './admin/RealTimeGoogleMapTab';
+
+const formatPhoneWithCountryCode = (phone: string): string => {
+  // Remove non-digits except +
+  let cleaned = phone.trim().replace(/[^\d+]/g, '');
+  if (!cleaned) return '';
+  
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+  
+  // If 10 digits (common for India without country code), prepend +91
+  if (cleaned.length === 10) {
+    return `+91 ${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
+  }
+  
+  // If 12 digits and starts with 91, prepend +
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `+91 ${cleaned.slice(2, 7)} ${cleaned.slice(7)}`;
+  }
+  
+  return `+${cleaned}`;
+};
 import { 
   getSupabaseSQLSchema,
   getCircuitBreakerDetails,
@@ -941,7 +963,7 @@ export default function AdminPanel({
           ...match,
           name: storeName.startsWith("Farmer's Gate - ") ? storeName : `Farmer's Gate - ${storeName}`,
           location: storeLocation,
-          whatsappNumber: storeWhatsapp.replace(/[^\d+]/g, ''), // clean phone input
+          whatsappNumber: storeWhatsapp.replace(/\D/g, ''), // clean phone input to pure numeric digits with country code
           password: storePassword || undefined,
           lat: storeLat !== '' ? storeLat : undefined,
           lng: storeLng !== '' ? storeLng : undefined,
@@ -954,7 +976,7 @@ export default function AdminPanel({
         id: `store-${Date.now()}`,
         name: storeName.startsWith("Farmer's Gate - ") ? storeName : `Farmer's Gate - ${storeName}`,
         location: storeLocation,
-        whatsappNumber: storeWhatsapp.replace(/[^\d+]/g, ''), // clean phone input
+        whatsappNumber: storeWhatsapp.replace(/\D/g, ''), // clean phone input to pure numeric digits with country code
         isActive: true,
         createdAt: new Date().toISOString(),
         password: storePassword || undefined,
@@ -1332,13 +1354,14 @@ export default function AdminPanel({
                       id="store-phone-input"
                       type="tel"
                       required
-                      placeholder="e.g. 15550192834 (Country Code + Number)"
+                      placeholder="e.g. +91 98765 43210"
                       value={storeWhatsapp}
-                      onChange={(e) => setStoreWhatsapp(e.target.value)}
+                      onChange={(e) => setStoreWhatsapp(e.target.value.replace(/[^\d+ ]/g, ''))}
+                      onBlur={(e) => setStoreWhatsapp(formatPhoneWithCountryCode(e.target.value))}
                       className="w-full rounded-xl border border-zinc-200 py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-800"
                     />
                   </div>
-                  <span className="text-[10px] text-zinc-400 mt-1 block">Specify numeric phone string with country code (no '+' or spacing) to enable dynamic Whatsapp order messaging.</span>
+                  <span className="text-[10px] text-zinc-400 mt-1 block">Specify numeric phone string with country code (e.g. +91 98765 43210) to enable dynamic Whatsapp order messaging.</span>
                 </div>
 
                 <div>
@@ -3200,10 +3223,10 @@ function CompanyOfficialsSubTab({
       setError('Mobile number is required');
       return;
     }
-    // Simple validation for phone numbers
-    const cleanPhone = mobileNumber.replace(/\D/g, '');
+    const formattedPhone = formatPhoneWithCountryCode(mobileNumber);
+    const cleanPhone = formattedPhone.replace(/\D/g, '');
     if (cleanPhone.length < 10) {
-      setError('Please enter a valid 10-digit mobile number');
+      setError('Please enter a valid phone number with at least 10 digits');
       return;
     }
 
@@ -3212,7 +3235,7 @@ function CompanyOfficialsSubTab({
         id: editingId,
         name: name.trim(),
         designation: designation.trim(),
-        mobileNumber: cleanPhone,
+        mobileNumber: formattedPhone,
         createdAt: officials.find(o => o.id === editingId)?.createdAt || new Date().toISOString()
       });
     } else {
@@ -3220,7 +3243,7 @@ function CompanyOfficialsSubTab({
         id: 'off-' + Date.now(),
         name: name.trim(),
         designation: designation.trim(),
-        mobileNumber: cleanPhone,
+        mobileNumber: formattedPhone,
         createdAt: new Date().toISOString()
       });
     }
@@ -3291,17 +3314,17 @@ function CompanyOfficialsSubTab({
             <div>
               <label className="block text-xs font-semibold text-zinc-600 mb-1.5">Mobile Number *</label>
               <div className="relative">
-                <span className="absolute left-3 top-2 text-zinc-400 text-xs font-semibold">+91</span>
                 <input
                   type="text"
                   value={mobileNumber}
-                  onChange={(e) => setMobileNumber(e.target.value)}
-                  placeholder="9876543210"
-                  className="w-full rounded-xl border border-zinc-200 pl-10 pr-3 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                  onChange={(e) => setMobileNumber(e.target.value.replace(/[^\d+ ]/g, ''))}
+                  onBlur={(e) => setMobileNumber(formatPhoneWithCountryCode(e.target.value))}
+                  placeholder="e.g. +91 98765 43210"
+                  className="w-full rounded-xl border border-zinc-200 px-3.5 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-mono"
                   required
                 />
               </div>
-              <p className="text-[10px] text-zinc-400 mt-1">Please enter a valid 10-digit mobile number for WhatsApp & calls.</p>
+              <p className="text-[10px] text-zinc-400 mt-1">Please enter a valid mobile number with country code for WhatsApp & calls.</p>
             </div>
           </div>
 

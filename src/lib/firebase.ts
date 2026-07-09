@@ -84,8 +84,10 @@ const firebaseConfig = {
 // Initialize App
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with custom databaseId
-const db = initializeFirestore(app, {}, "ai-studio-farmersgate-c2c65696-e9aa-4472-aeb0-8b98e4aa7877");
+// Initialize Firestore with custom databaseId and experimentalForceLongPolling for robust iframe connectivity
+const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true
+}, "ai-studio-farmersgate-c2c65696-e9aa-4472-aeb0-8b98e4aa7877");
 
 // Initialize Auth
 const auth = getAuth(app);

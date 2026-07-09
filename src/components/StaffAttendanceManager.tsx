@@ -7,6 +7,28 @@ import {
 } from 'lucide-react';
 import { Store, Sale, StaffMember, AttendanceRecord, AttendancePunch } from '../types';
 
+const formatPhoneWithCountryCode = (phone: string): string => {
+  // Remove non-digits except +
+  let cleaned = phone.trim().replace(/[^\d+]/g, '');
+  if (!cleaned) return '';
+  
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+  
+  // If 10 digits (common for India without country code), prepend +91
+  if (cleaned.length === 10) {
+    return `+91 ${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
+  }
+  
+  // If 12 digits and starts with 91, prepend +
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `+91 ${cleaned.slice(2, 7)} ${cleaned.slice(7)}`;
+  }
+  
+  return `+${cleaned}`;
+};
+
 interface StaffAttendanceManagerProps {
   stores: Store[];
   sales: Sale[];
@@ -969,9 +991,10 @@ export default function StaffAttendanceManager({
                 <input
                   type="tel"
                   required
-                  placeholder="10 digit number e.g. 9876543210"
+                  placeholder="e.g. +91 98765 43210"
                   value={staffPhone}
-                  onChange={(e) => setStaffPhone(e.target.value)}
+                  onChange={(e) => setStaffPhone(e.target.value.replace(/[^\d+ ]/g, ''))}
+                  onBlur={(e) => setStaffPhone(formatPhoneWithCountryCode(e.target.value))}
                   className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-700 bg-white"
                 />
               </div>

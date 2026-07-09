@@ -148,19 +148,91 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   const [storeLoginError, setStoreLoginError] = useState<string | null>(null);
 
   // Database states
-  const [stores, setStores] = useState<Store[]>([]);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [requirements, setRequirements] = useState<Requirement[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
-  const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
-  const [masterCrops, setMasterCrops] = useState<MasterCrop[]>([]);
-  const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [stores, setStores] = useState<Store[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_cached_stores') || localStorage.getItem('fg_stores');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [sales, setSales] = useState<Sale[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_sales');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [purchases, setPurchases] = useState<Purchase[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_purchases');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_inventory');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [requirements, setRequirements] = useState<Requirement[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_requirements');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_suppliers');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_purchase_orders');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_customer_orders');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [masterCrops, setMasterCrops] = useState<MasterCrop[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_master_crops');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [staff, setStaff] = useState<StaffMember[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_staff_members');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_attendance_records');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
   const [storefrontAds, setStorefrontAds] = useState<StorefrontAd[]>([]);
-  const [officials, setOfficials] = useState<CompanyOfficial[]>([]);
+  const [officials, setOfficials] = useState<CompanyOfficial[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_company_officials');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
   const [cpanelSettings, setCpanelSettings] = useState<CpanelSettings>(DEFAULT_CPANEL_SETTINGS);
   const [dbConfig, setDbConfig] = useState<SupabaseConfig>({ supabaseUrl: '', supabaseAnonKey: '', isConnected: false });
 
@@ -169,7 +241,14 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   const [firebaseNotifications, setFirebaseNotifications] = useState<AppNotification[]>([]);
 
   // UI state
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('fg_cached_stores') || localStorage.getItem('fg_stores');
+      return !cached;
+    } catch (e) {
+      return true;
+    }
+  });
   const [syncing, setSyncing] = useState(false);
 
   // Load all data with highly optimized Promise.all parallel execution for a smooth, lag-free experience

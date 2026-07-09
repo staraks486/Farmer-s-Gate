@@ -2,6 +2,28 @@ import React, { useState } from 'react';
 import { Supplier, PurchaseOrder, Store, PurchaseOrderItem } from '../types';
 import { Plus, Edit, Trash2, Truck, FileText, CheckCircle, DollarSign, XCircle, Search, Filter, Calendar, Info, PackagePlus, ShieldAlert, CreditCard } from 'lucide-react';
 
+const formatPhoneWithCountryCode = (phone: string): string => {
+  // Remove non-digits except +
+  let cleaned = phone.trim().replace(/[^\d+]/g, '');
+  if (!cleaned) return '';
+  
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+  
+  // If 10 digits (common for India without country code), prepend +91
+  if (cleaned.length === 10) {
+    return `+91 ${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
+  }
+  
+  // If 12 digits and starts with 91, prepend +
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `+91 ${cleaned.slice(2, 7)} ${cleaned.slice(7)}`;
+  }
+  
+  return `+${cleaned}`;
+};
+
 interface SupplierManagerProps {
   suppliers: Supplier[];
   purchaseOrders: PurchaseOrder[];
@@ -699,8 +721,9 @@ export default function SupplierManager({
                     type="tel"
                     required
                     value={supplierForm.phone}
-                    onChange={e => setSupplierForm(prev => ({ ...prev, phone: e.target.value }))}
-                    placeholder="e.g. 15550192831"
+                    onChange={e => setSupplierForm(prev => ({ ...prev, phone: e.target.value.replace(/[^\d+ ]/g, '') }))}
+                    onBlur={e => setSupplierForm(prev => ({ ...prev, phone: formatPhoneWithCountryCode(e.target.value) }))}
+                    placeholder="e.g. +91 98765 43210"
                     className="w-full text-xs px-3 py-1.5 bg-slate-50 border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
