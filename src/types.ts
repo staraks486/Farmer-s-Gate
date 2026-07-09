@@ -230,6 +230,12 @@ export interface CpanelSettings {
   headOfficeLat?: number;
   headOfficeLng?: number;
   activeCity?: string;
+  maintenanceModeEnabled?: boolean;
+  maintenanceAnnouncementText?: string;
+  enablePromoCodeCart?: boolean;
+  minimumOrderValue?: number;
+  loyaltyPointsPercentage?: number;
+  enableDigitalInvoicingOnly?: boolean;
 }
 
 export interface StorefrontAd {
@@ -248,6 +254,18 @@ export interface CompanyOfficial {
   name: string;
   designation: string;
   mobileNumber: string;
+  createdAt: string;
+}
+
+export interface OfferPromo {
+  id: string;
+  title: string;
+  code: string;
+  type: 'percentage' | 'flat';
+  value: number;
+  minOrderAmount: number;
+  isActive: boolean;
+  description: string;
   createdAt: string;
 }
 

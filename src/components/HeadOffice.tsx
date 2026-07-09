@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Store, Requirement, InventoryItem, Sale, UserRole, ConsolidatedRequirement, MasterCrop, AppNotification } from '../types';
+import { Store, Requirement, InventoryItem, Sale, UserRole, ConsolidatedRequirement, MasterCrop, AppNotification, OfferPromo } from '../types';
 import { 
   FirebaseOrder, 
   updateOrderStatusInFirestore, 
@@ -89,6 +89,10 @@ interface HeadOfficeProps {
   onDeleteMasterCrop: (id: string) => void;
   firebaseOrders?: FirebaseOrder[];
   firebaseNotifications?: AppNotification[];
+  offers?: OfferPromo[];
+  onAddOffer?: (offer: OfferPromo) => void;
+  onUpdateOffer?: (offer: OfferPromo) => void;
+  onDeleteOffer?: (id: string) => void;
 }
 
 export default function HeadOffice({
@@ -104,10 +108,14 @@ export default function HeadOffice({
   onUpdateMasterCrop,
   onDeleteMasterCrop,
   firebaseOrders = [],
-  firebaseNotifications = []
+  firebaseNotifications = [],
+  offers = [],
+  onAddOffer,
+  onUpdateOffer,
+  onDeleteOffer
 }: HeadOfficeProps) {
   // Main and sub layout tabs
-  const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog' | 'customer-orders' | 'qr-catalog' | 'geo-sandbox' | 'shopper-store'>('requirements');
+  const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog' | 'customer-orders' | 'qr-catalog' | 'geo-sandbox' | 'shopper-store' | 'offers'>('requirements');
   const [reqSubTab, setReqSubTab] = useState<'itemized' | 'consolidated'>('itemized');
   const [expandedStoreStock, setExpandedStoreStock] = useState<Record<string, boolean>>({});
 
@@ -135,6 +143,64 @@ export default function HeadOffice({
     );
     return () => unsubscribe();
   }, []);
+
+  // Offers/Promos Local Management State
+  const [editingOffer, setEditingOffer] = useState<OfferPromo | null>(null);
+  const [offerFormTitle, setOfferFormTitle] = useState('');
+  const [offerFormCode, setOfferFormCode] = useState('');
+  const [offerFormType, setOfferFormType] = useState<'percentage' | 'flat'>('percentage');
+  const [offerFormValue, setOfferFormValue] = useState(10);
+  const [offerFormMinOrder, setOfferFormMinOrder] = useState(200);
+  const [offerFormDesc, setOfferFormDesc] = useState('');
+  const [offerFormIsActive, setOfferFormIsActive] = useState(true);
+
+  const resetOfferForm = () => {
+    setEditingOffer(null);
+    setOfferFormTitle('');
+    setOfferFormCode('');
+    setOfferFormType('percentage');
+    setOfferFormValue(10);
+    setOfferFormMinOrder(200);
+    setOfferFormDesc('');
+    setOfferFormIsActive(true);
+  };
+
+  const handleSaveOffer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!offerFormTitle.trim() || !offerFormCode.trim()) {
+      alert('Please fill in required fields (Title and Promo Code)');
+      return;
+    }
+    const promo: OfferPromo = {
+      id: editingOffer ? editingOffer.id : `off-${Math.random().toString(36).substr(2, 9)}`,
+      title: offerFormTitle.trim(),
+      code: offerFormCode.trim().toUpperCase(),
+      type: offerFormType,
+      value: Number(offerFormValue),
+      minOrderAmount: Number(offerFormMinOrder),
+      description: offerFormDesc.trim() || `${offerFormType === 'percentage' ? offerFormValue + '%' : 'INR ' + offerFormValue} off on orders above INR ${offerFormMinOrder}`,
+      isActive: offerFormIsActive,
+      createdAt: editingOffer ? editingOffer.createdAt : new Date().toISOString()
+    };
+
+    if (editingOffer) {
+      onUpdateOffer?.(promo);
+    } else {
+      onAddOffer?.(promo);
+    }
+    resetOfferForm();
+  };
+
+  const handleStartEditOffer = (promo: OfferPromo) => {
+    setEditingOffer(promo);
+    setOfferFormTitle(promo.title);
+    setOfferFormCode(promo.code);
+    setOfferFormType(promo.type);
+    setOfferFormValue(promo.value);
+    setOfferFormMinOrder(promo.minOrderAmount);
+    setOfferFormDesc(promo.description);
+    setOfferFormIsActive(promo.isActive);
+  };
 
   // Geolocation Sandbox State
   const [sandboxEnabled, setSandboxEnabled] = useState<boolean>(() => {
@@ -2285,6 +2351,18 @@ export default function HeadOffice({
             }`}
           >
             <span>🛍️</span> Shopper Store Control
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('offers')}
+            className={`px-3 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'offers' 
+                ? 'bg-indigo-600 text-white shadow-sm' 
+                : 'text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50/50'
+            }`}
+          >
+            <span>🎁</span> Active Offers & Promos
           </button>
         </div>
 
@@ -7004,6 +7082,220 @@ export default function HeadOffice({
             </div>
           )}
 
+        </div>
+      )}
+
+      {activeTab === 'offers' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-6 rounded-3xl shadow-md">
+            <div>
+              <h2 className="text-lg font-black uppercase tracking-wider text-white">Central HQ Offers & Promotions</h2>
+              <p className="text-[11px] text-indigo-200 mt-0.5">Define coupon codes, flat discounts, or percentage offers synced globally to all active outlet POS registers.</p>
+            </div>
+            <span className="hidden sm:inline bg-indigo-500/20 text-indigo-200 px-3 py-1 rounded-full text-xs font-bold border border-indigo-500/30">
+              🏷️ Promo Hub
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Form Panel */}
+            <div className="lg:col-span-1 space-y-4">
+              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                  <Tag className="h-5 w-5 text-indigo-600" />
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    {editingOffer ? 'Modify Campaign' : 'Launch New Campaign'}
+                  </h3>
+                </div>
+
+                <form onSubmit={handleSaveOffer} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Campaign Title *</label>
+                    <input
+                      type="text"
+                      required
+                      value={offerFormTitle}
+                      onChange={e => setOfferFormTitle(e.target.value)}
+                      placeholder="e.g. Organic Greens Discount"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Promo Coupon Code *</label>
+                    <input
+                      type="text"
+                      required
+                      value={offerFormCode}
+                      onChange={e => setOfferFormCode(e.target.value)}
+                      placeholder="e.g. GREEN15"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono font-bold uppercase focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Discount Type</label>
+                      <select
+                        value={offerFormType}
+                        onChange={e => setOfferFormType(e.target.value as 'percentage' | 'flat')}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                      >
+                        <option value="percentage">Percentage (%)</option>
+                        <option value="flat">Flat Cash (₹)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                        Value ({offerFormType === 'percentage' ? '%' : '₹'})
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        value={offerFormValue}
+                        onChange={e => setOfferFormValue(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Min Order Amount Required (₹)</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={offerFormMinOrder}
+                      onChange={e => setOfferFormMinOrder(Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Campaign Tagline / Description</label>
+                    <textarea
+                      value={offerFormDesc}
+                      onChange={e => setOfferFormDesc(e.target.value)}
+                      placeholder="Optional. If empty, auto-generates description."
+                      rows={2}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 py-1 select-none">
+                    <input
+                      type="checkbox"
+                      id="offer-active"
+                      checked={offerFormIsActive}
+                      onChange={e => setOfferFormIsActive(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 h-4 w-4"
+                    />
+                    <label htmlFor="offer-active" className="text-xs font-bold text-slate-600 cursor-pointer">
+                      Campaign is Active
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={resetOfferForm}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shadow"
+                    >
+                      {editingOffer ? 'Update Promo' : 'Create Promo'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {/* List Panel */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-5 w-5 text-indigo-600" />
+                    <h3 className="font-extrabold text-sm text-slate-900">Active Campaign Catalog</h3>
+                  </div>
+                  <span className="text-[10px] bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-full font-bold">
+                    {offers.length} Configured Offers
+                  </span>
+                </div>
+
+                {offers.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 space-y-2">
+                    <div className="text-3xl">🎁</div>
+                    <p className="text-xs font-bold">No active promotional campaigns configured yet.</p>
+                    <p className="text-[10px] text-slate-400 max-w-sm mx-auto">Use the left form to release discount codes. Active campaigns will instantly reflect on checkout screens of all branches.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {offers.map(offer => (
+                      <div
+                        key={offer.id}
+                        className={`p-4 rounded-2xl border transition relative flex flex-col justify-between h-44 ${
+                          offer.isActive
+                            ? 'border-indigo-150 bg-indigo-50/15'
+                            : 'border-slate-200 bg-slate-50/50 grayscale opacity-75'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex justify-between items-start gap-2">
+                            <span className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-mono font-bold tracking-wider shadow-sm select-all">
+                              {offer.code}
+                            </span>
+                            <span className={`h-2 w-2 rounded-full ${offer.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                          </div>
+
+                          <h4 className="text-xs font-black text-slate-900 mt-2.5 truncate">{offer.title}</h4>
+                          <p className="text-[10px] text-slate-500 font-medium mt-1 leading-relaxed line-clamp-2">{offer.description}</p>
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-150/50 flex justify-between items-center">
+                          <div>
+                            <span className="block text-[9px] text-slate-400 font-bold uppercase">Benefit</span>
+                            <span className="text-xs font-black text-indigo-700">
+                              {offer.type === 'percentage' ? `${offer.value}% Discount` : `₹${offer.value} Flat Cash`}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditOffer(offer)}
+                              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition cursor-pointer"
+                              title="Edit"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete the promo code "${offer.code}"?`)) {
+                                  onDeleteOffer?.(offer.id);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg border border-red-100 bg-white hover:bg-red-50 text-red-500 hover:text-red-700 transition cursor-pointer"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

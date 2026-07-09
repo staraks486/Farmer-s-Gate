@@ -38,7 +38,7 @@ import {
   Users
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification, StaffMember, AttendanceRecord, AccountEntry, AttendancePunch, MasterCrop } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, CustomerOrder, CpanelSettings, AppNotification, StaffMember, AttendanceRecord, AccountEntry, AttendancePunch, MasterCrop, OfferPromo } from '../types';
 import { dbGetForceOffline, dbSetForceOffline, getSupabaseConfig } from '../lib/supabase';
 import { subscribeToNotifications } from '../lib/firebase';
 import { QrScanner } from './QrScanner';
@@ -55,7 +55,7 @@ interface StoreManagerProps {
   role?: string;
   staff?: StaffMember[];
   attendance?: AttendanceRecord[];
-  onAddSale: (sale: Sale) => void;
+  onAddSale: (sale: Sale | Sale[]) => void;
   onDeleteSale: (id: string) => void;
   onAddPurchase: (purchase: Purchase) => void;
   onDeletePurchase: (id: string) => void;
@@ -73,6 +73,7 @@ interface StoreManagerProps {
   stores?: Store[];
   cpanelSettings?: CpanelSettings;
   masterCrops?: MasterCrop[];
+  offers?: OfferPromo[];
 }
 
 interface PosCartItem {
@@ -206,7 +207,8 @@ export default function StoreManager({
   onUpdateStaff,
   stores = [],
   cpanelSettings,
-  masterCrops = []
+  masterCrops = [],
+  offers = []
 }: StoreManagerProps) {
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
   const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report' | 'stock-transfer' | 'stock-waste'>('sale');
@@ -808,6 +810,13 @@ export default function StoreManager({
   const [cancellingOrder, setCancellingOrder] = useState<CustomerOrder | null>(null);
   const [cancellationReason, setCancellationReason] = useState('');
 
+  // Applied Offer & Promo states
+  const [appliedOffer, setAppliedOffer] = useState<OfferPromo | null>(null);
+  const [promoCodeInput, setPromoCodeInput] = useState<string>('');
+  const [manualDiscountPercent, setManualDiscountPercent] = useState<number>(0);
+  const [manualDiscountFlat, setManualDiscountFlat] = useState<number>(0);
+  const [promoFeedback, setPromoFeedback] = useState<{ type: 'success' | 'error' | null; text: string }>({ type: null, text: '' });
+
   // QR Code Generator States
   const [qrDestinationType, setQrDestinationType] = useState<'storefront' | 'express-billing' | 'custom'>('storefront');
   const [qrCustomUrl, setQrCustomUrl] = useState('');
@@ -1114,9 +1123,24 @@ export default function StoreManager({
     totalAmount: number;
     date: string;
     paymentMode?: 'Cash' | 'Card' | 'UPI';
-  } | null>(null);
+    subtotal?: number;
+    discount?: number;
+    appliedPromoCode?: string;
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem('fg_active_completed_bill');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   useEffect(() => {
+    if (completedBill) {
+      localStorage.setItem('fg_active_completed_bill', JSON.stringify(completedBill));
+    } else {
+      localStorage.removeItem('fg_active_completed_bill');
+    }
     // Select a random healthy quote
     const randomIdx = Math.floor(Math.random() * HEALTHY_QUOTES.length);
     setBillingQuote(HEALTHY_QUOTES[randomIdx]);
@@ -1348,6 +1372,45 @@ export default function StoreManager({
   const handleClearPosCart = () => {
     setPosCart({});
     setPosCustomerName('');
+    handleRemovePromoCode();
+    setManualDiscountPercent(0);
+    setManualDiscountFlat(0);
+  };
+
+  const handleApplyPromoCode = (code: string) => {
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode) {
+      setPromoFeedback({ type: 'error', text: 'Please enter a promo code.' });
+      return;
+    }
+    const found = offers.find(o => o.code === cleanCode && o.isActive);
+    if (!found) {
+      setPromoFeedback({ type: 'error', text: 'Invalid or expired promo code.' });
+      setAppliedOffer(null);
+      return;
+    }
+
+    const subtotal = Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0);
+    if (subtotal < found.minOrderAmount) {
+      setPromoFeedback({
+        type: 'error',
+        text: `Minimum order amount of ₹${found.minOrderAmount} required for this promo.`
+      });
+      setAppliedOffer(null);
+      return;
+    }
+
+    setAppliedOffer(found);
+    setPromoFeedback({
+      type: 'success',
+      text: `Promo "${found.title}" applied successfully!`
+    });
+  };
+
+  const handleRemovePromoCode = () => {
+    setAppliedOffer(null);
+    setPromoCodeInput('');
+    setPromoFeedback({ type: null, text: '' });
   };
 
   const handlePosCheckoutSubmit = (e: React.FormEvent) => {
@@ -1383,45 +1446,86 @@ export default function StoreManager({
     });
     const totalAmount = billItems.reduce((acc, curr) => acc + curr.totalPrice, 0);
 
-    // Call onAddSale for each item
-    cartItems.forEach((cartItem, idx) => {
+    // Compute Promo & Manual override discounts
+    let promoDiscount = 0;
+    if (appliedOffer) {
+      if (appliedOffer.type === 'percentage') {
+        promoDiscount = (totalAmount * appliedOffer.value) / 100;
+      } else {
+        promoDiscount = Math.min(totalAmount, appliedOffer.value);
+      }
+    }
+
+    let manualDiscount = 0;
+    if (manualDiscountPercent > 0) {
+      manualDiscount += (totalAmount * manualDiscountPercent) / 100;
+    }
+    if (manualDiscountFlat > 0) {
+      manualDiscount += manualDiscountFlat;
+    }
+
+    const totalDiscountApplied = Math.min(totalAmount, promoDiscount + manualDiscount);
+    const finalBillTotal = parseFloat((totalAmount - totalDiscountApplied).toFixed(2));
+    const discountRatio = totalAmount > 0 ? (totalDiscountApplied / totalAmount) : 0;
+
+    // Collect and register all sales as an array to prevent race conditions & improve performance
+    const newSales: Sale[] = cartItems.map((cartItem, idx) => {
       const deduction = cartItem.quantity * getKgConversionRate(cartItem.unit);
       const sub = getSubtotal(cartItem);
-      const newSale: Sale = {
+      const itemPriceAfterDiscount = sub * (1 - discountRatio);
+      return {
         id: `sale-${Date.now()}-${idx}-${Math.floor(Math.random() * 100)}`,
         storeId: store.id,
         vegetableName: cartItem.item.vegetableName,
         quantity: parseFloat(deduction.toFixed(3)),
         unit: cartItem.unit,
         pricePerKg: cartItem.pricePerKg,
-        totalPrice: parseFloat(sub.toFixed(2)),
+        totalPrice: parseFloat(itemPriceAfterDiscount.toFixed(2)),
         customerName: posCustomerName.trim() || undefined,
         salespersonName: salespersonName.trim() || undefined,
         saleDate: new Date().toISOString(),
         paymentMode: paymentMode
       };
-      onAddSale(newSale);
     });
+    onAddSale(newSales);
 
     // Set completed bill
     const finalBill = {
       id: `FG-BILL-${Math.floor(100000 + Math.random() * 900000)}`,
+      storeId: store.id,
+      storeName: store.name,
+      storeLocation: store.location,
       customerName: posCustomerName.trim() || 'Retail Customer',
       items: billItems,
-      totalAmount: parseFloat(totalAmount.toFixed(2)),
+      subtotal: parseFloat(totalAmount.toFixed(2)),
+      discount: parseFloat(totalDiscountApplied.toFixed(2)),
+      appliedPromoCode: appliedOffer ? appliedOffer.code : undefined,
+      totalAmount: finalBillTotal,
       date: new Date().toLocaleString(),
       paymentMode: paymentMode
     };
+
+    try {
+      const savedBillsStr = localStorage.getItem('fg_bills') || '[]';
+      const parsed = JSON.parse(savedBillsStr);
+      parsed.unshift(finalBill);
+      localStorage.setItem('fg_bills', JSON.stringify(parsed));
+    } catch (e) {
+      console.error("Failed to save bill to fg_bills registry", e);
+    }
 
     setCompletedBill(finalBill);
 
     // Automatically generate and download the clean PDF summary
     handleDownloadPDF(finalBill);
 
-    // Clear cart
+    // Clear cart and states
     setPosCart({});
     setPosCustomerName('');
     setSalespersonName('');
+    handleRemovePromoCode();
+    setManualDiscountPercent(0);
+    setManualDiscountFlat(0);
     setBillingTabs(prev => prev.map(t => {
       if (t.id === activeBillingTabId) {
         return { ...t, cart: {}, customerName: '', whatsappPhone: '' };
@@ -1431,8 +1535,8 @@ export default function StoreManager({
     setShowCheckoutModal(false);
   };
 
-  const handleSendWhatsApp = () => {
-    if (!completedBill) return;
+  const getWhatsAppShareUrl = () => {
+    if (!completedBill) return '#';
     
     let msg = `*RECEIPT - INVOICE ${completedBill.id}*\n`;
     msg += `*Store:* ${store.name}\n`;
@@ -1440,17 +1544,27 @@ export default function StoreManager({
     msg += `*Customer:* ${completedBill.customerName || 'Retail Customer'}\n\n`;
     msg += `*Items Purchased:*\n`;
     
-    completedBill.items.forEach((it, idx) => {
-      const unitLabel = (it as any).unit || 'kg';
+    completedBill.items.forEach((it: any, idx: number) => {
+      const unitLabel = it.unit || 'kg';
       const baseLabel = unitLabel === 'g' ? 'kg' : 'unit';
       msg += `${idx + 1}. ${it.vegetableName} - ${it.quantity} ${unitLabel} @ ₹${it.pricePerKg}/${baseLabel} = *₹${it.totalPrice.toFixed(2)}*\n`;
     });
     
+    if (completedBill.subtotal !== undefined) {
+      msg += `*Subtotal:* ₹${completedBill.subtotal.toFixed(2)}\n`;
+    }
+    if (completedBill.discount !== undefined && completedBill.discount > 0) {
+      msg += `*Discount:* -₹${completedBill.discount.toFixed(2)}\n`;
+    }
     msg += `\n*TOTAL AMOUNT: ₹${completedBill.totalAmount.toFixed(2)}*\n`;
     if (completedBill.paymentMode) {
       msg += `*Payment Mode:* ${completedBill.paymentMode.toUpperCase()}\n`;
     }
-    msg += `\n`;
+    
+    // Add Public Digital Invoice Link
+    const billUrl = `${window.location.origin}/#invoice?id=${completedBill.id}`;
+    msg += `\n*View Digital Receipt & Download PDF:*\n${billUrl}\n\n`;
+    
     if (billingQuote) {
       msg += `*Health Tip of the Day:* "${billingQuote}"\n\n`;
     }
@@ -1461,11 +1575,10 @@ export default function StoreManager({
     
     if (whatsappPhone.trim()) {
       const sanitized = whatsappPhone.replace(/\D/g, '');
-      // Check if it already has country code, otherwise append 91 for India context (₹ currency)
       const phoneWithCode = (sanitized.length > 10) ? sanitized : `91${sanitized}`;
       url = `https://api.whatsapp.com/send?phone=${phoneWithCode}&text=${text}`;
     }
-    window.open(url, '_blank');
+    return url;
   };
 
   const handleDownloadPDF = (customBill?: any) => {
@@ -2865,12 +2978,14 @@ export default function StoreManager({
                             className="w-full rounded-xl border border-slate-200 py-2.5 px-3.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50/50"
                           />
                         </div>
-                        <button
-                          onClick={handleSendWhatsApp}
-                          className="bg-[#25D366] text-white hover:bg-[#128C7E] px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all shadow-sm shrink-0 cursor-pointer flex items-center gap-1"
+                        <a
+                          href={getWhatsAppShareUrl()}
+                          target="_blank"
+                          referrerPolicy="no-referrer"
+                          className="bg-[#25D366] text-white hover:bg-[#128C7E] px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all shadow-sm shrink-0 cursor-pointer flex items-center justify-center gap-1"
                         >
                           Send Bill
-                        </button>
+                        </a>
                       </div>
                     </div>
 
@@ -7074,6 +7189,120 @@ export default function StoreManager({
                     })}
                   </div>
 
+                  {/* Promo & Discount Console */}
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 text-left space-y-3">
+                    <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400">
+                      Offers & Custom Billing Discounts
+                    </span>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Left: Promo Code Entry & Quick Select */}
+                      <div className="space-y-2">
+                        <label className="block text-[10px] font-bold text-slate-600">Apply Campaign Coupon</label>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            placeholder="Enter Code (e.g. GREEN15)"
+                            value={promoCodeInput}
+                            onChange={(e) => setPromoCodeInput(e.target.value)}
+                            className="flex-1 rounded-xl bg-white border border-slate-200 px-3 py-1.5 text-xs font-mono font-bold uppercase focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                          {appliedOffer ? (
+                            <button
+                              type="button"
+                              onClick={handleRemovePromoCode}
+                              className="bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-300 transition cursor-pointer"
+                            >
+                              Remove
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleApplyPromoCode(promoCodeInput)}
+                              className="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-indigo-700 transition cursor-pointer shadow-sm"
+                            >
+                              Apply
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Promo Feedback */}
+                        {promoFeedback.text && (
+                          <p className={`text-[10px] font-bold ${
+                            promoFeedback.type === 'success' ? 'text-emerald-600' : 'text-red-500'
+                          }`}>
+                            {promoFeedback.text}
+                          </p>
+                        )}
+
+                        {/* Quick Promos Carousel/List */}
+                        {offers && offers.filter(o => o.isActive).length > 0 && (
+                          <div className="space-y-1">
+                            <span className="block text-[8px] font-bold text-slate-400 uppercase">Available Branch Promos</span>
+                            <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
+                              {offers.filter(o => o.isActive).map(promo => (
+                                <button
+                                  key={promo.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setPromoCodeInput(promo.code);
+                                    handleApplyPromoCode(promo.code);
+                                  }}
+                                  className={`px-2 py-1 rounded-lg text-[9px] font-mono font-bold border transition ${
+                                    appliedOffer?.id === promo.id
+                                      ? 'bg-indigo-100 border-indigo-300 text-indigo-800'
+                                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                  title={promo.description}
+                                >
+                                  {promo.code} ({promo.type === 'percentage' ? `${promo.value}%` : `₹${promo.value}`})
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right: Manual Overrides */}
+                      <div className="space-y-2 border-t md:border-t-0 md:border-l border-slate-200/80 pt-3 md:pt-0 md:pl-4">
+                        <label className="block text-[10px] font-bold text-slate-600">Manual Discount Override</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <span className="block text-[8px] font-extrabold uppercase text-slate-400 mb-1">Percentage (%)</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={manualDiscountPercent || ''}
+                              onChange={(e) => {
+                                setManualDiscountPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)));
+                              }}
+                              placeholder="0%"
+                              className="w-full rounded-xl bg-white border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <span className="block text-[8px] font-extrabold uppercase text-slate-400 mb-1">Flat Cash (₹)</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={manualDiscountFlat || ''}
+                              onChange={(e) => {
+                                setManualDiscountFlat(Math.max(0, parseFloat(e.target.value) || 0));
+                              }}
+                              placeholder="₹0"
+                              className="w-full rounded-xl bg-white border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-semibold leading-relaxed">
+                          Enter custom value to apply discretionary discounts directly on the invoice.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Payment Method Selector */}
                   <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/60 text-left space-y-2">
                     <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">
@@ -7108,34 +7337,65 @@ export default function StoreManager({
             </div>
 
             {/* Footer containing Total amount & Action Buttons */}
-            {Object.keys(posCart).length > 0 && (
-              <div className="border-t border-slate-100 pt-4 mt-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
-                <div className="text-center sm:text-left">
-                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Grand Invoice Sum</span>
-                  <div className="text-2xl font-black text-emerald-600 font-mono mt-0.5">
-                    ₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)}
+            {Object.keys(posCart).length > 0 && (() => {
+              const subtotal = Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0);
+              let promoDisc = 0;
+              if (appliedOffer) {
+                if (appliedOffer.type === 'percentage') {
+                  promoDisc = (subtotal * appliedOffer.value) / 100;
+                } else {
+                  promoDisc = Math.min(subtotal, appliedOffer.value);
+                }
+              }
+              let manDisc = 0;
+              if (manualDiscountPercent > 0) {
+                manDisc += (subtotal * manualDiscountPercent) / 100;
+              }
+              if (manualDiscountFlat > 0) {
+                manDisc += manualDiscountFlat;
+              }
+              const totalDiscount = Math.min(subtotal, promoDisc + manDisc);
+              const netTotal = subtotal - totalDiscount;
+
+              return (
+                <div className="border-t border-slate-100 pt-4 mt-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
+                  <div className="text-center sm:text-left space-y-1">
+                    <div className="flex items-center justify-center sm:justify-start gap-2 text-[10px] font-bold text-slate-400">
+                      <span>Subtotal: ₹{subtotal.toFixed(2)}</span>
+                      {totalDiscount > 0 && (
+                        <span className="text-rose-500 font-extrabold">
+                          (Discount: -₹{totalDiscount.toFixed(2)})
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-baseline justify-center sm:justify-start gap-1.5">
+                      <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Net Payable:</span>
+                      <div className="text-2xl font-black text-emerald-600 font-mono">
+                        ₹{netTotal.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={handleClearPosCart}
+                      className="flex-1 sm:flex-initial bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl px-4 py-3 text-xs transition-colors cursor-pointer font-bold"
+                    >
+                      CLEAR CART
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePosCheckoutSubmit}
+                      className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl px-6 py-3 text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-emerald-200 hover:scale-[1.01]"
+                    >
+                      <span>COMPLETE SALE</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
-
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <button
-                    type="button"
-                    onClick={handleClearPosCart}
-                    className="flex-1 sm:flex-initial bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl px-4 py-3 text-xs transition-colors cursor-pointer font-bold"
-                  >
-                    CLEAR CART
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handlePosCheckoutSubmit}
-                    className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl px-6 py-3 text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-emerald-200 hover:scale-[1.01]"
-                  >
-                    <span>COMPLETE SALE</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}

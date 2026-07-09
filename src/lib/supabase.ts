@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Store, Sale, Purchase, InventoryItem, Requirement, SupabaseConfig, Supplier, PurchaseOrder, CustomerOrder, MasterCrop, StaffMember, AttendanceRecord, CompanyOfficial } from '../types';
+import { Store, Sale, Purchase, InventoryItem, Requirement, SupabaseConfig, Supplier, PurchaseOrder, CustomerOrder, MasterCrop, StaffMember, AttendanceRecord, CompanyOfficial, OfferPromo } from '../types';
 
 // Default master crops/inventory reference
 const DEFAULT_MASTER_CROPS: MasterCrop[] = [
@@ -556,6 +556,10 @@ export async function dbSyncLocalCache(): Promise<{ success: boolean; syncedCoun
 export async function dbGetStores(): Promise<Store[]> {
   const localStr = localStorage.getItem('fg_stores');
   const localStores: Store[] = localStr ? JSON.parse(localStr) : [];
+  
+  // Load tombstones to prevent resurrecting deleted stores
+  const deletedStr = localStorage.getItem('fg_deleted_stores') || '[]';
+  const deletedIds: string[] = JSON.parse(deletedStr);
 
   try {
     const res = await fetch("/api/stores");
@@ -565,11 +569,16 @@ export async function dbGetStores(): Promise<Store[]> {
     // Start with local stores to preserve custom user stores and modifications
     const mergedStoresMap = new Map<string, Store>();
     for (const s of localStores) {
-      mergedStoresMap.set(s.id, s);
+      if (!deletedIds.includes(s.id)) {
+        mergedStoresMap.set(s.id, s);
+      }
     }
 
     // Merge in server stores
     for (const serverStore of serverStores) {
+      if (deletedIds.includes(serverStore.id)) {
+        continue; // strictly skip deleted stores
+      }
       const existing = mergedStoresMap.get(serverStore.id);
       if (!existing) {
         // If a default store from server is missing locally, add it
@@ -587,6 +596,7 @@ export async function dbGetStores(): Promise<Store[]> {
     // Proactively upload any custom local stores (not present on the server) to the server 
     // so that the server remains in sync and has all the custom stores.
     for (const localStore of localStores) {
+      if (deletedIds.includes(localStore.id)) continue;
       const onServer = serverStores.some(s => s.id === localStore.id);
       if (!onServer) {
         try {
@@ -605,11 +615,19 @@ export async function dbGetStores(): Promise<Store[]> {
     return finalStores;
   } catch (e) {
     console.warn('Backend fetch failed, falling back to local storage:', e);
-    return localStores;
+    return localStores.filter(s => !deletedIds.includes(s.id));
   }
 }
 
 export async function dbAddStore(store: Store): Promise<Store> {
+  // Remove from deleted tombstones list so it can be added again
+  try {
+    const deletedStr = localStorage.getItem('fg_deleted_stores') || '[]';
+    const deletedIds: string[] = JSON.parse(deletedStr);
+    const updatedDeleted = deletedIds.filter(id => id !== store.id);
+    localStorage.setItem('fg_deleted_stores', JSON.stringify(updatedDeleted));
+  } catch (e) {}
+
   // Set initial version if not present
   if (store.version === undefined) {
     store.version = 1;
@@ -622,6 +640,9 @@ export async function dbAddStore(store: Store): Promise<Store> {
     stores.push(store);
     localStorage.setItem('fg_stores', JSON.stringify(stores));
   }
+  
+  // Also clear cache
+  localStorage.removeItem('fg_cached_stores');
 
   try {
     const res = await fetch("/api/stores", {
@@ -673,11 +694,24 @@ export async function dbUpdateStore(store: Store): Promise<Store> {
 }
 
 export async function dbDeleteStore(id: string): Promise<void> {
+  // Save tombstone
+  try {
+    const deletedStr = localStorage.getItem('fg_deleted_stores') || '[]';
+    const deletedIds: string[] = JSON.parse(deletedStr);
+    if (!deletedIds.includes(id)) {
+      deletedIds.push(id);
+      localStorage.setItem('fg_deleted_stores', JSON.stringify(deletedIds));
+    }
+  } catch (e) {}
+
   // Always update local storage first
   const local = localStorage.getItem('fg_stores');
   const stores = local ? JSON.parse(local) : [];
   const filtered = stores.filter((s: Store) => s.id !== id);
   localStorage.setItem('fg_stores', JSON.stringify(filtered));
+
+  // Also remove from fg_cached_stores
+  localStorage.removeItem('fg_cached_stores');
 
   try {
     const res = await fetch(`/api/stores/${id}`, {
@@ -719,6 +753,18 @@ export async function dbAddSale(sale: Sale): Promise<Sale> {
   // Deduct stock from inventory first
   await dbAdjustInventoryStock(sale.storeId, sale.vegetableName, -sale.quantity);
 
+  // 1. Always write to local storage first
+  try {
+    const local = localStorage.getItem('fg_sales');
+    const sales = local ? JSON.parse(local) : [];
+    if (!sales.some((s: Sale) => s.id === sale.id)) {
+      sales.unshift(sale);
+      localStorage.setItem('fg_sales', JSON.stringify(sales));
+    }
+  } catch (err) {
+    console.warn('Failed to update local sales cache:', err);
+  }
+
   const config = getSupabaseConfig();
   if (config.isConnected && supabaseInstance) {
     try {
@@ -737,10 +783,50 @@ export async function dbAddSale(sale: Sale): Promise<Sale> {
     dbAddUnsyncedOp('sales', 'insert', sale);
   }
 
-  const sales = await dbGetSales();
-  sales.unshift(sale);
-  localStorage.setItem('fg_sales', JSON.stringify(sales));
   return sale;
+}
+
+export async function dbAddSales(salesList: Sale[]): Promise<Sale[]> {
+  // Deduct stock from inventory first for all
+  for (const sale of salesList) {
+    await dbAdjustInventoryStock(sale.storeId, sale.vegetableName, -sale.quantity);
+  }
+
+  // 1. Always write to local storage first
+  try {
+    const local = localStorage.getItem('fg_sales');
+    const sales = local ? JSON.parse(local) : [];
+    const filteredNewSales = salesList.filter(newS => !sales.some((s: Sale) => s.id === newS.id));
+    if (filteredNewSales.length > 0) {
+      const updated = [...filteredNewSales, ...sales];
+      localStorage.setItem('fg_sales', JSON.stringify(updated));
+    }
+  } catch (err) {
+    console.warn('Failed to update local sales cache in batch:', err);
+  }
+
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { data, error } = await supabaseInstance
+        .from('sales')
+        .insert(salesList)
+        .select();
+      if (error) throw error;
+      return data as Sale[];
+    } catch (e) {
+      console.warn('Supabase batch save sales failed, writing to local storage:', e);
+      for (const sale of salesList) {
+        dbAddUnsyncedOp('sales', 'insert', sale);
+      }
+    }
+  } else {
+    for (const sale of salesList) {
+      dbAddUnsyncedOp('sales', 'insert', sale);
+    }
+  }
+
+  return salesList;
 }
 
 export async function dbDeleteSale(id: string): Promise<void> {
@@ -1964,6 +2050,112 @@ export async function dbDeleteCompanyOfficial(id: string): Promise<void> {
   const officialsList = await dbGetCompanyOfficials();
   const filtered = officialsList.filter(o => o.id !== id);
   localStorage.setItem('fg_company_officials', JSON.stringify(filtered));
+}
+
+// OFFERS & PROMOS
+export async function dbGetOffers(): Promise<OfferPromo[]> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { data, error } = await supabaseInstance
+        .from('offers')
+        .select('*')
+        .order('createdAt', { ascending: false });
+      if (error) throw error;
+      return data as OfferPromo[];
+    } catch (e) {
+      console.warn('Supabase fetch offers failed, falling back to local storage:', e);
+    }
+  }
+
+  const local = localStorage.getItem('fg_offers');
+  if (!local) {
+    // Return standard initial offers for demonstration
+    const initialOffers: OfferPromo[] = [
+      { id: 'off-1', title: 'Monsoon Green Veggie Festival', code: 'MONSOON10', type: 'percentage', value: 10, minOrderAmount: 200, isActive: true, description: 'Get 10% discount on all leafy and fresh organic vegetables.', createdAt: new Date().toISOString() },
+      { id: 'off-2', title: 'Tomato Direct Mega Sale', code: 'TOMATO20', type: 'flat', value: 20, minOrderAmount: 150, isActive: true, description: 'Get flat INR 20 off on fresh handpicked farm tomato orders.', createdAt: new Date().toISOString() }
+    ];
+    localStorage.setItem('fg_offers', JSON.stringify(initialOffers));
+    return initialOffers;
+  }
+  return JSON.parse(local);
+}
+
+export async function dbAddOffer(offer: OfferPromo): Promise<OfferPromo> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { data, error } = await supabaseInstance
+        .from('offers')
+        .insert([offer])
+        .select()
+        .single();
+      if (error) throw error;
+      return data as OfferPromo;
+    } catch (e) {
+      console.warn('Supabase save offer failed, writing to local storage:', e);
+      dbAddUnsyncedOp('offers', 'insert', offer);
+    }
+  } else {
+    dbAddUnsyncedOp('offers', 'insert', offer);
+  }
+
+  const offers = await dbGetOffers();
+  offers.unshift(offer);
+  localStorage.setItem('fg_offers', JSON.stringify(offers));
+  return offer;
+}
+
+export async function dbUpdateOffer(offer: OfferPromo): Promise<OfferPromo> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { data, error } = await supabaseInstance
+        .from('offers')
+        .update(offer)
+        .eq('id', offer.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as OfferPromo;
+    } catch (e) {
+      console.warn('Supabase update offer failed, writing to local storage:', e);
+      dbAddUnsyncedOp('offers', 'update', offer);
+    }
+  } else {
+    dbAddUnsyncedOp('offers', 'update', offer);
+  }
+
+  const offers = await dbGetOffers();
+  const index = offers.findIndex(o => o.id === offer.id);
+  if (index !== -1) {
+    offers[index] = offer;
+    localStorage.setItem('fg_offers', JSON.stringify(offers));
+  }
+  return offer;
+}
+
+export async function dbDeleteOffer(id: string): Promise<void> {
+  const config = getSupabaseConfig();
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { error } = await supabaseInstance
+        .from('offers')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return;
+    } catch (e) {
+      console.warn('Supabase delete offer failed, writing to local storage:', e);
+      dbAddUnsyncedOp('offers', 'delete', { id });
+    }
+  } else {
+    dbAddUnsyncedOp('offers', 'delete', { id });
+  }
+
+  const offers = await dbGetOffers();
+  const filtered = offers.filter(o => o.id !== id);
+  localStorage.setItem('fg_offers', JSON.stringify(filtered));
 }
 
 

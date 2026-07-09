@@ -37,7 +37,8 @@ import {
   getUserRole,
   StaffMember,
   AttendanceRecord,
-  CompanyOfficial
+  CompanyOfficial,
+  OfferPromo
 } from '../types';
 import { 
   subscribeToOrders, 
@@ -53,6 +54,7 @@ import {
   dbDeleteStore, 
   dbGetSales, 
   dbAddSale, 
+  dbAddSales,
   dbDeleteSale, 
   dbGetPurchases, 
   dbAddPurchase, 
@@ -91,7 +93,11 @@ import {
   dbGetCompanyOfficials,
   dbAddCompanyOfficial,
   dbUpdateCompanyOfficial,
-  dbDeleteCompanyOfficial
+  dbDeleteCompanyOfficial,
+  dbGetOffers,
+  dbAddOffer,
+  dbUpdateOffer,
+  dbDeleteOffer
 } from '../lib/supabase';
 
 // Component imports
@@ -124,7 +130,13 @@ const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   headOfficeLocation: 'FarmersGate Corporate HQ, Sector 1, Bangalore',
   headOfficeLat: 12.9716,
   headOfficeLng: 77.5946,
-  activeCity: 'Bengaluru'
+  activeCity: 'Bengaluru',
+  maintenanceModeEnabled: false,
+  maintenanceAnnouncementText: "Scheduled Server Optimization is currently in progress. Fresh delivery orders will resume shortly. Thank you for your patience!",
+  enablePromoCodeCart: true,
+  minimumOrderValue: 0,
+  loyaltyPointsPercentage: 1,
+  enableDigitalInvoicingOnly: false
 };
 
 export default function ManagementSuite({ user, isStorePosPortal, appVersion }: { user: any; isStorePosPortal?: boolean; appVersion?: string }) {
@@ -233,6 +245,13 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     } catch (e) {}
     return [];
   });
+  const [offers, setOffers] = useState<OfferPromo[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_offers');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
   const [cpanelSettings, setCpanelSettings] = useState<CpanelSettings>(DEFAULT_CPANEL_SETTINGS);
   const [dbConfig, setDbConfig] = useState<SupabaseConfig>({ supabaseUrl: '', supabaseAnonKey: '', isConnected: false });
 
@@ -271,7 +290,8 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
         fetchedCrops,
         fetchedStaff,
         fetchedAttendance,
-        fetchedOfficials
+        fetchedOfficials,
+        fetchedOffers
       ] = await Promise.all([
         dbGetStores(),
         dbGetSales(),
@@ -284,28 +304,46 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
         dbGetMasterCrops(),
         dbGetStaffMembers(),
         dbGetAttendanceRecords(),
-        dbGetCompanyOfficials()
+        dbGetCompanyOfficials(),
+        dbGetOffers()
       ]);
       const config = getSupabaseConfig();
 
-      setStores(fetchedStores);
+      let finalStores = fetchedStores;
+      if (fetchedStores.length === 0) {
+        const defaultStore: Store = {
+          id: 'store-1',
+          name: "Farmer's Gate - Patiala Model Town",
+          location: "Model Town, Patiala, Punjab - 147001",
+          whatsappNumber: "919876543210",
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          password: "patiala123",
+          lat: 30.3398,
+          lng: 76.3869
+        };
+        await dbAddStore(defaultStore);
+        finalStores = [defaultStore];
+      }
+
+      setStores(finalStores);
       try {
-        localStorage.setItem('fg_cached_stores', JSON.stringify(fetchedStores));
+        localStorage.setItem('fg_cached_stores', JSON.stringify(finalStores));
       } catch (e) {}
       
       if (selectedStore) {
-        const updatedSelected = fetchedStores.find(s => s.id === selectedStore.id);
+        const updatedSelected = finalStores.find(s => s.id === selectedStore.id);
         if (updatedSelected) {
           setSelectedStore(updatedSelected);
         }
       }
 
-      if (isStorePosPortal && fetchedStores.length > 0) {
+      if (isStorePosPortal && finalStores.length > 0) {
         const params = new URLSearchParams(window.location.search);
         const queryStoreId = params.get('storeId');
         const match = queryStoreId 
-          ? fetchedStores.find(st => st.id === queryStoreId) 
-          : fetchedStores.find(st => st.isActive) || fetchedStores[0];
+          ? finalStores.find(st => st.id === queryStoreId) 
+          : finalStores.find(st => st.isActive) || finalStores[0];
         
         if (match) {
           setSelectedStore(match);
@@ -323,6 +361,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
       setStaff(fetchedStaff);
       setAttendance(fetchedAttendance);
       setOfficials(fetchedOfficials);
+      setOffers(fetchedOffers);
       setDbConfig(config);
 
       // Load settings and ads from localStorage if exist
@@ -353,8 +392,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   };
 
   useEffect(() => {
-    const isInitial = stores.length === 0;
-    loadAllData(!isInitial);
+    loadAllData(true);
   }, [appVersion]);
 
   const loadAllDataRef = useRef(loadAllData);
@@ -388,6 +426,73 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     };
   }, []);
 
+  // Synchronize data states to localStorage for robust offline persistence & fast loading
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_sales', JSON.stringify(sales));
+    } catch (e) {}
+  }, [sales]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_purchases', JSON.stringify(purchases));
+    } catch (e) {}
+  }, [purchases]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_inventory', JSON.stringify(inventory));
+    } catch (e) {}
+  }, [inventory]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_requirements', JSON.stringify(requirements));
+    } catch (e) {}
+  }, [requirements]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_suppliers', JSON.stringify(suppliers));
+    } catch (e) {}
+  }, [suppliers]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_purchase_orders', JSON.stringify(purchaseOrders));
+    } catch (e) {}
+  }, [purchaseOrders]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_customer_orders', JSON.stringify(customerOrders));
+    } catch (e) {}
+  }, [customerOrders]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_master_crops', JSON.stringify(masterCrops));
+    } catch (e) {}
+  }, [masterCrops]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_staff_members', JSON.stringify(staff));
+    } catch (e) {}
+  }, [staff]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_attendance_records', JSON.stringify(attendance));
+    } catch (e) {}
+  }, [attendance]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_offers', JSON.stringify(offers));
+    } catch (e) {}
+  }, [offers]);
+
   const handleSync = async () => {
     setSyncing(true);
     await dbSyncLocalCache();
@@ -411,7 +516,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     }
   };
 
-  const triggerDataUpdate = async (silent = false) => {
+  const triggerDataUpdate = async (silent = true) => {
     await loadAllData(silent);
     try {
       fetch('/api/app-version/increment', { method: 'POST' })
@@ -461,8 +566,12 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   };
 
   // Sales
-  const handleAddSale = async (sale: Sale) => {
-    await dbAddSale(sale);
+  const handleAddSale = async (sale: Sale | Sale[]) => {
+    if (Array.isArray(sale)) {
+      await dbAddSales(sale);
+    } else {
+      await dbAddSale(sale);
+    }
     await triggerDataUpdate();
   };
 
@@ -541,6 +650,22 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     await triggerDataUpdate();
   };
 
+  // Offers Handlers
+  const handleAddOffer = async (offer: OfferPromo) => {
+    await dbAddOffer(offer);
+    await triggerDataUpdate();
+  };
+
+  const handleUpdateOffer = async (offer: OfferPromo) => {
+    await dbUpdateOffer(offer);
+    await triggerDataUpdate();
+  };
+
+  const handleDeleteOffer = async (id: string) => {
+    await dbDeleteOffer(id);
+    await triggerDataUpdate();
+  };
+
   // Suppliers
   const handleAddSupplier = async (s: Supplier) => {
     await dbAddSupplier(s);
@@ -592,31 +717,18 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     };
     await dbUpdateCustomerOrder(updatedOrder);
 
-    // 2. Reduce the quantity from store inventory
-    for (const item of order.items) {
-      const existing = inventory.find(inv => inv.storeId === order.storeId && inv.vegetableName === item.vegetableName);
-      if (existing) {
-        const newQty = Math.max(0, Number(existing.quantity) - Number(item.quantity));
-        await dbAddOrUpdateInventoryItem({
-          ...existing,
-          quantity: newQty,
-          lastUpdated: new Date().toISOString()
-        });
-      }
-    }
+    // 2. Record Sale Transactions for each item (this automatically deducts weights from current stock in dbAddSales)
+    const salesList: Sale[] = order.items.map((item, idx) => ({
+      id: `sale-${Date.now()}-${idx}-${Math.floor(Math.random() * 100)}`,
+      storeId: order.storeId,
+      vegetableName: item.vegetableName,
+      quantity: item.quantity,
+      pricePerKg: item.pricePerKg,
+      totalPrice: item.quantity * item.pricePerKg,
+      saleDate: new Date().toISOString()
+    }));
 
-    // 3. Record a Sale Transaction for each item
-    for (const item of order.items) {
-      await dbAddSale({
-        id: `sale-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        storeId: order.storeId,
-        vegetableName: item.vegetableName,
-        quantity: item.quantity,
-        pricePerKg: item.pricePerKg,
-        totalPrice: item.quantity * item.pricePerKg,
-        saleDate: new Date().toISOString()
-      });
-    }
+    await dbAddSales(salesList);
 
     await triggerDataUpdate();
   };
@@ -828,6 +940,10 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
               onDeleteMasterCrop={handleDeleteMasterCrop}
               firebaseOrders={firebaseOrders}
               firebaseNotifications={firebaseNotifications}
+              offers={offers}
+              onAddOffer={handleAddOffer}
+              onUpdateOffer={handleUpdateOffer}
+              onDeleteOffer={handleDeleteOffer}
             />
           )}
 
@@ -842,6 +958,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
                   requirements={requirements.filter(r => r.storeId === selectedStore.id)}
                   customerOrders={customerOrders.filter(co => co.storeId === selectedStore.id)}
                   role="Admin"
+                  offers={offers}
                   onAddSale={handleAddSale}
                   onDeleteSale={handleDeleteSale}
                   onAddPurchase={handleAddPurchase}

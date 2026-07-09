@@ -139,6 +139,7 @@ export default function AdminPanel({
   const handleDownloadBackup = () => {
     const backupKeys = [
       'fg_stores',
+      'fg_cached_stores',
       'fg_sales',
       'fg_purchases',
       'fg_requirements',
@@ -150,6 +151,8 @@ export default function AdminPanel({
       'fg_staff_members',
       'fg_attendance_records',
       'fg_company_officials',
+      'fg_offers',
+      'fg_bills',
       'farmersgate_cpanel_settings'
     ];
     const backupData: Record<string, any> = {
@@ -2548,6 +2551,142 @@ export default function AdminPanel({
                 <strong>Indian Market Optimization:</strong> Setting these custom coordinates updates the Geofence center point dynamically.
                 Our shoppers and executive riders will automatically route dispatch orders relative to this Indian hub coordinates, ensuring correct distance estimations.
               </p>
+            </div>
+
+            {/* Advanced Controlling Options & Operations Group */}
+            <div className="border-t border-zinc-150 pt-5 mt-5 space-y-4">
+              <div className="flex items-center gap-3 border-b border-zinc-100 pb-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <Sliders className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-zinc-800 text-sm text-left">Advanced Corporate Controls & Feature Flags</h4>
+                  <p className="text-[11px] text-zinc-400 text-left">Configure global checkout restrictions, loyalty multiplier coefficients, and emergency maintenance announcers.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {/* Maintenance Mode Alert switch */}
+                <div className="rounded-xl border border-zinc-100 p-4 bg-zinc-50/30 space-y-3 text-left">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="block text-xs font-black uppercase text-zinc-700">Emergency Maintenance</span>
+                      <span className="block text-[10px] text-zinc-400 mt-0.5">Toggle maintenance alert band on customer portal.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateCpanelSettings({
+                        ...cpanelSettings,
+                        maintenanceModeEnabled: !cpanelSettings.maintenanceModeEnabled
+                      })}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        cpanelSettings.maintenanceModeEnabled ? 'bg-amber-600' : 'bg-zinc-200'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        cpanelSettings.maintenanceModeEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+                  {cpanelSettings.maintenanceModeEnabled && (
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-black uppercase text-zinc-400">Announcement Marquee Text</label>
+                      <textarea
+                        value={cpanelSettings.maintenanceAnnouncementText || ''}
+                        onChange={(e) => onUpdateCpanelSettings({
+                          ...cpanelSettings,
+                          maintenanceAnnouncementText: e.target.value
+                        })}
+                        rows={2}
+                        className="w-full text-xs rounded-lg border border-zinc-200 p-2 bg-white text-zinc-700 font-medium"
+                        placeholder="Type alert announcement here..."
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Promo Code Toggle */}
+                <div className="rounded-xl border border-zinc-100 p-4 bg-zinc-50/30 space-y-3 text-left">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="block text-xs font-black uppercase text-zinc-700">Promo Code Discounts</span>
+                      <span className="block text-[10px] text-zinc-400 mt-0.5">Allow shoppers to redeem seasonal promotional coupon codes during checkout.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateCpanelSettings({
+                        ...cpanelSettings,
+                        enablePromoCodeCart: !cpanelSettings.enablePromoCodeCart
+                      })}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        cpanelSettings.enablePromoCodeCart ?? true ? 'bg-emerald-600' : 'bg-zinc-200'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        cpanelSettings.enablePromoCodeCart ?? true ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Paperless Digital Invoicing only toggle */}
+                <div className="rounded-xl border border-zinc-100 p-4 bg-zinc-50/30 space-y-3 text-left">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="block text-xs font-black uppercase text-zinc-700">Paperless Invoices Only</span>
+                      <span className="block text-[10px] text-zinc-400 mt-0.5">Enforce green digital invoices instead of physical print prompts.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateCpanelSettings({
+                        ...cpanelSettings,
+                        enableDigitalInvoicingOnly: !cpanelSettings.enableDigitalInvoicingOnly
+                      })}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        cpanelSettings.enableDigitalInvoicingOnly ? 'bg-emerald-600' : 'bg-zinc-200'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        cpanelSettings.enableDigitalInvoicingOnly ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Minimum Checkout value input */}
+                <div className="rounded-xl border border-zinc-100 p-4 bg-zinc-50/30 space-y-2 text-left">
+                  <label className="block text-xs font-black uppercase text-zinc-700">Min Checkout Value ({cpanelSettings.currencySymbol})</label>
+                  <span className="block text-[10px] text-zinc-400 mb-1">Set minimum basket value needed to place fresh produce orders. Set 0 to disable.</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={cpanelSettings.minimumOrderValue ?? 0}
+                    onChange={(e) => onUpdateCpanelSettings({
+                      ...cpanelSettings,
+                      minimumOrderValue: Math.max(0, parseInt(e.target.value) || 0)
+                    })}
+                    className="w-full rounded-lg border border-zinc-200 p-2 text-xs font-mono bg-white text-zinc-800"
+                  />
+                </div>
+
+                {/* Loyalty Point Cashback Coefficient */}
+                <div className="rounded-xl border border-zinc-100 p-4 bg-zinc-50/30 space-y-2 text-left">
+                  <label className="block text-xs font-black uppercase text-zinc-700">Loyalty Cashback Points (%)</label>
+                  <span className="block text-[10px] text-zinc-400 mb-1">Percentage of total checkout value rewarded back to shoppers as loyalty ledger credits.</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.5"
+                    value={cpanelSettings.loyaltyPointsPercentage ?? 1}
+                    onChange={(e) => onUpdateCpanelSettings({
+                      ...cpanelSettings,
+                      loyaltyPointsPercentage: Math.max(0, parseFloat(e.target.value) || 0)
+                    })}
+                    className="w-full rounded-lg border border-zinc-200 p-2 text-xs font-mono bg-white text-zinc-800"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 

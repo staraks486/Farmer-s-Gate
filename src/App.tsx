@@ -20,6 +20,7 @@ import ManagementSuite from './components/ManagementSuite';
 import ExecutivePortal from './components/ExecutivePortal';
 import FarmersGateLogo from './components/FarmersGateLogo';
 import InternalChatDrawer from './components/InternalChatDrawer';
+import PublicInvoicePage from './components/PublicInvoicePage';
 import { auth, seedProductsIfNeeded } from './lib/firebase';
 import { 
   onAuthStateChanged, 
@@ -33,6 +34,7 @@ export default function App() {
   const [activePortal, setActivePortal] = useState<'customer' | 'partner' | 'management' | 'executive' | 'store_pos'>('customer');
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [appVersion, setAppVersion] = useState('v2.3.0');
+  const [invoiceId, setInvoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchVersion = async () => {
@@ -454,6 +456,16 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const portalParam = params.get('portal')?.toLowerCase();
 
+      if (hash.startsWith('#invoice')) {
+        const match = window.location.hash.match(/[?&]id=([^&]+)/i);
+        if (match) {
+          setInvoiceId(match[1]);
+          return;
+        }
+      } else {
+        setInvoiceId(null);
+      }
+
       let targetPortal: 'customer' | 'partner' | 'management' | 'executive' | 'store_pos' | null = null;
 
       if (hash.startsWith('#customer') || portalParam === 'customer') {
@@ -610,6 +622,18 @@ export default function App() {
     );
   }
 
+  if (invoiceId) {
+    return (
+      <PublicInvoicePage 
+        invoiceId={invoiceId} 
+        onClose={() => {
+          setInvoiceId(null);
+          window.location.hash = 'customer';
+        }} 
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f4fbf7] flex flex-col font-sans select-none antialiased text-slate-800 relative">
       
@@ -688,7 +712,7 @@ export default function App() {
               </p>
             </div>
             
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full pb-1 lg:pb-0 flex-nowrap">
               {(!user || userRole.allowedPortals.includes('customer')) && (
                 <button 
                   onClick={() => changePortal('customer')}

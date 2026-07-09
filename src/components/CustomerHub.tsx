@@ -28,7 +28,9 @@ import {
   UserPlus,
   RefreshCw,
   Wallet,
-  Star
+  Star,
+  BookOpen,
+  Truck
 } from 'lucide-react';
 import { 
   auth, 
@@ -2206,8 +2208,66 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
         )}
       </AnimatePresence>
 
+      {/* Responsive Bottom Navigation Bar for Mobile Devices */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-150 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-6 py-2 flex justify-around items-center md:hidden">
+        <button
+          onClick={() => { setActiveTab('shop'); setSelectedCategory('All'); }}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition ${
+            activeTab === 'shop' && selectedCategory !== 'Recipes'
+              ? 'text-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <ShoppingBag className="h-4.5 w-4.5" />
+          <span className="text-[9px] font-black uppercase tracking-wider">Shop</span>
+        </button>
+
+        <button
+          onClick={() => { setActiveTab('shop'); setSelectedCategory('Recipes'); }}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition ${
+            selectedCategory === 'Recipes'
+              ? 'text-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <BookOpen className="h-4.5 w-4.5" />
+          <span className="text-[9px] font-black uppercase tracking-wider">Recipes</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('track')}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition relative ${
+            activeTab === 'track'
+              ? 'text-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Truck className="h-4.5 w-4.5" />
+          {customerOrders.length > 0 && (
+            <span className="absolute -top-1 -right-2 h-4 w-4 rounded-full bg-red-500 text-[8px] font-black flex items-center justify-center text-white border border-white">
+              {customerOrders.length}
+            </span>
+          )}
+          <span className="text-[9px] font-black uppercase tracking-wider">Track</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('profile');
+          }}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition ${
+            activeTab === 'profile'
+              ? 'text-emerald-600 font-extrabold'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <User className="h-4.5 w-4.5" />
+          <span className="text-[9px] font-black uppercase tracking-wider">Account</span>
+        </button>
+      </div>
+
       {/* Subtle testing utility footer (Not an official corporate public link) */}
-      <div className="bg-slate-50 border-t border-slate-100 py-6 px-4 mt-12 shrink-0 text-center">
+      <div className="bg-slate-50 border-t border-slate-100 py-6 px-4 mt-12 shrink-0 text-center pb-24 md:pb-6">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider gap-3">
           <div>
             <span>© 2026 FarmersGate Express • Fresh & Fast</span>
