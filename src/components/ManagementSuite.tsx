@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   BarChart3, 
   Building2, 
@@ -172,7 +172,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  // Load all data
+  // Load all data with highly optimized Promise.all parallel execution for a smooth, lag-free experience
   const loadAllData = async (silent = false) => {
     if (!silent) {
       setLoading(true);
@@ -180,18 +180,33 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
       setSyncing(true);
     }
     try {
-      const fetchedStores = await dbGetStores();
-      const fetchedSales = await dbGetSales();
-      const fetchedPurchases = await dbGetPurchases();
-      const fetchedInventory = await dbGetInventory();
-      const fetchedRequirements = await dbGetRequirements();
-      const fetchedSuppliers = await dbGetSuppliers();
-      const fetchedPOs = await dbGetPurchaseOrders();
-      const fetchedCOs = await dbGetCustomerOrders();
-      const fetchedCrops = await dbGetMasterCrops();
-      const fetchedStaff = await dbGetStaffMembers();
-      const fetchedAttendance = await dbGetAttendanceRecords();
-      const fetchedOfficials = await dbGetCompanyOfficials();
+      const [
+        fetchedStores,
+        fetchedSales,
+        fetchedPurchases,
+        fetchedInventory,
+        fetchedRequirements,
+        fetchedSuppliers,
+        fetchedPOs,
+        fetchedCOs,
+        fetchedCrops,
+        fetchedStaff,
+        fetchedAttendance,
+        fetchedOfficials
+      ] = await Promise.all([
+        dbGetStores(),
+        dbGetSales(),
+        dbGetPurchases(),
+        dbGetInventory(),
+        dbGetRequirements(),
+        dbGetSuppliers(),
+        dbGetPurchaseOrders(),
+        dbGetCustomerOrders(),
+        dbGetMasterCrops(),
+        dbGetStaffMembers(),
+        dbGetAttendanceRecords(),
+        dbGetCompanyOfficials()
+      ]);
       const config = getSupabaseConfig();
 
       setStores(fetchedStores);
@@ -263,16 +278,21 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     loadAllData(!isInitial);
   }, [appVersion]);
 
+  const loadAllDataRef = useRef(loadAllData);
   useEffect(() => {
-    // Background auto-update every 15 seconds
+    loadAllDataRef.current = loadAllData;
+  }, [loadAllData]);
+
+  useEffect(() => {
+    // Background auto-update every 30 seconds (highly optimized with React Ref to avoid constant teardowns)
     const intervalId = setInterval(() => {
-      loadAllData(true);
-    }, 15000);
+      loadAllDataRef.current(true);
+    }, 30000);
 
     return () => {
       clearInterval(intervalId);
     };
-  }, [selectedStore, isStorePosPortal]);
+  }, []);
 
   useEffect(() => {
     const unsubOrders = subscribeToOrders((orders) => {

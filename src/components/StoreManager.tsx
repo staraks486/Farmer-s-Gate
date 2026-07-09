@@ -157,6 +157,28 @@ const PREDEFINED_REQS = [
   "Tomato"
 ];
 
+const formatPhoneWithCountryCode = (phone: string): string => {
+  // Remove non-digits except +
+  let cleaned = phone.trim().replace(/[^\d+]/g, '');
+  if (!cleaned) return '';
+  
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+  
+  // If 10 digits (common for India without country code), prepend +91
+  if (cleaned.length === 10) {
+    return `+91 ${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
+  }
+  
+  // If 12 digits and starts with 91, prepend +
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `+91 ${cleaned.slice(2, 7)} ${cleaned.slice(7)}`;
+  }
+  
+  return `+${cleaned}`;
+};
+
 export default function StoreManager({
   store,
   sales,
@@ -2028,7 +2050,7 @@ export default function StoreManager({
     const updatedOrder: CustomerOrder = {
       ...originalOrder,
       customerName: editName.trim(),
-      customerPhone: editPhone.trim(),
+      customerPhone: formatPhoneWithCountryCode(editPhone),
       status: editStatus,
       paymentStatus: editPaymentStatus,
       notes: editNotes.trim() || undefined,
@@ -2833,17 +2855,14 @@ export default function StoreManager({
                       </label>
                       <div className="flex gap-2">
                         <div className="relative flex-1">
-                          <span className="absolute inset-y-0 left-3.5 flex items-center text-xs font-extrabold text-slate-400">
-                            +91
-                          </span>
                           <input
                             id="wa-phone"
                             type="tel"
-                            placeholder="9876543210"
-                            maxLength={10}
+                            placeholder="e.g. +91 98765 43210"
                             value={whatsappPhone}
-                            onChange={(e) => setWhatsappPhone(e.target.value.replace(/\D/g, ''))}
-                            className="w-full rounded-xl border border-slate-200 py-2.5 pl-11 pr-3 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50/50"
+                            onChange={(e) => setWhatsappPhone(e.target.value.replace(/[^\d+ ]/g, ''))}
+                            onBlur={(e) => setWhatsappPhone(formatPhoneWithCountryCode(e.target.value))}
+                            className="w-full rounded-xl border border-slate-200 py-2.5 px-3.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50/50"
                           />
                         </div>
                         <button
@@ -3540,18 +3559,15 @@ export default function StoreManager({
                         </div>
 
                         <div className="space-y-1">
-                          <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Send Receipt WhatsApp (+91)</label>
+                          <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Send Receipt WhatsApp (with Country Code)</label>
                           <div className="relative">
-                            <span className="absolute inset-y-0 left-3 flex items-center text-xs font-extrabold text-slate-400">
-                              +91
-                            </span>
                             <input
                               type="tel"
-                              placeholder="9876543210"
-                              maxLength={10}
+                              placeholder="e.g. +91 98765 43210"
                               value={whatsappPhone}
-                              onChange={(e) => setWhatsappPhone(e.target.value.replace(/\D/g, ''))}
-                              className="w-full rounded-xl bg-slate-50 border border-slate-200 py-2 pl-11 pr-3 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50 font-mono"
+                              onChange={(e) => setWhatsappPhone(e.target.value.replace(/[^\d+ ]/g, ''))}
+                              onBlur={(e) => setWhatsappPhone(formatPhoneWithCountryCode(e.target.value))}
+                              className="w-full rounded-xl bg-slate-50 border border-slate-200 py-2 px-3.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50 font-mono"
                             />
                           </div>
                         </div>
@@ -4983,7 +4999,8 @@ export default function StoreManager({
                         <input 
                           type="text" 
                           value={editPhone} 
-                          onChange={(e) => setEditPhone(e.target.value)}
+                          onChange={(e) => setEditPhone(e.target.value.replace(/[^\d+ ]/g, ''))}
+                          onBlur={(e) => setEditPhone(formatPhoneWithCountryCode(e.target.value))}
                           className="w-full rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-semibold focus:border-emerald-500 focus:outline-none"
                         />
                       </div>
@@ -6934,18 +6951,15 @@ export default function StoreManager({
                     </div>
 
                     <div className="space-y-1 text-left">
-                      <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Send Receipt WhatsApp (+91)</label>
+                      <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Send Receipt WhatsApp (with Country Code)</label>
                       <div className="relative">
-                        <span className="absolute inset-y-0 left-3 flex items-center text-xs font-extrabold text-slate-400 font-mono">
-                          +91
-                        </span>
                         <input
                           type="tel"
-                          placeholder="9876543210"
-                          maxLength={10}
+                          placeholder="e.g. +91 98765 43210"
                           value={whatsappPhone}
-                          onChange={(e) => setWhatsappPhone(e.target.value.replace(/\D/g, ''))}
-                          className="w-full rounded-xl bg-slate-50 border border-slate-200 py-2 pl-11 pr-3 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                          onChange={(e) => setWhatsappPhone(e.target.value.replace(/[^\d+ ]/g, ''))}
+                          onBlur={(e) => setWhatsappPhone(formatPhoneWithCountryCode(e.target.value))}
+                          className="w-full rounded-xl bg-slate-50 border border-slate-200 py-2 px-3.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
                         />
                       </div>
                     </div>

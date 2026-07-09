@@ -54,6 +54,28 @@ import InteractiveMap from './customer/InteractiveMap';
 import ReviewsWall from './customer/ReviewsWall';
 import FarmersGateLogo from './FarmersGateLogo';
 
+const formatPhoneWithCountryCode = (phone: string): string => {
+  // Remove non-digits except +
+  let cleaned = phone.trim().replace(/[^\d+]/g, '');
+  if (!cleaned) return '';
+  
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+  
+  // If 10 digits (common for India without country code), prepend +91
+  if (cleaned.length === 10) {
+    return `+91 ${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
+  }
+  
+  // If 12 digits and starts with 91, prepend +
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `+91 ${cleaned.slice(2, 7)} ${cleaned.slice(7)}`;
+  }
+  
+  return `+${cleaned}`;
+};
+
 export default function CustomerHub({ changePortal, appVersion }: { changePortal?: (portal: 'customer' | 'partner' | 'management' | 'executive' | 'store_pos') => void, appVersion?: string }) {
   const [activeTab, setActiveTab] = useState<'shop' | 'track' | 'profile'>('shop');
   const [products, setProducts] = useState<any[]>([]);
@@ -258,13 +280,16 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
     setOtpError('');
     setVerificationStep(true);
 
+    const formattedPhone = formatPhoneWithCountryCode(authPhone);
+    setAuthPhone(formattedPhone);
+
     // Save pending action details for post-verification execution
     setPendingAuthAction({
       type: authMode,
       email: authEmail,
       password: authPassword,
       name: authName,
-      phone: authPhone,
+      phone: formattedPhone,
       address: authAddress
     });
   };
@@ -547,6 +572,28 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
     setAppliedCoupon(coupon);
   };
 
+  // Pre-fills a beautifully formatted WhatsApp message containing selected items
+  const getWhatsAppOrderUrl = () => {
+    const localStoresStr = localStorage.getItem('fg_stores');
+    const localStores = localStoresStr ? JSON.parse(localStoresStr) : [];
+    const targetStore = localStores[0] || { whatsappNumber: "919876543210", name: "Farmer's Gate - Patiala Model Town" };
+    const num = targetStore.whatsappNumber || "919876543210";
+
+    const customerDetails = `👤 *Customer:* ${authName || 'Guest Shopper'}\n📍 *Address:* ${customAddress || authAddress || 'Patiala Region'}\n📞 *Contact:* ${authPhone || 'N/A'}`;
+
+    const itemsStr = cartItemsList.map(({ item, quantity }, idx) => {
+      return `${idx + 1}. ${item.emoji || '🥦'} *${item.vegetableName}* - ${quantity} ${item.unit} (₹${item.sellingPrice}/${item.unit}) -> *₹${(item.sellingPrice * quantity).toFixed(2)}*`;
+    }).join('\n');
+
+    const discountStr = appliedCoupon ? `\n🎟️ *Promo Discount:* ${appliedCoupon.code} (-₹${currentDiscount.toFixed(2)})` : '';
+    const deliveryStr = `\n🚚 *Delivery Fee:* ${deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}`;
+    const walletStr = useWallet ? `\n💳 *Wallet Debited:* ₹${Math.min(walletBalance, cartSubtotal - currentDiscount).toFixed(2)}` : '';
+
+    const text = `🌾 *NEW FARMERSGATE ORDER* 🌾\n\n${customerDetails}\n\n*🛍️ Sourced Items:*\n${itemsStr}\n\n-----------------------------\n*Subtotal:* ₹${cartSubtotal.toFixed(2)}${discountStr}${deliveryStr}${walletStr}\n*💰 Total Payable:* *₹${finalPaidAmount.toFixed(2)}*\n-----------------------------\n\n⚡ _Sent via FarmersGate Shopper Store_`;
+
+    return `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
+  };
+
   // Place Order Action
   const handlePlaceOrder = async () => {
     if (!user) {
@@ -617,8 +664,10 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
     if (user) {
+      const formattedPhone = formatPhoneWithCountryCode(authPhone);
+      setAuthPhone(formattedPhone);
       localStorage.setItem(`fg_name_${user.uid}`, authName);
-      localStorage.setItem(`fg_phone_${user.uid}`, authPhone);
+      localStorage.setItem(`fg_phone_${user.uid}`, formattedPhone);
       localStorage.setItem(`fg_address_${user.uid}`, customAddress);
       alert('Profile Delivery Details Saved Successfully!');
     }
@@ -1302,24 +1351,36 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                     </div>
 
                     {/* Place Order dispatch CTA */}
-                    {user ? (
-                      <button
-                        onClick={handlePlaceOrder}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                    <div className="space-y-2">
+                      {user ? (
+                        <button
+                          onClick={handlePlaceOrder}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md active:scale-95 duration-100"
+                        >
+                          ⚡ PROCEED TO DISPATCH <ArrowRight className="h-4.5 w-4.5" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setAuthMode('login');
+                            setIsAuthModalOpen(true);
+                          }}
+                          className="w-full bg-emerald-950 hover:bg-slate-900 text-emerald-400 font-black py-3 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md active:scale-95 duration-100"
+                        >
+                          🔐 SIGN IN TO PLACE ORDER <ArrowRight className="h-4.5 w-4.5" />
+                        </button>
+                      )}
+
+                      {/* Quick Order via WhatsApp Button */}
+                      <a
+                        href={getWhatsAppOrderUrl()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-95 duration-100 text-center"
                       >
-                        ⚡ PROCEED TO DISPATCH <ArrowRight className="h-4.5 w-4.5" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setAuthMode('login');
-                          setIsAuthModalOpen(true);
-                        }}
-                        className="w-full bg-emerald-950 hover:bg-slate-900 text-emerald-400 font-black py-3 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
-                      >
-                        🔐 SIGN IN TO PLACE ORDER <ArrowRight className="h-4.5 w-4.5" />
-                      </button>
-                    )}
+                        <span className="text-sm">💬</span> Quick Order via WhatsApp
+                      </a>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1721,7 +1782,8 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                           type="text"
                           required
                           value={authPhone}
-                          onChange={e => setAuthPhone(e.target.value)}
+                          onChange={e => setAuthPhone(e.target.value.replace(/[^\d+ ]/g, ''))}
+                          onBlur={e => setAuthPhone(formatPhoneWithCountryCode(e.target.value))}
                           className="w-full text-xs font-bold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
                         />
                       </div>
@@ -2003,7 +2065,8 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                               required
                               placeholder="e.g. +91 95000 12345"
                               value={authPhone}
-                              onChange={e => setAuthPhone(e.target.value)}
+                              onChange={e => setAuthPhone(e.target.value.replace(/[^\d+ ]/g, ''))}
+                              onBlur={e => setAuthPhone(formatPhoneWithCountryCode(e.target.value))}
                               className="w-full text-xs font-bold px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500"
                             />
                           </div>
