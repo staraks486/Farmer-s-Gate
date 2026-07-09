@@ -24,6 +24,8 @@ export interface Sale {
   salespersonName?: string;
   saleDate: string;
   paymentMode?: 'Cash' | 'Card' | 'UPI';
+  billId?: string;
+  status?: 'Active' | 'Cancelled';
 }
 
 export interface StaffMember {

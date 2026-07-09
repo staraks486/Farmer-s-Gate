@@ -213,6 +213,20 @@ export default function StoreManager({
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
   const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report' | 'stock-transfer' | 'stock-waste'>('sale');
   
+  // State variables for managing bills, search query, status filter, and bill number editing
+  const [bills, setBills] = useState<any[]>(() => {
+    try {
+      const savedBillsStr = localStorage.getItem('fg_bills') || '[]';
+      return JSON.parse(savedBillsStr);
+    } catch (e) {
+      return [];
+    }
+  });
+  const [billSearchQuery, setBillSearchQuery] = useState('');
+  const [billStatusFilter, setBillStatusFilter] = useState<'All' | 'Active' | 'Cancelled'>('All');
+  const [editingBillId, setEditingBillId] = useState<string | null>(null);
+  const [editingBillNoVal, setEditingBillNoVal] = useState<string>('');
+  
   // Dynamically compute the selection catalog of crop names by combining HQ master crops and predefined list
   const cropCatalogNames = React.useMemo(() => {
     if (masterCrops && masterCrops.length > 0) {
@@ -1468,6 +1482,8 @@ export default function StoreManager({
     const finalBillTotal = parseFloat((totalAmount - totalDiscountApplied).toFixed(2));
     const discountRatio = totalAmount > 0 ? (totalDiscountApplied / totalAmount) : 0;
 
+    const generatedBillId = `FG-BILL-${Math.floor(100000 + Math.random() * 900000)}`;
+
     // Collect and register all sales as an array to prevent race conditions & improve performance
     const newSales: Sale[] = cartItems.map((cartItem, idx) => {
       const deduction = cartItem.quantity * getKgConversionRate(cartItem.unit);
@@ -1484,14 +1500,16 @@ export default function StoreManager({
         customerName: posCustomerName.trim() || undefined,
         salespersonName: salespersonName.trim() || undefined,
         saleDate: new Date().toISOString(),
-        paymentMode: paymentMode
+        paymentMode: paymentMode,
+        billId: generatedBillId,
+        status: 'Active'
       };
     });
     onAddSale(newSales);
 
     // Set completed bill
-    const finalBill = {
-      id: `FG-BILL-${Math.floor(100000 + Math.random() * 900000)}`,
+    const finalBill: any = {
+      id: generatedBillId,
       storeId: store.id,
       storeName: store.name,
       storeLocation: store.location,
@@ -1502,7 +1520,8 @@ export default function StoreManager({
       appliedPromoCode: appliedOffer ? appliedOffer.code : undefined,
       totalAmount: finalBillTotal,
       date: new Date().toLocaleString(),
-      paymentMode: paymentMode
+      paymentMode: paymentMode,
+      status: 'Active'
     };
 
     try {
@@ -1510,6 +1529,7 @@ export default function StoreManager({
       const parsed = JSON.parse(savedBillsStr);
       parsed.unshift(finalBill);
       localStorage.setItem('fg_bills', JSON.stringify(parsed));
+      setBills(parsed);
     } catch (e) {
       console.error("Failed to save bill to fg_bills registry", e);
     }
