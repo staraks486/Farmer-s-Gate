@@ -12,7 +12,9 @@ import {
   ArrowRight,
   Check,
   BarChart3,
-  MapPin
+  MapPin,
+  X,
+  Palette
 } from 'lucide-react';
 import CustomerHub from './components/CustomerHub';
 import PartnerPortal from './components/PartnerPortal';
@@ -40,9 +42,23 @@ export default function App() {
     }
   });
 
+  const [showBgPicker, setShowBgPicker] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fg_show_bg_picker');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
+
   const changeDesktopBg = (bg: string) => {
     setDesktopBg(bg);
     localStorage.setItem('fg_desktop_bg', bg);
+  };
+
+  const closeBgPicker = () => {
+    setShowBgPicker(false);
+    localStorage.setItem('fg_show_bg_picker', 'false');
   };
 
   const bgClasses: Record<string, string> = {
@@ -50,7 +66,8 @@ export default function App() {
     cream: 'bg-[#faf6f0]',
     slate: 'bg-[#f1f5f9]',
     blue: 'bg-[#f0f9ff]',
-    lavender: 'bg-[#faf5ff]'
+    lavender: 'bg-[#faf5ff]',
+    dark: 'bg-[#0b130f] dark-theme'
   };
 
   const selectedBgClass = bgClasses[desktopBg] || bgClasses.green;
@@ -805,6 +822,16 @@ export default function App() {
               >
                 <BarChart3 className="h-3 w-3" /> 📡 Executive Module
               </button>
+
+              {!showBgPicker && (
+                <button
+                  onClick={() => setShowBgPicker(true)}
+                  className="px-2.5 py-1 rounded bg-emerald-900 hover:bg-emerald-800 border border-emerald-800 text-[10px] text-emerald-300 font-bold uppercase transition cursor-pointer flex items-center gap-1"
+                  title="Show Theme/Background Selector"
+                >
+                  <Palette className="h-3 w-3" /> Themes
+                </button>
+              )}
               
               {user && (
                 <>
@@ -1275,36 +1302,55 @@ export default function App() {
       )}
 
       {/* Desktop Background Picker (Hidden on small screens) */}
-      <div className="hidden lg:flex fixed bottom-4 right-4 z-40 bg-white/90 backdrop-blur-md p-2.5 rounded-2xl border border-slate-200/80 shadow-lg items-center gap-2">
-        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 pl-1">🎨 Theme BG</span>
-        <div className="flex gap-1.5">
+      {showBgPicker && (
+        <div className="hidden lg:flex fixed bottom-4 right-4 z-40 bg-white/95 backdrop-blur-md p-2.5 rounded-2xl border border-slate-200/80 shadow-lg items-center gap-2 pr-3.5 animate-in slide-in-from-bottom-4 duration-300">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 pl-1">🎨 Theme BG</span>
+          <div className="flex gap-1.5 items-center">
+            <button
+              onClick={() => changeDesktopBg('green')}
+              className={`w-5 h-5 rounded-full bg-[#f4fbf7] border-2 transition-all cursor-pointer ${desktopBg === 'green' ? 'border-emerald-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+              title="Classic Green (Default)"
+            />
+            <button
+              onClick={() => changeDesktopBg('cream')}
+              className={`w-5 h-5 rounded-full bg-[#faf6f0] border-2 transition-all cursor-pointer ${desktopBg === 'cream' ? 'border-amber-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+              title="Warm Cream"
+            />
+            <button
+              onClick={() => changeDesktopBg('slate')}
+              className={`w-5 h-5 rounded-full bg-[#f1f5f9] border-2 transition-all cursor-pointer ${desktopBg === 'slate' ? 'border-slate-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+              title="Muted Slate"
+            />
+            <button
+              onClick={() => changeDesktopBg('blue')}
+              className={`w-5 h-5 rounded-full bg-[#f0f9ff] border-2 transition-all cursor-pointer ${desktopBg === 'blue' ? 'border-sky-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+              title="Soft Sky Blue"
+            />
+            <button
+              onClick={() => changeDesktopBg('lavender')}
+              className={`w-5 h-5 rounded-full bg-[#faf5ff] border-2 transition-all cursor-pointer ${desktopBg === 'lavender' ? 'border-purple-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+              title="Lavender Mist"
+            />
+            {/* Dark Theme Button */}
+            <button
+              onClick={() => changeDesktopBg('dark')}
+              className={`w-5 h-5 rounded-full bg-[#0b130f] border-2 border-emerald-950 transition-all cursor-pointer ${desktopBg === 'dark' ? 'border-emerald-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+              title="Dark Theme"
+            />
+          </div>
+          
+          <div className="h-4 w-px bg-slate-200 mx-0.5"></div>
+          
+          {/* Close button to hide background picker */}
           <button
-            onClick={() => changeDesktopBg('green')}
-            className={`w-5 h-5 rounded-full bg-[#f4fbf7] border-2 transition-all cursor-pointer ${desktopBg === 'green' ? 'border-emerald-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
-            title="Classic Green (Default)"
-          />
-          <button
-            onClick={() => changeDesktopBg('cream')}
-            className={`w-5 h-5 rounded-full bg-[#faf6f0] border-2 transition-all cursor-pointer ${desktopBg === 'cream' ? 'border-amber-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
-            title="Warm Cream"
-          />
-          <button
-            onClick={() => changeDesktopBg('slate')}
-            className={`w-5 h-5 rounded-full bg-[#f1f5f9] border-2 transition-all cursor-pointer ${desktopBg === 'slate' ? 'border-slate-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
-            title="Muted Slate"
-          />
-          <button
-            onClick={() => changeDesktopBg('blue')}
-            className={`w-5 h-5 rounded-full bg-[#f0f9ff] border-2 transition-all cursor-pointer ${desktopBg === 'blue' ? 'border-sky-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
-            title="Soft Sky Blue"
-          />
-          <button
-            onClick={() => changeDesktopBg('lavender')}
-            className={`w-5 h-5 rounded-full bg-[#faf5ff] border-2 transition-all cursor-pointer ${desktopBg === 'lavender' ? 'border-purple-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
-            title="Lavender Mist"
-          />
+            onClick={closeBgPicker}
+            className="p-1 hover:bg-slate-100 rounded-full transition-all cursor-pointer text-slate-400 hover:text-slate-600 flex items-center justify-center"
+            title="Hide Theme Panel"
+          >
+            <X className="h-3 w-3" />
+          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }

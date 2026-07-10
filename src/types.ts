@@ -348,10 +348,24 @@ export interface MilkCustomer {
   name: string;
   mobile: string;
   address: string;
-  milkType: 'Cow' | 'Buffalo';
-  quantity: number; // in liters
-  price: number; // Rs. per liter
+  milkType: 'Cow' | 'Buffalo' | 'Both';
+  quantity: number; // fallback or combined total
+  price: number; // fallback or combined average
+  cowQuantity?: number;
+  cowPrice?: number;
+  buffaloQuantity?: number;
+  buffaloPrice?: number;
   createdAt: string;
+  takenDaily?: boolean;
+  storeId?: string;
+  milkTakenLogs?: {
+    date: string;
+    cowQuantityTaken: number;
+    buffaloQuantityTaken: number;
+    cowPrice: number;
+    buffaloPrice: number;
+    totalAmount: number;
+  }[];
 }
 
 

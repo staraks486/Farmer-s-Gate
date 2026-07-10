@@ -6,15 +6,14 @@ interface FarmersGateLogoProps {
 }
 
 export default function FarmersGateLogo({ variant = 'default', className = '' }: FarmersGateLogoProps) {
-  // Select color schemes based on variant
   const isLight = variant === 'light';
   const isHeader = variant === 'header';
   const isMonogram = variant === 'monogram';
 
-  const farmersColor = isLight ? '#4ade80' : '#15803d'; // Cursive "Farmer's"
-  const gateColor = isLight ? '#ffffff' : '#0f172a';    // Clean capitals "GATE"
-  const lineColor = isLight ? '#22c55e' : '#15803d';    // Side lines
-  
+  const farmersColor = isLight ? '#4ade80' : '#2e7d32'; // Vibrant rich organic green for Farmer's
+  const gateColor = isLight ? '#ffffff' : '#1b2a22';    // Deep dark slate/charcoal for GATE
+  const lineColor = isLight ? '#4ade80' : '#2e7d32';    // Side lines
+
   if (isMonogram) {
     return (
       <svg
@@ -23,93 +22,99 @@ export default function FarmersGateLogo({ variant = 'default', className = '' }:
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
-        {/* Glowing background circle */}
-        <circle cx="50" cy="50" r="44" fill={isLight ? '#022c22' : '#f0fdf4'} stroke={isLight ? '#10b981' : '#15803d'} strokeWidth="2.5" />
-        
-        {/* Monogram "F" in script */}
+        <circle cx="50" cy="50" r="44" fill={isLight ? '#022c22' : '#ffffff'} stroke="#2e7d32" strokeWidth="2.5" />
         <text
-          x="44"
-          y="56"
+          x="50"
+          y="44"
           textAnchor="middle"
-          fill={farmersColor}
+          fill={isLight ? '#4ade80' : '#2e7d32'}
           fontFamily="'Satisfy', 'Dancing Script', cursive"
-          fontSize="38"
+          fontSize="24"
           fontWeight="bold"
         >
-          F
+          F's
         </text>
-        
-        {/* Monogram "G" in bold block style overlap */}
         <text
-          x="58"
-          y="72"
+          x="50"
+          y="74"
           textAnchor="middle"
-          fill={gateColor}
+          fill={isLight ? '#ffffff' : '#1b2a22'}
           fontFamily="'Plus Jakarta Sans', sans-serif"
-          fontSize="24"
+          fontSize="11"
           fontWeight="900"
+          letterSpacing="0.15em"
         >
-          G
+          GATE
         </text>
-
-        {/* Small sprout leaf */}
-        <path d="M 68 32 C 78 32 78 42 68 42 C 64 38 64 34 68 32 Z" fill="#22c55e" />
-        <path d="M 66 36 L 68 38" stroke="#15803d" strokeWidth="0.8" />
+        <path d="M 28 56 C 40 60, 60 60, 72 56" stroke="#2e7d32" strokeWidth="1.5" strokeLinecap="round" fill="none" />
       </svg>
     );
   }
 
-  // Header or full standard responsive logo
+  // Exact reproduction of the logo in the image using highly-polished SVGs
+  const svgWidth = isHeader ? 140 : 200;
+  const svgHeight = isHeader ? 60 : 85;
+
   return (
-    <div className={`flex flex-col items-center justify-center select-none ${isHeader ? 'scale-[0.85] origin-left -my-1.5' : ''} ${className}`}>
-      {/* Cursive script part */}
-      <div 
-        className={`font-normal tracking-wide text-center drop-shadow-xs italic ${
-          isHeader ? 'text-xl leading-none' : 'text-3xl leading-none'
-        }`}
-        style={{ 
-          fontFamily: "'Satisfy', 'Dancing Script', cursive",
-          color: farmersColor,
-          textShadow: isLight ? '0 1px 2px rgba(0,0,0,0.3)' : '0 0.5px 0.5px rgba(22,163,74,0.1)'
-        }}
+    <div className={`flex items-center justify-center select-none ${className}`}>
+      <svg
+        width={svgWidth}
+        height={svgHeight}
+        viewBox="0 0 200 85"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="transition-all duration-200"
       >
-        Farmer's
-      </div>
-
-      {/* GATE and decorative lines container */}
-      <div className="flex items-center justify-center gap-2 w-full mt-0.5">
-        {/* Left Tapered Line */}
-        <div className="flex items-center shrink-0">
-          <svg width={isHeader ? "22" : "34"} height="6" viewBox="0 0 34 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M2 3H30" stroke={lineColor} strokeWidth="1.2" strokeLinecap="round" />
-            {/* Diamond tip */}
-            <polygon points="32,3 27,1 27,5" fill={lineColor} />
-          </svg>
-        </div>
-
-        {/* GATE text */}
-        <div 
-          className={`font-black tracking-[0.25em] text-center uppercase ${
-            isHeader ? 'text-[10px]' : 'text-[13px]'
-          }`}
-          style={{ 
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
-            color: gateColor,
-            textShadow: isLight ? '0 1px 1px rgba(0,0,0,0.2)' : 'none'
-          }}
+        {/* 1. Cursive "Farmer's" with google reviews font weight feeling */}
+        <text
+          x="100"
+          y="42"
+          textAnchor="middle"
+          fill={farmersColor}
+          fontFamily="'Satisfy', 'Dancing Script', cursive"
+          fontSize="41"
+          fontWeight="normal"
+          className="select-none"
         >
-          Gate
-        </div>
+          Farmer's
+        </text>
 
-        {/* Right Tapered Line */}
-        <div className="flex items-center shrink-0">
-          <svg width={isHeader ? "22" : "34"} height="6" viewBox="0 0 34 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M32 3H4" stroke={lineColor} strokeWidth="1.2" strokeLinecap="round" />
-            {/* Diamond tip */}
-            <polygon points="2,3 7,1 7,5" fill={lineColor} />
-          </svg>
-        </div>
-      </div>
+        {/* 2. Beautiful custom swoosh underline matching the image's brush stroke precisely */}
+        <path
+          d="M 32 48 C 65 57, 115 57, 168 44 C 115 62, 60 60, 32 48 Z"
+          fill={farmersColor}
+          className="select-none"
+        />
+
+        {/* 3. Tapered Left Line Accent */}
+        <path
+          d="M 22 70 C 40 69.5, 55 69.5, 73 70 C 55 70.5, 40 70.5, 22 70 Z"
+          fill={lineColor}
+          opacity="0.85"
+        />
+
+        {/* 4. "GATE" wordmark in spaced capitalized serif typography */}
+        <text
+          x="103"
+          y="73"
+          textAnchor="middle"
+          fill={gateColor}
+          fontFamily="'Cinzel', 'Georgia', 'Plus Jakarta Sans', serif"
+          fontSize="13.5"
+          fontWeight="900"
+          letterSpacing="0.28em"
+          className="select-none"
+        >
+          GATE
+        </text>
+
+        {/* 5. Tapered Right Line Accent */}
+        <path
+          d="M 127 70 C 145 69.5, 160 69.5, 178 70 C 160 70.5, 145 70.5, 127 70 Z"
+          fill={lineColor}
+          opacity="0.85"
+        />
+      </svg>
     </div>
   );
 }

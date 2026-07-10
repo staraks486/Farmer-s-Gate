@@ -104,6 +104,14 @@ export default function PublicInvoicePage({ invoiceId, onClose }: PublicInvoiceP
         currentY += 4;
       }
       
+      if (invoice.isHomeDelivery) {
+        doc.setFont("helvetica", "bold");
+        doc.text("Delivery:", 48, currentY);
+        doc.setFont("helvetica", "normal");
+        doc.text(`+Rs.${(invoice.deliveryCharges || 0).toFixed(2)}`, 75, currentY, { align: 'right' });
+        currentY += 4;
+      }
+      
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
       doc.text("Net Payable:", 48, currentY);
@@ -251,6 +259,12 @@ export default function PublicInvoicePage({ invoiceId, onClose }: PublicInvoiceP
                     )}
                   </span>
                   <span className="font-mono">-₹{invoice.discount.toFixed(2)}</span>
+                </div>
+              )}
+              {invoice.isHomeDelivery && (
+                <div className="flex justify-between text-emerald-700 font-bold bg-emerald-50/50 px-2 py-1 rounded-lg">
+                  <span>🚚 Delivery Charges:</span>
+                  <span className="font-mono">+₹{(invoice.deliveryCharges || 0).toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between items-center text-slate-800 font-black border-t border-slate-100 pt-2 text-sm">

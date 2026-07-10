@@ -560,7 +560,17 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
 
   const cartSubtotal = cartItemsList.reduce((acc, c) => acc + (Number(c.item.sellingPrice) * Number(c.quantity)), 0);
   const currentDiscount = appliedCoupon ? (cartSubtotal * (Number(appliedCoupon.percent) / 100)) : 0;
-  const deliveryFee = cartSubtotal > 200 ? 0 : 25;
+  const hqSettings = (() => {
+    try {
+      const saved = localStorage.getItem('fg_hq_settings');
+      return saved ? JSON.parse(saved) : { deliveryCharges: 25, freeDeliveryLimit: 200 };
+    } catch {
+      return { deliveryCharges: 25, freeDeliveryLimit: 200 };
+    }
+  })();
+  const limitForFreeDelivery = hqSettings.freeDeliveryLimit ?? 200;
+  const baseDeliveryCharge = hqSettings.deliveryCharges ?? 25;
+  const deliveryFee = cartSubtotal >= limitForFreeDelivery ? 0 : baseDeliveryCharge;
   const finalPaidAmount = Math.max(0, cartSubtotal - currentDiscount + deliveryFee - (useWallet ? Math.min(walletBalance, cartSubtotal - currentDiscount) : 0));
 
   // Apply Coupon
@@ -591,7 +601,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
     const deliveryStr = `\n🚚 *Delivery Fee:* ${deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}`;
     const walletStr = useWallet ? `\n💳 *Wallet Debited:* ₹${Math.min(walletBalance, cartSubtotal - currentDiscount).toFixed(2)}` : '';
 
-    const storeDetails = `🏪 *Sourced From Store:* ${targetStore.name}\n📍 *Store Location:* ${targetStore.location || 'Model Town, Patiala, Punjab'}`;
+    const storeDetails = `🏪 *Sourced From Store:* ${targetStore.name}`;
 
     const text = `🌾 *NEW FARMERSGATE ORDER* 🌾\n\n${storeDetails}\n\n${customerDetails}\n\n*🛍️ Sourced Items:*\n${itemsStr}\n\n-----------------------------\n*Subtotal:* ₹${cartSubtotal.toFixed(2)}${discountStr}${deliveryStr}${walletStr}\n*💰 Total Payable:* *₹${finalPaidAmount.toFixed(2)}*\n-----------------------------\n\n⚡ _Sent via FarmersGate Shopper Store_`;
 

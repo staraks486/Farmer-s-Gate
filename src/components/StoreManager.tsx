@@ -44,6 +44,9 @@ import { subscribeToNotifications } from '../lib/firebase';
 import { QrScanner } from './QrScanner';
 import StockTransferTab from './StockTransferTab';
 import StockWasteTab from './StockWasteTab';
+import FarmersGateLogo from './FarmersGateLogo';
+import CustomerMilkRegistry from './CustomerMilkRegistry';
+import { CustomerDirectory } from './CustomerDirectory';
 
 interface StoreManagerProps {
   store: Store;
@@ -181,6 +184,16 @@ const formatPhoneWithCountryCode = (phone: string): string => {
   return `+${cleaned}`;
 };
 
+const getStoreAbbreviation = (storeName: string): string => {
+  if (!storeName) return 'FG';
+  const cleaned = storeName.replace(/^Farmer's Gate\s*-\s*/i, '').trim();
+  const words = cleaned.split(/\s+/);
+  if (words.length === 1) {
+    return words[0].substring(0, 3).toUpperCase();
+  }
+  return words.map(w => w[0]).join('').toUpperCase();
+};
+
 export default function StoreManager({
   store,
   sales,
@@ -213,7 +226,7 @@ export default function StoreManager({
   offers = []
 }: StoreManagerProps) {
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
-  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report' | 'stock-transfer' | 'stock-waste'>('sale');
+  const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report' | 'stock-transfer' | 'stock-waste' | 'milk-subscribers'>('sale');
   
   // State variables for managing bills, search query, status filter, and bill number editing
   const [bills, setBills] = useState<any[]>(() => {
@@ -225,8 +238,8 @@ export default function StoreManager({
     }
   });
   const storeBills = React.useMemo(() => {
-    return bills.filter(b => b.storeId === store.id || b.storeName === store.name);
-  }, [bills, store.id, store.name]);
+    return bills.filter(b => b.storeId === store.id);
+  }, [bills, store.id]);
 
   const [billSearchQuery, setBillSearchQuery] = useState('');
   const [billStatusFilter, setBillStatusFilter] = useState<'All' | 'Active' | 'Cancelled'>('All');
@@ -809,6 +822,7 @@ export default function StoreManager({
   const [billingQuote, setBillingQuote] = useState('');
   const [posCart, setPosCart] = useState<Record<string, PosCartItem>>({});
   const [posCustomerName, setPosCustomerName] = useState('');
+  const [selectedSubId, setSelectedSubId] = useState('');
   const [isHomeDelivery, setIsHomeDelivery] = useState(false);
   const [deliveryCharges, setDeliveryCharges] = useState(() => {
     try {
@@ -840,6 +854,42 @@ export default function StoreManager({
     { id: 'bill-2', label: 'Bill 2', cart: {}, customerName: '', whatsappPhone: '' },
     { id: 'bill-3', label: 'Bill 3', cart: {}, customerName: '', whatsappPhone: '' }
   ]);
+
+  // General Store Customers State
+  const [generalCustomers, setGeneralCustomers] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('fg_general_customers');
+      if (saved) return JSON.parse(saved);
+      const seeds = [
+        {
+          id: 'cust-1',
+          storeId: store.id,
+          name: 'Ananya Rao',
+          phone: '+91 98450 12345',
+          email: 'ananya.rao@gmail.com',
+          address: 'Apt 405, Greenwood Meadows, Sector 12',
+          loyaltyPoints: 120,
+          notes: 'Prefers leafy greens, always orders delivery',
+          createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+        },
+        {
+          id: 'cust-2',
+          storeId: store.id,
+          name: 'Vijay Mallya',
+          phone: '+91 99001 54321',
+          email: 'vijay.m@outlook.com',
+          address: 'Villa 12, Royal Gardens, Sector 45',
+          loyaltyPoints: 85,
+          notes: 'Enjoys premium organic honey and root vegetables',
+          createdAt: new Date(Date.now() - 15 * 24 * 3600 * 1000).toISOString()
+        }
+      ];
+      localStorage.setItem('fg_general_customers', JSON.stringify(seeds));
+      return seeds;
+    } catch {
+      return [];
+    }
+  });
   const [activeBillingTabId, setActiveBillingTabId] = useState<string>('bill-1');
 
   // New States for Redesigned Sale Panel, Breadcrumbs, and Voice Speech Input
@@ -1520,10 +1570,12 @@ export default function StoreManager({
     } catch {}
 
     const nextInvoiceNum = hqConfig.invoiceStartingNo + existingCount;
-    const generatedBillId = `${hqConfig.invoicePrefix}${nextInvoiceNum}`;
+    const storeAbbr = getStoreAbbreviation(store.name);
+    const generatedBillId = `${hqConfig.invoicePrefix}${nextInvoiceNum}-${storeAbbr}`;
 
     const totalDiscountApplied = Math.min(totalAmount, promoDiscount + manualDiscount);
-    const deliveryFeeToApply = isHomeDelivery ? deliveryCharges : 0;
+    const freeLimit = hqConfig.freeDeliveryLimit ?? 200;
+    const deliveryFeeToApply = isHomeDelivery ? (totalAmount >= freeLimit ? 0 : deliveryCharges) : 0;
     const finalBillTotal = parseFloat((totalAmount - totalDiscountApplied + deliveryFeeToApply).toFixed(2));
     const discountRatio = totalAmount > 0 ? (totalDiscountApplied / totalAmount) : 0;
 
@@ -1556,6 +1608,7 @@ export default function StoreManager({
       storeId: store.id,
       storeName: store.name,
       storeLocation: store.location,
+      storeAbbreviation: getStoreAbbreviation(store.name),
       customerName: posCustomerName.trim() || 'Retail Customer',
       items: billItems,
       subtotal: parseFloat(totalAmount.toFixed(2)),
@@ -1581,11 +1634,120 @@ export default function StoreManager({
 
     setCompletedBill(finalBill);
 
+    // Register/update customer in general customer database
+    const customerNameTrimmed = posCustomerName.trim();
+    if (customerNameTrimmed) {
+      try {
+        const phoneClean = whatsappPhone.trim() || 'No Phone';
+        const updatedCusts = [...generalCustomers];
+        const matchIdx = updatedCusts.findIndex(c => c.phone === phoneClean && c.storeId === store.id);
+        
+        // Calculate points earned (1 point for every ₹20 spent)
+        const pointsEarned = Math.floor(finalBillTotal / 20);
+
+        if (matchIdx > -1) {
+          // Customer exists, update loyalty points
+          updatedCusts[matchIdx] = {
+            ...updatedCusts[matchIdx],
+            name: customerNameTrimmed, // Keep name synchronized or updated
+            loyaltyPoints: (updatedCusts[matchIdx].loyaltyPoints || 0) + pointsEarned,
+          };
+        } else {
+          // New customer, register them
+          updatedCusts.push({
+            id: `cust-${Date.now()}`,
+            storeId: store.id,
+            name: customerNameTrimmed,
+            phone: phoneClean,
+            loyaltyPoints: pointsEarned,
+            createdAt: new Date().toISOString(),
+            notes: 'Registered automatically during POS checkout'
+          });
+        }
+        localStorage.setItem('fg_general_customers', JSON.stringify(updatedCusts));
+        setGeneralCustomers(updatedCusts);
+      } catch (err) {
+        console.error("Failed to update general customer data during checkout:", err);
+      }
+    }
+
     // Automatically generate and download the clean PDF summary
     handleDownloadPDF(finalBill);
 
+    // Update subscriber logs in milk subscriber module
+    if (selectedSubId) {
+      try {
+        const savedCustomers = localStorage.getItem('fg_milk_customers');
+        if (savedCustomers) {
+          const list = JSON.parse(savedCustomers);
+          const customerIndex = list.findIndex((c: any) => c.id === selectedSubId);
+          if (customerIndex > -1) {
+            const customer = list[customerIndex];
+            const todayStr = new Date().toISOString().split('T')[0];
+            
+            // Determine quantities taken based on POS cart or subscriber profile
+            let cowTaken = 0;
+            let buffaloTaken = 0;
+            
+            if (customer.milkType === 'Cow') {
+              cowTaken = customer.quantity;
+            } else if (customer.milkType === 'Buffalo') {
+              buffaloTaken = customer.quantity;
+            } else if (customer.milkType === 'Both') {
+              cowTaken = customer.cowQuantity ?? 0;
+              buffaloTaken = customer.buffaloQuantity ?? 0;
+            }
+
+            // Find if any cart items represent subscriber milk and override
+            const cowCartItem = posCart['Cow Milk'];
+            const buffaloCartItem = posCart['Buffalo Milk'];
+            const genericCartItem = posCart[`${customer.milkType} Milk`];
+
+            if (cowCartItem) cowTaken = cowCartItem.quantity;
+            if (buffaloCartItem) buffaloTaken = buffaloCartItem.quantity;
+            if (genericCartItem) {
+              if (customer.milkType === 'Cow') cowTaken = genericCartItem.quantity;
+              if (customer.milkType === 'Buffalo') buffaloTaken = genericCartItem.quantity;
+            }
+
+            const cowPrice = customer.milkType === 'Cow' ? customer.price : (customer.cowPrice ?? 60);
+            const buffaloPrice = customer.milkType === 'Buffalo' ? customer.price : (customer.buffaloPrice ?? 75);
+            const totalAmt = (cowTaken * cowPrice) + (buffaloTaken * buffaloPrice);
+
+            const logs = customer.milkTakenLogs || [];
+            const existingLogIdx = logs.findIndex((l: any) => l.date === todayStr);
+            
+            const newLogEntry = {
+              date: todayStr,
+              cowQuantityTaken: cowTaken,
+              buffaloQuantityTaken: buffaloTaken,
+              totalAmount: totalAmt
+            };
+
+            if (existingLogIdx > -1) {
+              logs[existingLogIdx] = newLogEntry;
+            } else {
+              logs.unshift(newLogEntry);
+            }
+
+            // Keep logs to a rolling limit of 30 days to avoid bloating
+            if (logs.length > 30) {
+              logs.length = 30;
+            }
+
+            customer.milkTakenLogs = logs;
+            list[customerIndex] = customer;
+            localStorage.setItem('fg_milk_customers', JSON.stringify(list));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync milk subscriber POS delivery log:", err);
+      }
+    }
+
     // Clear cart and states
     setPosCart({});
+    setSelectedSubId(''); // Clear selected subscriber state on checkout
     setPosCustomerName('');
     setSalespersonName('');
     handleRemovePromoCode();
@@ -2851,6 +3013,32 @@ export default function StoreManager({
         </button>
 
         <button
+          id="tab-milk-subscribers"
+          onClick={() => setActiveSubTab('milk-subscribers')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all active:scale-95 duration-100 cursor-pointer ${
+            activeSubTab === 'milk-subscribers'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20 font-black'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <span>🥛</span>
+          Milk Subscribers
+        </button>
+
+        <button
+          id="tab-customers"
+          onClick={() => setActiveSubTab('customers')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all active:scale-95 duration-100 cursor-pointer ${
+            activeSubTab === 'customers'
+              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20 font-black'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <span>👥</span>
+          Customer Directory
+        </button>
+
+        <button
           id="tab-sales-history"
           onClick={() => setActiveSubTab('sales-history')}
           className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all active:scale-95 duration-100 cursor-pointer ${
@@ -3018,6 +3206,26 @@ export default function StoreManager({
         </button>
       </div>
 
+      {/* --- SUB-TAB CONTENT: MILK SUBSCRIBERS --- */}
+      {activeSubTab === 'milk-subscribers' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/85 shadow-xs animate-in fade-in duration-300">
+          <CustomerMilkRegistry storeId={store.id} />
+        </div>
+      )}
+
+      {/* --- SUB-TAB CONTENT: STORE CUSTOMERS --- */}
+      {activeSubTab === 'customers' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/85 shadow-xs animate-in fade-in duration-300">
+          <CustomerDirectory 
+            storeId={store.id}
+            storeName={store.name}
+            generalCustomers={generalCustomers}
+            setGeneralCustomers={setGeneralCustomers}
+            storeBills={storeBills}
+          />
+        </div>
+      )}
+
       {/* --- SUB-TAB CONTENT: SALE --- */}
       {activeSubTab === 'sale' && (
         <div className="space-y-6">
@@ -3033,9 +3241,10 @@ export default function StoreManager({
                   
                   {/* Store Identity Emblem */}
                   <div className="text-center space-y-1.5 pt-4">
-                    <div className="mx-auto w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-lg shadow-inner">🌾</div>
-                    <h3 className="text-base font-black tracking-widest text-slate-900 uppercase">FARMER'S GATE</h3>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{completedBill.storeName || 'TRUCK OUTLET'}</p>
+                    <FarmersGateLogo variant="default" className="mx-auto scale-90 mb-1" />
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      {completedBill.storeName || 'TRUCK OUTLET'} ({completedBill.storeAbbreviation || getStoreAbbreviation(completedBill.storeName || '')})
+                    </p>
                     <p className="text-[10px] text-slate-400 mt-1 font-mono">
                       {new Date(completedBill.date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })} | {new Date(completedBill.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true })}
                     </p>
@@ -3870,14 +4079,16 @@ export default function StoreManager({
                       <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-2xl space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider flex items-center gap-1">
-                            🥛 Connect Milk Subscriber
+                            🥛 Connect Milk Subscriber ({store.name.replace("Farmer's Gate - ", "")})
                           </span>
                           <span className="text-[9px] text-emerald-600 font-bold">Fast Auto-Fill</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                           <select
+                            value={selectedSubId}
                             onChange={(e) => {
                               const subId = e.target.value;
+                              setSelectedSubId(subId);
                               if (subId) {
                                 try {
                                   const saved = localStorage.getItem('fg_milk_customers');
@@ -3888,42 +4099,88 @@ export default function StoreManager({
                                     setWhatsappPhone(found.mobile);
                                     
                                     // Construct milk catalog item
-                                    const milkKey = `${found.milkType} Milk`;
-                                    const milkItem = {
-                                      id: `milk-item-${found.milkType.toLowerCase()}`,
-                                      vegetableName: `${found.milkType} Milk (Subscriber)`,
-                                      quantity: 999,
-                                      costPrice: found.price - 10,
-                                      sellingPrice: found.price,
-                                      minStockThreshold: 1,
-                                      storeId: store.id,
-                                      lastUpdated: new Date().toISOString()
-                                    };
+                                    if (found.milkType === 'Both') {
+                                      const cowKey = `Cow Milk`;
+                                      const cowItem = {
+                                        id: `milk-item-cow`,
+                                        vegetableName: `Cow Milk (Subscriber)`,
+                                        quantity: 999,
+                                        costPrice: (found.cowPrice ?? 60) - 10,
+                                        sellingPrice: found.cowPrice ?? 60,
+                                        minStockThreshold: 1,
+                                        storeId: store.id,
+                                        lastUpdated: new Date().toISOString()
+                                      };
 
-                                    setPosCart(prev => ({
-                                      ...prev,
-                                      [milkKey]: {
-                                        item: milkItem as any,
-                                        quantity: found.quantity,
-                                        unit: 'pack',
-                                        pricePerKg: found.price
-                                      }
-                                    }));
+                                      const buffaloKey = `Buffalo Milk`;
+                                      const buffaloItem = {
+                                        id: `milk-item-buffalo`,
+                                        vegetableName: `Buffalo Milk (Subscriber)`,
+                                        quantity: 999,
+                                        costPrice: (found.buffaloPrice ?? 75) - 10,
+                                        sellingPrice: found.buffaloPrice ?? 75,
+                                        minStockThreshold: 1,
+                                        storeId: store.id,
+                                        lastUpdated: new Date().toISOString()
+                                      };
+
+                                      setPosCart(prev => ({
+                                        ...prev,
+                                        [cowKey]: {
+                                          item: cowItem as any,
+                                          quantity: found.cowQuantity ?? 1,
+                                          unit: 'pack',
+                                          pricePerKg: found.cowPrice ?? 60
+                                        },
+                                        [buffaloKey]: {
+                                          item: buffaloItem as any,
+                                          quantity: found.buffaloQuantity ?? 1,
+                                          unit: 'pack',
+                                          pricePerKg: found.buffaloPrice ?? 75
+                                        }
+                                      }));
+                                    } else {
+                                      const milkKey = `${found.milkType} Milk`;
+                                      const milkItem = {
+                                        id: `milk-item-${found.milkType.toLowerCase()}`,
+                                        vegetableName: `${found.milkType} Milk (Subscriber)`,
+                                        quantity: 999,
+                                        costPrice: found.price - 10,
+                                        sellingPrice: found.price,
+                                        minStockThreshold: 1,
+                                        storeId: store.id,
+                                        lastUpdated: new Date().toISOString()
+                                      };
+
+                                      setPosCart(prev => ({
+                                        ...prev,
+                                        [milkKey]: {
+                                          item: milkItem as any,
+                                          quantity: found.quantity,
+                                          unit: 'pack',
+                                          pricePerKg: found.price
+                                        }
+                                      }));
+                                    }
                                   }
                                 } catch (err) {
                                   console.error(err);
                                 }
+                              } else {
+                                setPosCustomerName('');
+                                setWhatsappPhone('');
                               }
                             }}
                             className="w-full text-xs font-bold rounded-xl border border-emerald-200 bg-white p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            defaultValue=""
                           >
                             <option value="">-- Choose Subscriber --</option>
                             {(() => {
                               try {
                                 const saved = localStorage.getItem('fg_milk_customers');
                                 const list = saved ? JSON.parse(saved) : [];
-                                return list.map((c: any) => (
+                                // Show only that particular store's subscribers:
+                                const branchSubs = list.filter((c: any) => c.storeId === store.id);
+                                return branchSubs.map((c: any) => (
                                   <option key={c.id} value={c.id}>
                                     {c.name} ({c.milkType} • {c.quantity}L @ ₹{c.price})
                                   </option>
@@ -3956,12 +4213,92 @@ export default function StoreManager({
                             )}
                           </div>
                         </div>
+
+                        {/* Interactive Summary: Daily Date, Quantity Taken */}
+                        {selectedSubId && (() => {
+                          try {
+                            const saved = localStorage.getItem('fg_milk_customers');
+                            const list = saved ? JSON.parse(saved) : [];
+                            const found = list.find((c: any) => c.id === selectedSubId);
+                            if (!found) return null;
+                            return (
+                              <div className="bg-emerald-100/40 border border-emerald-150/80 rounded-xl p-3.5 space-y-2 mt-2 text-xs animate-in fade-in duration-200">
+                                <div className="flex justify-between items-center border-b border-emerald-200/50 pb-1.5">
+                                  <span className="text-[9px] font-black uppercase text-emerald-800">📋 Connect Details Summary</span>
+                                  <span className="text-[10px] font-mono text-emerald-700 font-black">
+                                    📅 Daily Date: {new Date().toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-slate-700">
+                                  <div>
+                                    <p className="text-[8px] text-slate-400 uppercase font-black tracking-wider">Subscriber Name</p>
+                                    <p className="font-extrabold text-slate-900">{found.name}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[8px] text-slate-400 uppercase font-black tracking-wider">Quantity Taken</p>
+                                    <p className="font-extrabold text-emerald-800 font-mono">{found.quantity} Liters ({found.milkType})</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-between pt-1 text-[11px]">
+                                  <span className="text-slate-500 font-semibold">Daily Delivery Toggle:</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updatedList = list.map((c: any) => {
+                                        if (c.id === found.id) {
+                                          return { ...c, takenDaily: c.takenDaily === false ? true : false };
+                                        }
+                                        return c;
+                                      });
+                                      localStorage.setItem('fg_milk_customers', JSON.stringify(updatedList));
+                                      // Force update
+                                      setSelectedSubId(found.id);
+                                    }}
+                                    className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase cursor-pointer transition-all ${
+                                      found.takenDaily !== false
+                                        ? 'bg-emerald-600 text-slate-950 hover:bg-emerald-500 font-black'
+                                        : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                                    }`}
+                                  >
+                                    {found.takenDaily !== false ? '🥛 Taken Today' : '❌ Skipped Today'}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          } catch {
+                            return null;
+                          }
+                        })()}
                       </div>
 
                       {/* Customer Info Form */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1">
-                          <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Customer Identity Name</label>
+                          <div className="flex justify-between items-center">
+                            <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Customer Identity Name</label>
+                            {generalCustomers.filter(c => c.storeId === store.id).length > 0 && (
+                              <select
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val) {
+                                    const foundCust = generalCustomers.find(c => c.id === val);
+                                    if (foundCust) {
+                                      setPosCustomerName(foundCust.name);
+                                      setWhatsappPhone(foundCust.phone);
+                                    }
+                                  }
+                                }}
+                                className="text-[9px] text-emerald-600 font-extrabold bg-transparent border-none focus:ring-0 p-0 cursor-pointer max-w-[150px] truncate"
+                              >
+                                <option value="">⚡ Quick Load...</option>
+                                {generalCustomers.filter(c => c.storeId === store.id).map(c => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name} ({c.phone})
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
                           <input
                             type="text"
                             placeholder="Walk-in Counter Customer"
@@ -4091,15 +4428,54 @@ export default function StoreManager({
                       {/* Grand Total Footer */}
                       <div className="border-t border-slate-100 pt-5 mt-2 flex flex-col sm:flex-row justify-between items-center gap-4">
                         <div className="text-center sm:text-left space-y-0.5">
-                          {isHomeDelivery && (
-                            <div className="text-[10px] font-bold text-slate-400">
-                              Subtotal: ₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)} | Delivery: +₹{deliveryCharges.toFixed(2)}
-                            </div>
-                          )}
-                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Grand Invoice Sum</span>
-                          <div className="text-2xl font-black text-emerald-600 font-mono mt-0.5">
-                            ₹{(Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0) + (isHomeDelivery ? deliveryCharges : 0)).toFixed(2)}
-                          </div>
+                          {(() => {
+                            const cartSub = Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0);
+                            const hqSett = (() => {
+                              try {
+                                const saved = localStorage.getItem('fg_hq_settings');
+                                return saved ? JSON.parse(saved) : { deliveryCharges: 30, freeDeliveryLimit: 200 };
+                              } catch {
+                                return { deliveryCharges: 30, freeDeliveryLimit: 200 };
+                              }
+                            })();
+                            const freeLimit = hqSett.freeDeliveryLimit ?? 200;
+                            const feeApplied = isHomeDelivery ? (cartSub >= freeLimit ? 0 : deliveryCharges) : 0;
+                            return (
+                              <>
+                                <div className="flex flex-col gap-1 mb-2">
+                                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-black text-slate-700 bg-slate-100/70 border border-slate-200/60 px-2 py-1 rounded-lg w-max">
+                                    <input
+                                      type="checkbox"
+                                      checked={isHomeDelivery}
+                                      onChange={(e) => setIsHomeDelivery(e.target.checked)}
+                                      className="rounded text-emerald-600 focus:ring-emerald-500 w-3 h-3"
+                                    />
+                                    <span>🚚 Home Delivery Option</span>
+                                  </label>
+                                  {isHomeDelivery && (
+                                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-[10px] w-max">
+                                      <span className="text-slate-500 font-bold">Delivery Fee (₹):</span>
+                                      <input
+                                        type="number"
+                                        value={deliveryCharges}
+                                        onChange={(e) => setDeliveryCharges(parseFloat(e.target.value) || 0)}
+                                        className="w-10 text-center font-mono font-bold text-slate-700 focus:outline-none bg-transparent"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                                {isHomeDelivery && (
+                                  <div className="text-[10px] font-bold text-slate-400 mb-1">
+                                    Subtotal: ₹{cartSub.toFixed(2)} | Delivery: {feeApplied === 0 ? <span className="text-emerald-600 font-extrabold uppercase text-[9px]">FREE (≥ ₹{freeLimit})</span> : `+₹${feeApplied.toFixed(2)}`}
+                                  </div>
+                                )}
+                                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Grand Invoice Sum</span>
+                                <div className="text-2xl font-black text-emerald-600 font-mono mt-0.5">
+                                  ₹{(cartSub + feeApplied).toFixed(2)}
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
 
                         <div className="flex gap-2.5 w-full sm:w-auto">
@@ -7634,7 +8010,31 @@ export default function StoreManager({
                   {/* Customer Info Form */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                     <div className="space-y-1 text-left">
-                      <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Customer Identity Name</label>
+                      <div className="flex justify-between items-center">
+                        <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Customer Identity Name</label>
+                        {generalCustomers.filter(c => c.storeId === store.id).length > 0 && (
+                          <select
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val) {
+                                const foundCust = generalCustomers.find(c => c.id === val);
+                                if (foundCust) {
+                                  setPosCustomerName(foundCust.name);
+                                  setWhatsappPhone(foundCust.phone);
+                                }
+                              }
+                            }}
+                            className="text-[9px] text-emerald-600 font-extrabold bg-transparent border-none focus:ring-0 p-0 cursor-pointer max-w-[120px] truncate"
+                          >
+                            <option value="">⚡ Quick Load...</option>
+                            {generalCustomers.filter(c => c.storeId === store.id).map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} ({c.phone})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
                       <input
                         type="text"
                         placeholder="Walk-in Counter Customer"
@@ -7882,6 +8282,39 @@ export default function StoreManager({
                     </div>
                   </div>
 
+                  {/* Delivery Option in Checkout Modal */}
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/60 text-left space-y-3">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div>
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-black text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={isHomeDelivery}
+                            onChange={(e) => setIsHomeDelivery(e.target.checked)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                          />
+                          <span className="flex items-center gap-1.5">
+                            <span>🚚 Apply Home Delivery</span>
+                          </span>
+                        </label>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Toggle to include door-step delivery charges on this invoice.</p>
+                      </div>
+
+                      {isHomeDelivery && (
+                        <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-xl">
+                          <span className="text-xs text-slate-500 font-bold">Delivery Fee:</span>
+                          <span className="text-xs text-slate-800 font-bold">₹</span>
+                          <input
+                            type="number"
+                            value={deliveryCharges}
+                            onChange={(e) => setDeliveryCharges(parseFloat(e.target.value) || 0)}
+                            className="w-12 text-center font-mono font-black text-slate-800 focus:outline-none bg-transparent"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Payment Method Selector */}
                   <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/60 text-left space-y-2">
                     <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">
@@ -7936,41 +8369,85 @@ export default function StoreManager({
               const totalDiscount = Math.min(subtotal, promoDisc + manDisc);
               const netTotal = subtotal - totalDiscount;
 
+              const hqSett = (() => {
+                try {
+                  const saved = localStorage.getItem('fg_hq_settings');
+                  return saved ? JSON.parse(saved) : { deliveryCharges: 30, freeDeliveryLimit: 200 };
+                } catch {
+                  return { deliveryCharges: 30, freeDeliveryLimit: 200 };
+                }
+              })();
+              const freeLimit = hqSett.freeDeliveryLimit ?? 200;
+              const feeApplied = isHomeDelivery ? (netTotal >= freeLimit ? 0 : deliveryCharges) : 0;
+              const grandPayable = netTotal + feeApplied;
+
               return (
-                <div className="border-t border-slate-100 pt-4 mt-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
-                  <div className="text-center sm:text-left space-y-1">
-                    <div className="flex items-center justify-center sm:justify-start gap-2 text-[10px] font-bold text-slate-400">
-                      <span>Subtotal: ₹{subtotal.toFixed(2)}</span>
-                      {totalDiscount > 0 && (
-                        <span className="text-rose-500 font-extrabold">
-                          (Discount: -₹{totalDiscount.toFixed(2)})
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-baseline justify-center sm:justify-start gap-1.5">
-                      <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Net Payable:</span>
-                      <div className="text-2xl font-black text-emerald-600 font-mono">
-                        ₹{netTotal.toFixed(2)}
+                <div className="border-t border-slate-100 pt-4 mt-4 space-y-3.5 shrink-0">
+                  {/* Delivery Option directly in Cart */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50 border border-slate-200/60 p-3 rounded-2xl">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-black text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={isHomeDelivery}
+                        onChange={(e) => setIsHomeDelivery(e.target.checked)}
+                        className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
+                      />
+                      <span>🚚 Send as Home Delivery Order</span>
+                    </label>
+                    {isHomeDelivery && (
+                      <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-xl text-xs font-bold">
+                        <span className="text-slate-400 font-semibold uppercase text-[9px]">Fee:</span>
+                        <span className="text-slate-500">₹</span>
+                        <input
+                          type="number"
+                          value={deliveryCharges}
+                          onChange={(e) => setDeliveryCharges(parseFloat(e.target.value) || 0)}
+                          className="w-10 text-center font-mono font-black text-slate-800 focus:outline-none bg-transparent"
+                        />
                       </div>
-                    </div>
+                    )}
                   </div>
 
-                  <div className="flex gap-2 w-full sm:w-auto">
-                    <button
-                      type="button"
-                      onClick={handleClearPosCart}
-                      className="flex-1 sm:flex-initial bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl px-4 py-3 text-xs transition-colors cursor-pointer font-bold"
-                    >
-                      CLEAR CART
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handlePosCheckoutSubmit}
-                      className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl px-6 py-3 text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-emerald-200 hover:scale-[1.01]"
-                    >
-                      <span>COMPLETE SALE</span>
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </button>
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="text-center sm:text-left space-y-1">
+                      <div className="flex items-center justify-center sm:justify-start gap-2 text-[10px] font-bold text-slate-400">
+                        <span>Subtotal: ₹{subtotal.toFixed(2)}</span>
+                        {totalDiscount > 0 && (
+                          <span className="text-rose-500 font-extrabold">
+                            (Discount: -₹{totalDiscount.toFixed(2)})
+                          </span>
+                        )}
+                        {isHomeDelivery && (
+                          <span className="text-indigo-600 font-extrabold">
+                            (Delivery: +₹{feeApplied.toFixed(2)})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-baseline justify-center sm:justify-start gap-1.5">
+                        <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Net Payable:</span>
+                        <div className="text-2xl font-black text-emerald-600 font-mono">
+                          ₹{grandPayable.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={handleClearPosCart}
+                        className="flex-1 sm:flex-initial bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl px-4 py-3 text-xs transition-colors cursor-pointer font-bold"
+                      >
+                        CLEAR CART
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePosCheckoutSubmit}
+                        className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl px-6 py-3 text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-emerald-200 hover:scale-[1.01]"
+                      >
+                        <span>COMPLETE SALE</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -9282,10 +9759,9 @@ export default function StoreManager({
             <div id="print-receipt-area" className="p-8 space-y-6 font-mono text-xs text-slate-800 bg-white relative overflow-hidden">
               {/* Receipt Header */}
               <div className="text-center space-y-1.5">
-                <div className="mx-auto w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-lg shadow-inner">🌾</div>
-                <h2 className="text-2xl font-black tracking-tight text-slate-900 uppercase">FARMER'S GATE</h2>
+                <FarmersGateLogo variant="default" className="mx-auto scale-95 mb-1" />
                 <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-widest">
-                  📍 {selectedPreviewBill.storeName || store.name}
+                  📍 {selectedPreviewBill.storeName || store.name} ({selectedPreviewBill.storeAbbreviation || getStoreAbbreviation(selectedPreviewBill.storeName || store.name)})
                 </p>
                 {selectedPreviewBill.storeId && (
                   <p className="text-[9px] font-mono text-slate-400 uppercase">

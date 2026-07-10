@@ -18,5 +18,35 @@
     "createdAt": "2026-07-08T08:14:12.780Z",
     "password": "urban123",
     "version": 1
+  },
+  {
+    "id": "store-1783234592058",
+    "name": "Farmer's Gate - Model town",
+    "location": "Bhupindra Road, Patiala, Punjab",
+    "whatsappNumber": "9616417485",
+    "isActive": true,
+    "createdAt": "2026-07-05T06:56:32.058+00:00",
+    "password": "modeltown123",
+    "version": 1
+  },
+  {
+    "id": "store-1783237851883",
+    "name": "Farmer's Gate - Sirhind Road",
+    "location": "Sirhind Road, Patiala, Punjab",
+    "whatsappNumber": "9616417485",
+    "isActive": true,
+    "createdAt": "2026-07-05T07:50:51.883+00:00",
+    "password": "sirhind123",
+    "version": 1
+  },
+  {
+    "id": "store-1783236752708",
+    "name": "Farmer's Gate - Truck",
+    "location": "Civil Line, Patiala, Punjab",
+    "whatsappNumber": "9616417485",
+    "isActive": true,
+    "createdAt": "2026-07-05T07:32:32.708+00:00",
+    "password": "truck123",
+    "version": 1
   }
 ]

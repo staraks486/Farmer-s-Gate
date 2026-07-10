@@ -314,8 +314,16 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
       ]);
       const config = getSupabaseConfig();
 
-      let finalStores = fetchedStores;
-      if (fetchedStores.length === 0) {
+      // Unique stores by ID to prevent duplicates
+      const uniqueStoresMap = new Map<string, Store>();
+      fetchedStores.forEach(st => {
+        if (st && st.id) {
+          uniqueStoresMap.set(st.id, st);
+        }
+      });
+      let finalStores = Array.from(uniqueStoresMap.values());
+
+      if (finalStores.length === 0) {
         const defaultStore: Store = {
           id: 'store-1',
           name: "Farmer's Gate - Patiala Model Town",
@@ -346,13 +354,18 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
       if (isStorePosPortal && finalStores.length > 0) {
         const params = new URLSearchParams(window.location.search);
         const queryStoreId = params.get('storeId');
-        const match = queryStoreId 
-          ? finalStores.find(st => st.id === queryStoreId) 
-          : finalStores.find(st => st.isActive) || finalStores[0];
-        
-        if (match) {
-          setSelectedStore(match);
-          setUnlockedStoreId(match.id);
+        if (queryStoreId) {
+          const match = finalStores.find(st => st.id === queryStoreId);
+          if (match) {
+            setSelectedStore(match);
+            setUnlockedStoreId(match.id);
+          }
+        } else if (finalStores.length === 1) {
+          setSelectedStore(finalStores[0]);
+          setUnlockedStoreId(finalStores[0].id);
+        } else {
+          setSelectedStore(null);
+          setUnlockedStoreId(null);
         }
       }
       setSales(fetchedSales);
@@ -922,7 +935,15 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
 
           {selectedStore && (
             <button
-              onClick={() => setSelectedStore(null)}
+              onClick={() => {
+                setSelectedStore(null);
+                setUnlockedStoreId(null);
+                setStorePassword('');
+                setStoreLoginError(null);
+                const url = new URL(window.location.href);
+                url.searchParams.delete('storeId');
+                window.history.pushState({}, '', url.toString());
+              }}
               className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition cursor-pointer text-xs font-bold text-slate-600 flex items-center gap-1.5"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back to Branch List

@@ -124,16 +124,19 @@ export default function HeadOffice({
   const [hqSettings, setHqSettings] = useState(() => {
     try {
       const saved = localStorage.getItem('fg_hq_settings');
-      return saved ? JSON.parse(saved) : {
-        invoicePrefix: "FG-",
-        invoiceStartingNo: 1001,
-        deliveryCharges: 30
+      const parsed = saved ? JSON.parse(saved) : null;
+      return {
+        invoicePrefix: parsed?.invoicePrefix ?? "FG-",
+        invoiceStartingNo: parsed?.invoiceStartingNo ?? 1001,
+        deliveryCharges: parsed?.deliveryCharges ?? 30,
+        freeDeliveryLimit: parsed?.freeDeliveryLimit ?? 200
       };
     } catch {
       return {
         invoicePrefix: "FG-",
         invoiceStartingNo: 1001,
-        deliveryCharges: 30
+        deliveryCharges: 30,
+        freeDeliveryLimit: 200
       };
     }
   });
@@ -2555,6 +2558,16 @@ export default function HeadOffice({
                     value={hqSettings.deliveryCharges}
                     onChange={(e) => saveHqSettings({ ...hqSettings, deliveryCharges: parseFloat(e.target.value) || 0 })}
                     placeholder="30"
+                    className="w-full text-xs font-mono font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Min Order for Free Delivery (₹)</label>
+                  <input
+                    type="number"
+                    value={hqSettings.freeDeliveryLimit ?? 200}
+                    onChange={(e) => saveHqSettings({ ...hqSettings, freeDeliveryLimit: parseFloat(e.target.value) || 0 })}
+                    placeholder="200"
                     className="w-full text-xs font-mono font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
                   />
                 </div>
