@@ -31,6 +31,30 @@ import {
 import { getUserRole } from './types';
 
 export default function App() {
+  const [desktopBg, setDesktopBg] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fg_desktop_bg');
+      return saved || 'green';
+    } catch {
+      return 'green';
+    }
+  });
+
+  const changeDesktopBg = (bg: string) => {
+    setDesktopBg(bg);
+    localStorage.setItem('fg_desktop_bg', bg);
+  };
+
+  const bgClasses: Record<string, string> = {
+    green: 'bg-[#f4fbf7]',
+    cream: 'bg-[#faf6f0]',
+    slate: 'bg-[#f1f5f9]',
+    blue: 'bg-[#f0f9ff]',
+    lavender: 'bg-[#faf5ff]'
+  };
+
+  const selectedBgClass = bgClasses[desktopBg] || bgClasses.green;
+
   const [activePortal, setActivePortal] = useState<'customer' | 'partner' | 'management' | 'executive' | 'store_pos'>('customer');
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [appVersion, setAppVersion] = useState('v2.3.0');
@@ -645,7 +669,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f4fbf7] flex flex-col font-sans select-none antialiased text-slate-800 relative">
+    <div className={`min-h-screen ${selectedBgClass} flex flex-col font-sans select-none antialiased text-slate-800 relative`}>
       
       {/* 📍 Geofencing Access Restriction Notification Toast */}
       {geoBlockError && (
@@ -1249,6 +1273,38 @@ export default function App() {
       {activePortal !== 'customer' && (
         <InternalChatDrawer />
       )}
+
+      {/* Desktop Background Picker (Hidden on small screens) */}
+      <div className="hidden lg:flex fixed bottom-4 right-4 z-40 bg-white/90 backdrop-blur-md p-2.5 rounded-2xl border border-slate-200/80 shadow-lg items-center gap-2">
+        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 pl-1">🎨 Theme BG</span>
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => changeDesktopBg('green')}
+            className={`w-5 h-5 rounded-full bg-[#f4fbf7] border-2 transition-all cursor-pointer ${desktopBg === 'green' ? 'border-emerald-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+            title="Classic Green (Default)"
+          />
+          <button
+            onClick={() => changeDesktopBg('cream')}
+            className={`w-5 h-5 rounded-full bg-[#faf6f0] border-2 transition-all cursor-pointer ${desktopBg === 'cream' ? 'border-amber-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+            title="Warm Cream"
+          />
+          <button
+            onClick={() => changeDesktopBg('slate')}
+            className={`w-5 h-5 rounded-full bg-[#f1f5f9] border-2 transition-all cursor-pointer ${desktopBg === 'slate' ? 'border-slate-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+            title="Muted Slate"
+          />
+          <button
+            onClick={() => changeDesktopBg('blue')}
+            className={`w-5 h-5 rounded-full bg-[#f0f9ff] border-2 transition-all cursor-pointer ${desktopBg === 'blue' ? 'border-sky-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+            title="Soft Sky Blue"
+          />
+          <button
+            onClick={() => changeDesktopBg('lavender')}
+            className={`w-5 h-5 rounded-full bg-[#faf5ff] border-2 transition-all cursor-pointer ${desktopBg === 'lavender' ? 'border-purple-500 scale-110 shadow-md' : 'border-slate-300 hover:scale-105'}`}
+            title="Lavender Mist"
+          />
+        </div>
+      </div>
     </div>
   );
 }

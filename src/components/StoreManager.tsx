@@ -809,6 +809,24 @@ export default function StoreManager({
   const [billingQuote, setBillingQuote] = useState('');
   const [posCart, setPosCart] = useState<Record<string, PosCartItem>>({});
   const [posCustomerName, setPosCustomerName] = useState('');
+  const [isHomeDelivery, setIsHomeDelivery] = useState(false);
+  const [deliveryCharges, setDeliveryCharges] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fg_hq_settings');
+      return saved ? JSON.parse(saved).deliveryCharges : 30;
+    } catch {
+      return 30;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('fg_hq_settings');
+      if (saved) {
+        setDeliveryCharges(JSON.parse(saved).deliveryCharges || 30);
+      }
+    } catch {}
+  }, [isHomeDelivery]);
   
   // Multiple POS Billing Tabs State
   const [billingTabs, setBillingTabs] = useState<{
@@ -1486,11 +1504,28 @@ export default function StoreManager({
       manualDiscount += manualDiscountFlat;
     }
 
-    const totalDiscountApplied = Math.min(totalAmount, promoDiscount + manualDiscount);
-    const finalBillTotal = parseFloat((totalAmount - totalDiscountApplied).toFixed(2));
-    const discountRatio = totalAmount > 0 ? (totalDiscountApplied / totalAmount) : 0;
+    const hqConfig = (() => {
+      try {
+        const saved = localStorage.getItem('fg_hq_settings');
+        return saved ? JSON.parse(saved) : { invoicePrefix: "FG-", invoiceStartingNo: 1001, deliveryCharges: 30 };
+      } catch {
+        return { invoicePrefix: "FG-", invoiceStartingNo: 1001, deliveryCharges: 30 };
+      }
+    })();
 
-    const generatedBillId = `FG-BILL-${Math.floor(100000 + Math.random() * 900000)}`;
+    const savedBillsStrForCount = localStorage.getItem('fg_bills') || '[]';
+    let existingCount = 0;
+    try {
+      existingCount = JSON.parse(savedBillsStrForCount).length;
+    } catch {}
+
+    const nextInvoiceNum = hqConfig.invoiceStartingNo + existingCount;
+    const generatedBillId = `${hqConfig.invoicePrefix}${nextInvoiceNum}`;
+
+    const totalDiscountApplied = Math.min(totalAmount, promoDiscount + manualDiscount);
+    const deliveryFeeToApply = isHomeDelivery ? deliveryCharges : 0;
+    const finalBillTotal = parseFloat((totalAmount - totalDiscountApplied + deliveryFeeToApply).toFixed(2));
+    const discountRatio = totalAmount > 0 ? (totalDiscountApplied / totalAmount) : 0;
 
     // Collect and register all sales as an array to prevent race conditions & improve performance
     const newSales: Sale[] = cartItems.map((cartItem, idx) => {
@@ -1526,6 +1561,8 @@ export default function StoreManager({
       subtotal: parseFloat(totalAmount.toFixed(2)),
       discount: parseFloat(totalDiscountApplied.toFixed(2)),
       appliedPromoCode: appliedOffer ? appliedOffer.code : undefined,
+      isHomeDelivery: isHomeDelivery,
+      deliveryCharges: deliveryFeeToApply,
       totalAmount: finalBillTotal,
       date: new Date().toLocaleString(),
       paymentMode: paymentMode,
@@ -2990,38 +3027,62 @@ export default function StoreManager({
               <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-8">
                 
                 {/* Monospace Thermal Ticket Receipt */}
-                <div className="flex-1 max-w-sm mx-auto bg-white border border-slate-200 rounded-3xl p-6 shadow-sm font-mono text-xs text-slate-800 space-y-4 relative overflow-hidden">
+                <div className="flex-1 max-w-sm mx-auto bg-gradient-to-b from-white to-slate-50/20 border border-slate-200 rounded-3xl p-6 shadow-md font-mono text-xs text-slate-800 space-y-4 relative overflow-hidden">
                   {/* Stylized physical receipt paper look cutouts */}
                   <div className="absolute top-0 inset-x-0 h-1 bg-repeat-x bg-[linear-gradient(to_right,transparent_50%,#f1f5f9_50%)] bg-[size:8px_4px]"></div>
                   
-                  <div className="text-center space-y-1 pt-2">
+                  {/* Store Identity Emblem */}
+                  <div className="text-center space-y-1.5 pt-4">
+                    <div className="mx-auto w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-lg shadow-inner">🌾</div>
                     <h3 className="text-base font-black tracking-widest text-slate-900 uppercase">FARMER'S GATE</h3>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">TRUCK</p>
-                    <p className="text-[10px] text-slate-400 mt-1">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{completedBill.storeName || 'TRUCK OUTLET'}</p>
+                    <p className="text-[10px] text-slate-400 mt-1 font-mono">
                       {new Date(completedBill.date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })} | {new Date(completedBill.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true })}
                     </p>
                   </div>
 
-                  <div className="border-t border-dashed border-slate-300 my-2"></div>
+                  <div className="border-t border-dashed border-slate-350 my-3"></div>
 
-                  <div className="flex justify-between font-bold text-slate-500 uppercase tracking-wider text-[10px]">
-                    <span>ITEM</span>
-                    <span>AMT</span>
+                  {/* Customer Identity Card */}
+                  <div className="bg-slate-50/80 rounded-xl p-2.5 border border-slate-150 text-[10px] space-y-1 text-left">
+                    <div className="flex justify-between text-slate-400 font-bold uppercase tracking-wider text-[8px]">
+                      <span>Invoice Number</span>
+                      <span>Customer</span>
+                    </div>
+                    <div className="flex justify-between font-black text-slate-900">
+                      <span>#{completedBill.id}</span>
+                      <span className="truncate max-w-[120px]">{completedBill.customerName || 'Retail Customer'}</span>
+                    </div>
+                    {completedBill.isHomeDelivery && (
+                      <div className="flex justify-between text-emerald-800 font-extrabold text-[9px] mt-1 pt-1 border-t border-slate-100">
+                        <span>🚚 TYPE: HOME DELIVERY</span>
+                        <span>Fee: ₹{completedBill.deliveryCharges || 0}</span>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="border-t border-dashed border-slate-300 my-2"></div>
+                  <div className="border-t border-dashed border-slate-350 my-3"></div>
 
-                  <div className="space-y-4">
-                    {completedBill.items.map((it, idx) => {
-                      const unitLabel = (it as any).unit || 'kg';
+                  {/* Header Row */}
+                  <div className="flex justify-between font-black text-slate-400 uppercase tracking-wider text-[9px] px-1">
+                    <span>ITEM DESCRIPTION</span>
+                    <span>AMOUNT</span>
+                  </div>
+
+                  <div className="border-t border-dashed border-slate-350 my-2"></div>
+
+                  {/* Items List */}
+                  <div className="space-y-3 px-1 text-left">
+                    {completedBill.items.map((it: any, idx: number) => {
+                      const unitLabel = it.unit || 'kg';
                       const baseLabel = unitLabel === 'g' ? 'kg' : 'unit';
                       return (
                         <div key={idx} className="space-y-0.5">
-                          <div className="flex justify-between font-bold text-slate-900">
+                          <div className="flex justify-between font-bold text-slate-900 text-xs">
                             <span className="capitalize">{it.vegetableName.toLowerCase()}</span>
                             <span>₹{it.totalPrice.toFixed(2)}</span>
                           </div>
-                          <div className="text-[10px] text-slate-400">
+                          <div className="text-[10px] text-slate-400 font-mono">
                             {it.quantity} {unitLabel} x ₹{it.pricePerKg} / {baseLabel}
                           </div>
                         </div>
@@ -3029,31 +3090,63 @@ export default function StoreManager({
                     })}
                   </div>
 
-                  <div className="border-t border-dashed border-slate-300 my-2"></div>
+                  <div className="border-t border-dashed border-slate-350 my-3"></div>
 
-                  <div className="flex justify-between items-baseline font-black text-sm text-slate-900">
-                    <span>TOTAL</span>
-                    <span>₹{completedBill.totalAmount.toFixed(2)}</span>
+                  {/* Calculations & Totals */}
+                  <div className="space-y-1.5 px-1 font-medium text-slate-600 text-[11px] text-left">
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
+                      <span>₹{completedBill.subtotal ? completedBill.subtotal.toFixed(2) : completedBill.totalAmount.toFixed(2)}</span>
+                    </div>
+                    {completedBill.discount > 0 && (
+                      <div className="flex justify-between text-rose-600 font-bold">
+                        <span>Discount Applied</span>
+                        <span>-₹{completedBill.discount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {completedBill.isHomeDelivery && (
+                      <div className="flex justify-between text-emerald-700 font-bold">
+                        <span>Delivery Charges</span>
+                        <span>+₹{(completedBill.deliveryCharges || 0).toFixed(2)}</span>
+                      </div>
+                    )}
+                    
+                    <div className="border-t border-slate-200 my-1"></div>
+
+                    <div className="flex justify-between items-baseline font-black text-sm text-slate-900 pt-1">
+                      <span>GRAND TOTAL</span>
+                      <span className="text-base text-emerald-600 font-mono">₹{completedBill.totalAmount.toFixed(2)}</span>
+                    </div>
                   </div>
 
                   {completedBill.paymentMode && (
-                    <div className="flex justify-between items-baseline font-bold text-slate-500 text-[10px] mt-1 uppercase">
-                      <span>PAYMENT MODE</span>
-                      <span>{completedBill.paymentMode}</span>
+                    <div className="mx-1 bg-slate-100 rounded-lg p-2 flex justify-between items-center text-[9px] uppercase font-bold text-slate-500">
+                      <span>Payment Mode</span>
+                      <span className="text-slate-900 font-black">{completedBill.paymentMode}</span>
                     </div>
                   )}
 
-                  <div className="border-t border-dashed border-slate-300 my-2"></div>
+                  <div className="border-t border-dashed border-slate-350 my-3"></div>
 
-                  <div className="text-center space-y-2 text-[10px] text-slate-500 font-medium italic">
+                  {/* Barcode Visual Element */}
+                  <div className="flex flex-col items-center justify-center space-y-1 py-1">
+                    <div className="flex items-center gap-[1.5px] h-6">
+                      {[2, 1, 3, 1, 2, 4, 1, 2, 3, 1, 2, 1, 4, 2, 1, 3, 2].map((w, i) => (
+                        <div key={i} className="bg-slate-800 h-full" style={{ width: `${w}px` }} />
+                      ))}
+                    </div>
+                    <span className="text-[8px] tracking-widest text-slate-400 font-mono">{completedBill.id}</span>
+                  </div>
+
+                  <div className="text-center space-y-1.5 text-[9px] text-slate-400 font-semibold italic pt-1 border-t border-slate-100">
                     <p>🍎 Fresh from farm to keep you strong!</p>
                     <p>🙏 Thank you for visiting! Have a healthy day!</p>
                   </div>
 
-                  {/* Eye-catching, simple quote placed at the very last as requested */}
-                  <div className="border-t border-emerald-100 pt-4 mt-3 flex flex-col items-center justify-center text-center font-sans">
-                    <div className="relative py-2.5 px-4 bg-emerald-500/[0.03] border-l-2 border-emerald-500 rounded-r-xl shadow-sm">
-                      <p className="text-[10px] italic font-semibold text-emerald-800 leading-relaxed">
+                  {/* Active quote */}
+                  <div className="border-t border-emerald-100 pt-3 mt-2 flex flex-col items-center justify-center text-center font-sans">
+                    <div className="py-2 px-3 bg-emerald-500/[0.03] border-l-2 border-emerald-500 rounded-r-xl w-full">
+                      <p className="text-[9px] italic font-semibold text-emerald-800 leading-relaxed">
                         "{billingQuote || "Choose fresh veggies for maximum vitality!"}"
                       </p>
                     </div>
@@ -3773,6 +3866,98 @@ export default function StoreManager({
                     </div>
                   ) : (
                     <div className="bg-white border border-slate-200/85 rounded-3xl p-5 md:p-6 shadow-sm space-y-5">
+                      {/* Milk Subscribers Link & Home Delivery Selector */}
+                      <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider flex items-center gap-1">
+                            🥛 Connect Milk Subscriber
+                          </span>
+                          <span className="text-[9px] text-emerald-600 font-bold">Fast Auto-Fill</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                          <select
+                            onChange={(e) => {
+                              const subId = e.target.value;
+                              if (subId) {
+                                try {
+                                  const saved = localStorage.getItem('fg_milk_customers');
+                                  const list = saved ? JSON.parse(saved) : [];
+                                  const found = list.find((c: any) => c.id === subId);
+                                  if (found) {
+                                    setPosCustomerName(found.name);
+                                    setWhatsappPhone(found.mobile);
+                                    
+                                    // Construct milk catalog item
+                                    const milkKey = `${found.milkType} Milk`;
+                                    const milkItem = {
+                                      id: `milk-item-${found.milkType.toLowerCase()}`,
+                                      vegetableName: `${found.milkType} Milk (Subscriber)`,
+                                      quantity: 999,
+                                      costPrice: found.price - 10,
+                                      sellingPrice: found.price,
+                                      minStockThreshold: 1,
+                                      storeId: store.id,
+                                      lastUpdated: new Date().toISOString()
+                                    };
+
+                                    setPosCart(prev => ({
+                                      ...prev,
+                                      [milkKey]: {
+                                        item: milkItem as any,
+                                        quantity: found.quantity,
+                                        unit: 'pack',
+                                        pricePerKg: found.price
+                                      }
+                                    }));
+                                  }
+                                } catch (err) {
+                                  console.error(err);
+                                }
+                              }
+                            }}
+                            className="w-full text-xs font-bold rounded-xl border border-emerald-200 bg-white p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            defaultValue=""
+                          >
+                            <option value="">-- Choose Subscriber --</option>
+                            {(() => {
+                              try {
+                                const saved = localStorage.getItem('fg_milk_customers');
+                                const list = saved ? JSON.parse(saved) : [];
+                                return list.map((c: any) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name} ({c.milkType} • {c.quantity}L @ ₹{c.price})
+                                  </option>
+                                ));
+                              } catch {
+                                return [];
+                              }
+                            })()}
+                          </select>
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={isHomeDelivery}
+                                onChange={(e) => setIsHomeDelivery(e.target.checked)}
+                                className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                              />
+                              🚚 Home Delivery
+                            </label>
+                            {isHomeDelivery && (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span className="text-[10px] text-slate-400 font-bold">Charge:</span>
+                                <input
+                                  type="number"
+                                  value={deliveryCharges}
+                                  onChange={(e) => setDeliveryCharges(parseFloat(e.target.value) || 0)}
+                                  className="w-14 rounded-lg border border-slate-200 p-1 text-center font-mono text-xs font-bold bg-white focus:ring-1 focus:ring-emerald-500"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Customer Info Form */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1">
@@ -3905,10 +4090,15 @@ export default function StoreManager({
 
                       {/* Grand Total Footer */}
                       <div className="border-t border-slate-100 pt-5 mt-2 flex flex-col sm:flex-row justify-between items-center gap-4">
-                        <div className="text-center sm:text-left">
+                        <div className="text-center sm:text-left space-y-0.5">
+                          {isHomeDelivery && (
+                            <div className="text-[10px] font-bold text-slate-400">
+                              Subtotal: ₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)} | Delivery: +₹{deliveryCharges.toFixed(2)}
+                            </div>
+                          )}
                           <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Grand Invoice Sum</span>
                           <div className="text-2xl font-black text-emerald-600 font-mono mt-0.5">
-                            ₹{Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0).toFixed(2)}
+                            ₹{(Object.keys(posCart).reduce((sum, key) => sum + getSubtotal(posCart[key]), 0) + (isHomeDelivery ? deliveryCharges : 0)).toFixed(2)}
                           </div>
                         </div>
 
@@ -9089,9 +9279,10 @@ export default function StoreManager({
             </div>
 
             {/* Receipt Printable Area */}
-            <div id="print-receipt-area" className="p-8 space-y-6 font-sans text-xs text-slate-800 bg-white">
+            <div id="print-receipt-area" className="p-8 space-y-6 font-mono text-xs text-slate-800 bg-white relative overflow-hidden">
               {/* Receipt Header */}
               <div className="text-center space-y-1.5">
+                <div className="mx-auto w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-lg shadow-inner">🌾</div>
                 <h2 className="text-2xl font-black tracking-tight text-slate-900 uppercase">FARMER'S GATE</h2>
                 <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-widest">
                   📍 {selectedPreviewBill.storeName || store.name}
@@ -9119,15 +9310,27 @@ export default function StoreManager({
               )}
 
               {/* Customer Info */}
-              <div className="space-y-1">
-                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Billed To</span>
-                <span className="font-bold text-slate-800 text-[11px]">👤 {selectedPreviewBill.customerName || 'Retail Customer'}</span>
+              <div className="bg-slate-50/80 rounded-xl p-2.5 border border-slate-150 text-[10px] space-y-1 text-left">
+                <div className="flex justify-between text-slate-400 font-bold uppercase tracking-wider text-[8px]">
+                  <span>Customer Name</span>
+                  <span>Destination</span>
+                </div>
+                <div className="flex justify-between font-black text-slate-800 text-[11px]">
+                  <span className="truncate max-w-[150px]">👤 {selectedPreviewBill.customerName || 'Retail Customer'}</span>
+                  <span>{selectedPreviewBill.isHomeDelivery ? '🚚 HOME' : '🏪 STORE'}</span>
+                </div>
+                {selectedPreviewBill.isHomeDelivery && (
+                  <div className="flex justify-between text-emerald-800 font-extrabold text-[9px] mt-1 pt-1 border-t border-slate-100">
+                    <span>TYPE: HOME DELIVERY</span>
+                    <span>Fee: ₹{selectedPreviewBill.deliveryCharges || 0}</span>
+                  </div>
+                )}
               </div>
 
               {/* Purchased Items Table */}
               <div className="space-y-2">
                 <div className="border-b border-slate-200 pb-1 flex justify-between text-[9px] font-black uppercase text-slate-400 tracking-wider">
-                  <span className="w-1/2">Item Description</span>
+                  <span className="w-1/2 text-left">Item Description</span>
                   <span className="w-1/4 text-center">Qty / Rate</span>
                   <span className="w-1/4 text-right">Amount</span>
                 </div>
@@ -9137,7 +9340,7 @@ export default function StoreManager({
                     const unitLabel = it.unit || 'kg';
                     const baseLabel = unitLabel === 'g' ? 'kg' : 'unit';
                     return (
-                      <div key={idx} className="flex justify-between items-start text-xs">
+                      <div key={idx} className="flex justify-between items-start text-xs text-left">
                         <div className="w-1/2">
                           <span className="font-bold text-slate-800 block capitalize">{it.vegetableName.toLowerCase()}</span>
                         </div>
@@ -9154,7 +9357,7 @@ export default function StoreManager({
               </div>
 
               {/* Totals Breakdown */}
-              <div className="border-t border-dashed border-slate-300 pt-4 space-y-1.5 font-medium text-slate-600">
+              <div className="border-t border-dashed border-slate-300 pt-4 space-y-1.5 font-medium text-slate-600 text-left">
                 {selectedPreviewBill.subtotal !== undefined && (
                   <div className="flex justify-between">
                     <span>Subtotal</span>
@@ -9167,7 +9370,13 @@ export default function StoreManager({
                     <span className="font-mono">-₹{selectedPreviewBill.discount.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-baseline pt-2 text-slate-900 font-black text-sm">
+                {selectedPreviewBill.isHomeDelivery && (
+                  <div className="flex justify-between text-emerald-700 font-bold">
+                    <span>Delivery Charges</span>
+                    <span className="font-mono">+₹{(selectedPreviewBill.deliveryCharges || 0).toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-baseline pt-2 border-t border-slate-200 text-slate-900 font-black text-sm">
                   <span>TOTAL AMOUNT</span>
                   <span className="font-mono text-base text-emerald-700">₹{selectedPreviewBill.totalAmount.toFixed(2)}</span>
                 </div>
@@ -9177,6 +9386,16 @@ export default function StoreManager({
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-center text-[10px] uppercase font-bold text-slate-500">
                 <span>Payment Mode:</span>
                 <span className="text-slate-800">{selectedPreviewBill.paymentMode || 'Cash'}</span>
+              </div>
+
+              {/* Barcode Visual Element */}
+              <div className="flex flex-col items-center justify-center space-y-1 py-1">
+                <div className="flex items-center gap-[1.5px] h-6">
+                  {[2, 1, 3, 1, 2, 4, 1, 2, 3, 1, 2, 1, 4, 2, 1, 3, 2].map((w, i) => (
+                    <div key={i} className="bg-slate-800 h-full" style={{ width: `${w}px` }} />
+                  ))}
+                </div>
+                <span className="text-[8px] tracking-widest text-slate-400 font-mono">{selectedPreviewBill.id}</span>
               </div>
 
               {/* Footer notes */}

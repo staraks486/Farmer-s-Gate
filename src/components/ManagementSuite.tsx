@@ -110,6 +110,7 @@ import AccountsManager from './AccountsManager';
 import AdminPanel from './AdminPanel';
 import ExecutivePortal from './ExecutivePortal';
 import StaffAttendanceManager from './StaffAttendanceManager';
+import CustomerMilkRegistry from './CustomerMilkRegistry';
 
 const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   currencySymbol: '₹',
@@ -143,13 +144,16 @@ const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
 export default function ManagementSuite({ user, isStorePosPortal, appVersion }: { user: any; isStorePosPortal?: boolean; appVersion?: string }) {
   const roleInfo = getUserRole(user?.email);
   let allowedTabs = roleInfo.allowedTabs || ['dashboard', 'headoffice', 'store', 'suppliers', 'accounts', 'admin'];
+  if (!isStorePosPortal && !allowedTabs.includes('customers')) {
+    allowedTabs = [...allowedTabs, 'customers'];
+  }
   if (isStorePosPortal) {
     allowedTabs = ['store'];
   }
   const defaultTab = allowedTabs[0] || 'dashboard';
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin' | 'staff'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin' | 'staff' | 'customers'>(defaultTab);
 
   useEffect(() => {
     setActiveTab(defaultTab);
@@ -821,6 +825,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   const allTabs = [
     { id: 'dashboard', name: 'Executive Dashboard', icon: BarChart3 },
     { id: 'headoffice', name: 'HQ Supply Office', icon: Building2 },
+    { id: 'customers', name: 'Milk Subscribers', icon: Users },
     { id: 'store', name: 'Store POS & Retail', icon: StoreIcon },
     { id: 'suppliers', name: 'Supply Chain POs', icon: Truck },
     { id: 'accounts', name: 'Double Entry Ledger', icon: Receipt },
@@ -951,6 +956,10 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
               onUpdateOffer={handleUpdateOffer}
               onDeleteOffer={handleDeleteOffer}
             />
+          )}
+
+          {activeTab === 'customers' && (
+            <CustomerMilkRegistry />
           )}
 
           {activeTab === 'store' && (

@@ -275,7 +275,7 @@ export interface AppUserRole {
   role: 'admin' | 'supply_office' | 'ledger' | 'supply_chain' | 'store_pos' | 'staff' | 'customer';
   label: string;
   allowedPortals: ('customer' | 'partner' | 'management')[];
-  allowedTabs?: ('dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'staff' | 'admin')[];
+  allowedTabs?: ('dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'staff' | 'admin' | 'customers')[];
 }
 
 export function getUserRole(email: string | null | undefined): AppUserRole {
@@ -342,4 +342,16 @@ export function getUserRole(email: string | null | undefined): AppUserRole {
     allowedPortals: ['customer']
   };
 }
+
+export interface MilkCustomer {
+  id: string;
+  name: string;
+  mobile: string;
+  address: string;
+  milkType: 'Cow' | 'Buffalo';
+  quantity: number; // in liters
+  price: number; // Rs. per liter
+  createdAt: string;
+}
+
 

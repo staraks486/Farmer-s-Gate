@@ -72,7 +72,8 @@ import {
   Globe,
   Compass,
   Navigation,
-  Sliders
+  Sliders,
+  Settings
 } from 'lucide-react';
 
 interface HeadOfficeProps {
@@ -118,6 +119,29 @@ export default function HeadOffice({
   const [activeTab, setActiveTab] = useState<'requirements' | 'inventory' | 'stores' | 'master-catalog' | 'customer-orders' | 'qr-catalog' | 'geo-sandbox' | 'shopper-store' | 'offers'>('requirements');
   const [reqSubTab, setReqSubTab] = useState<'itemized' | 'consolidated'>('itemized');
   const [expandedStoreStock, setExpandedStoreStock] = useState<Record<string, boolean>>({});
+
+  // HQ global invoice & delivery settings
+  const [hqSettings, setHqSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fg_hq_settings');
+      return saved ? JSON.parse(saved) : {
+        invoicePrefix: "FG-",
+        invoiceStartingNo: 1001,
+        deliveryCharges: 30
+      };
+    } catch {
+      return {
+        invoicePrefix: "FG-",
+        invoiceStartingNo: 1001,
+        deliveryCharges: 30
+      };
+    }
+  });
+
+  const saveHqSettings = (updated: any) => {
+    setHqSettings(updated);
+    localStorage.setItem('fg_hq_settings', JSON.stringify(updated));
+  };
 
   // Google Sheets API Integration State
   const [sheetsUser, setSheetsUser] = useState<any>(null);
@@ -2492,6 +2516,52 @@ export default function HeadOffice({
               <p className="text-[11px] text-slate-500 leading-relaxed">
                 Requirement filings raised by branch outlet managers appear here. Click <strong>DISPATCH</strong> to push the required volume directly to their localized digital inventory database instantly.
               </p>
+            </div>
+
+            {/* HQ settings card (invoice prefix + delivery charges) */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4 text-left">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Settings className="h-4 w-4 text-emerald-600" />
+                <h3 className="font-extrabold text-xs text-slate-900 uppercase">HQ Supply & Office Settings</h3>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Configure default values for branch invoice sequence numbering and delivery fee metrics.
+              </p>
+              <div className="space-y-3.5 pt-1">
+                <div className="space-y-1">
+                  <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Invoice prefix</label>
+                  <input
+                    type="text"
+                    value={hqSettings.invoicePrefix}
+                    onChange={(e) => saveHqSettings({ ...hqSettings, invoicePrefix: e.target.value })}
+                    placeholder="e.g. FG-"
+                    className="w-full text-xs font-mono font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Starting Invoice Number</label>
+                  <input
+                    type="number"
+                    value={hqSettings.invoiceStartingNo}
+                    onChange={(e) => saveHqSettings({ ...hqSettings, invoiceStartingNo: parseInt(e.target.value) || 1001 })}
+                    placeholder="1001"
+                    className="w-full text-xs font-mono font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400">Default Delivery Fee (₹)</label>
+                  <input
+                    type="number"
+                    value={hqSettings.deliveryCharges}
+                    onChange={(e) => saveHqSettings({ ...hqSettings, deliveryCharges: parseFloat(e.target.value) || 0 })}
+                    placeholder="30"
+                    className="w-full text-xs font-mono font-bold rounded-xl border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                  />
+                </div>
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-150 text-[10px] text-emerald-850 font-bold text-center">
+                  ✓ Synced globally to all POS desks
+                </div>
+              </div>
             </div>
           </div>
 
