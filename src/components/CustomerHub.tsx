@@ -578,7 +578,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
   const getWhatsAppOrderUrl = () => {
     const localStoresStr = localStorage.getItem('fg_stores');
     const localStores = localStoresStr ? JSON.parse(localStoresStr) : [];
-    const targetStore = localStores[0] || { whatsappNumber: "919876543210", name: "Farmer's Gate - Patiala Model Town" };
+    const targetStore = localStores[0] || { whatsappNumber: "919876543210", name: "Farmer's Gate - Patiala Model Town", location: "Model Town, Patiala, Punjab" };
     const num = targetStore.whatsappNumber || "919876543210";
 
     const customerDetails = `👤 *Customer:* ${authName || 'Guest Shopper'}\n📍 *Address:* ${customAddress || authAddress || 'Patiala Region'}\n📞 *Contact:* ${authPhone || 'N/A'}`;
@@ -591,7 +591,9 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
     const deliveryStr = `\n🚚 *Delivery Fee:* ${deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}`;
     const walletStr = useWallet ? `\n💳 *Wallet Debited:* ₹${Math.min(walletBalance, cartSubtotal - currentDiscount).toFixed(2)}` : '';
 
-    const text = `🌾 *NEW FARMERSGATE ORDER* 🌾\n\n${customerDetails}\n\n*🛍️ Sourced Items:*\n${itemsStr}\n\n-----------------------------\n*Subtotal:* ₹${cartSubtotal.toFixed(2)}${discountStr}${deliveryStr}${walletStr}\n*💰 Total Payable:* *₹${finalPaidAmount.toFixed(2)}*\n-----------------------------\n\n⚡ _Sent via FarmersGate Shopper Store_`;
+    const storeDetails = `🏪 *Sourced From Store:* ${targetStore.name}\n📍 *Store Location:* ${targetStore.location || 'Model Town, Patiala, Punjab'}`;
+
+    const text = `🌾 *NEW FARMERSGATE ORDER* 🌾\n\n${storeDetails}\n\n${customerDetails}\n\n*🛍️ Sourced Items:*\n${itemsStr}\n\n-----------------------------\n*Subtotal:* ₹${cartSubtotal.toFixed(2)}${discountStr}${deliveryStr}${walletStr}\n*💰 Total Payable:* *₹${finalPaidAmount.toFixed(2)}*\n-----------------------------\n\n⚡ _Sent via FarmersGate Shopper Store_`;
 
     return `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
   };

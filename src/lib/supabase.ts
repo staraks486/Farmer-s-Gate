@@ -859,6 +859,43 @@ export async function dbDeleteSale(id: string): Promise<void> {
   localStorage.setItem('fg_sales', JSON.stringify(filtered));
 }
 
+export async function dbUpdateSale(sale: Sale): Promise<Sale> {
+  const config = getSupabaseConfig();
+  
+  // 1. Update in local storage
+  try {
+    const local = localStorage.getItem('fg_sales');
+    const sales = local ? JSON.parse(local) : [];
+    const index = sales.findIndex((s: Sale) => s.id === sale.id);
+    if (index !== -1) {
+      sales[index] = sale;
+      localStorage.setItem('fg_sales', JSON.stringify(sales));
+    }
+  } catch (err) {
+    console.warn('Failed to update local sale cache:', err);
+  }
+
+  // 2. Update in Supabase
+  if (config.isConnected && supabaseInstance) {
+    try {
+      const { data, error } = await supabaseInstance
+        .from('sales')
+        .update(sale)
+        .eq('id', sale.id)
+        .select();
+      if (error) throw error;
+      return data[0] as Sale;
+    } catch (e) {
+      console.warn('Supabase update sale failed, queueing unsynced op:', e);
+      dbAddUnsyncedOp('sales', 'update', sale);
+    }
+  } else {
+    dbAddUnsyncedOp('sales', 'update', sale);
+  }
+
+  return sale;
+}
+
 
 // PURCHASES
 export async function dbGetPurchases(storeId?: string): Promise<Purchase[]> {

@@ -976,7 +976,7 @@ export default function AdminPanel({
       }
     } else {
       const newStore: Store = {
-        id: `store-${Date.now()}`,
+        id: `store-${Math.random().toString(36).substring(2, 7)}-${Date.now().toString().slice(-4)}`,
         name: storeName.startsWith("Farmer's Gate - ") ? storeName : `Farmer's Gate - ${storeName}`,
         location: storeLocation,
         whatsappNumber: storeWhatsapp.replace(/\D/g, ''), // clean phone input to pure numeric digits with country code

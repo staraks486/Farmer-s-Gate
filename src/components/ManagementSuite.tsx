@@ -56,6 +56,7 @@ import {
   dbAddSale, 
   dbAddSales,
   dbDeleteSale, 
+  dbUpdateSale, 
   dbGetPurchases, 
   dbAddPurchase, 
   dbDeletePurchase, 
@@ -580,6 +581,11 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     await triggerDataUpdate();
   };
 
+  const handleUpdateSale = async (sale: Sale) => {
+    await dbUpdateSale(sale);
+    await triggerDataUpdate();
+  };
+
   // Purchases
   const handleAddPurchase = async (p: Purchase) => {
     await dbAddPurchase(p);
@@ -952,15 +958,16 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
               unlockedStoreId === selectedStore.id ? (
                 <StoreManager 
                   store={selectedStore}
-                  sales={sales.filter(s => s.storeId === selectedStore.id)}
+                  sales={sales}
                   purchases={purchases.filter(p => p.storeId === selectedStore.id)}
-                  inventory={inventory.filter(i => i.storeId === selectedStore.id)}
+                  inventory={inventory}
                   requirements={requirements.filter(r => r.storeId === selectedStore.id)}
                   customerOrders={customerOrders.filter(co => co.storeId === selectedStore.id)}
                   role="Admin"
                   offers={offers}
                   onAddSale={handleAddSale}
                   onDeleteSale={handleDeleteSale}
+                  onUpdateSale={handleUpdateSale}
                   onAddPurchase={handleAddPurchase}
                   onDeletePurchase={handleDeletePurchase}
                   onUpdateInventoryItem={handleUpdateInventoryItem}

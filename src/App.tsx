@@ -151,7 +151,12 @@ export default function App() {
           
           setIsCheckingGeo(true);
           setTimeout(() => {
-            setUserLocation(coords);
+            setUserLocation(prev => {
+              if (prev && prev.lat === coords.lat && prev.lng === coords.lng) {
+                return prev;
+              }
+              return coords;
+            });
             setIsCheckingGeo(false);
 
             const locations = getLocationsToCheck();
@@ -189,7 +194,12 @@ export default function App() {
           lat: position.coords.latitude,
           lng: position.coords.longitude
         };
-        setUserLocation(coords);
+        setUserLocation(prev => {
+          if (prev && prev.lat === coords.lat && prev.lng === coords.lng) {
+            return prev;
+          }
+          return coords;
+        });
         setIsCheckingGeo(false);
 
         // Compute distance to branches
@@ -501,7 +511,7 @@ export default function App() {
       window.removeEventListener('hashchange', handleHashAndParams);
       window.removeEventListener('popstate', handleHashAndParams);
     };
-  }, [userLocation]);
+  }, []);
 
   const changePortal = (portal: 'customer' | 'partner' | 'management' | 'executive' | 'store_pos') => {
     verifyLocation(portal, (allowed, reason) => {

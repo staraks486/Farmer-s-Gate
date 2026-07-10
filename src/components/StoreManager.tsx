@@ -57,6 +57,7 @@ interface StoreManagerProps {
   attendance?: AttendanceRecord[];
   onAddSale: (sale: Sale | Sale[]) => void;
   onDeleteSale: (id: string) => void;
+  onUpdateSale?: (sale: Sale) => void;
   onAddPurchase: (purchase: Purchase) => void;
   onDeletePurchase: (id: string) => void;
   onUpdateInventoryItem: (item: InventoryItem) => void;
@@ -192,6 +193,7 @@ export default function StoreManager({
   attendance = [],
   onAddSale,
   onDeleteSale,
+  onUpdateSale,
   onAddPurchase,
   onDeletePurchase,
   onUpdateInventoryItem,
@@ -226,6 +228,8 @@ export default function StoreManager({
   const [billStatusFilter, setBillStatusFilter] = useState<'All' | 'Active' | 'Cancelled'>('All');
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [editingBillNoVal, setEditingBillNoVal] = useState<string>('');
+  const [selectedPreviewBill, setSelectedPreviewBill] = useState<any | null>(null);
+  const [salesRecordsMode, setSalesRecordsMode] = useState<'bills' | 'ledger'>('bills');
   
   // Dynamically compute the selection catalog of crop names by combining HQ master crops and predefined list
   const cropCatalogNames = React.useMemo(() => {
@@ -2062,6 +2066,91 @@ export default function StoreManager({
     link.download = `${completedBill.id}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
+  };
+
+  const handleCancelBill = async (billId: string) => {
+    if (!confirm(`Are you sure you want to cancel Invoice #${billId}? This will restore all associated item quantities back to the stock.`)) {
+      return;
+    }
+
+    // 1. Mark bill as Cancelled in the state & localStorage 'fg_bills'
+    const updatedBills = bills.map(b => {
+      if (b.id === billId) {
+        return { ...b, status: 'Cancelled' };
+      }
+      return b;
+    });
+    setBills(updatedBills);
+    localStorage.setItem('fg_bills', JSON.stringify(updatedBills));
+
+    // 2. Locate matching sales for this bill and delete/cancel them
+    // This will trigger onDeleteSale, which automatically restores the inventory stock!
+    const matchingSales = sales.filter(s => s.billId === billId);
+    if (matchingSales.length > 0) {
+      for (const sale of matchingSales) {
+        onDeleteSale(sale.id);
+      }
+    } else {
+      // Fallback: if we didn't find the sales (e.g. because of custom store mapping),
+      // we can restore stock manually using onUpdateInventoryItem!
+      const targetBill = bills.find(b => b.id === billId);
+      if (targetBill && targetBill.items) {
+        for (const item of targetBill.items) {
+          const itemStoreId = targetBill.storeId || store.id;
+          const invItem = inventory.find(inv => inv.storeId === itemStoreId && inv.vegetableName.toLowerCase() === item.vegetableName.toLowerCase());
+          if (invItem) {
+            const kgRate = getKgConversionRate(item.unit || 'kg');
+            const deductionKg = item.quantity * kgRate;
+            onUpdateInventoryItem({
+              ...invItem,
+              quantity: invItem.quantity + deductionKg
+            });
+          }
+        }
+      }
+    }
+
+    alert(`Invoice #${billId} has been successfully cancelled. Associated items have been returned to stock.`);
+  };
+
+  const handleSaveBillNo = async (oldBillId: string) => {
+    const trimmedVal = editingBillNoVal.trim();
+    if (!trimmedVal) {
+      alert("Invoice number cannot be empty.");
+      return;
+    }
+    if (trimmedVal === oldBillId) {
+      setEditingBillId(null);
+      return;
+    }
+
+    // Check if new bill number is already taken
+    const exists = bills.some(b => b.id === trimmedVal);
+    if (exists) {
+      alert("This Invoice number is already taken. Please choose a unique one.");
+      return;
+    }
+
+    // 1. Update the bill ID in state and localStorage 'fg_bills'
+    const updatedBills = bills.map(b => {
+      if (b.id === oldBillId) {
+        return { ...b, id: trimmedVal };
+      }
+      return b;
+    });
+    setBills(updatedBills);
+    localStorage.setItem('fg_bills', JSON.stringify(updatedBills));
+
+    // 2. Update all corresponding sales
+    const matchingSales = sales.filter(s => s.billId === oldBillId);
+    if (onUpdateSale) {
+      for (const sale of matchingSales) {
+        onUpdateSale({ ...sale, billId: trimmedVal });
+      }
+    }
+
+    setEditingBillId(null);
+    alert(`Invoice number successfully changed from #${oldBillId} to #${trimmedVal}.`);
   };
 
   // --- QR & BARCODE SCANNER INTEGRATION STATE ---
@@ -4088,7 +4177,7 @@ export default function StoreManager({
       )}
       {/* --- SUB-TAB CONTENT: SALES HISTORY & LEDGER --- */}
       {activeSubTab === 'sales-history' && (
-        <div className="space-y-6">
+        <div className="space-y-6 animate-fade-in text-slate-900">
           {/* Branch Mini Sales Dashboard (Clean & Modern) */}
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-3">
@@ -4106,8 +4195,8 @@ export default function StoreManager({
                 <ShoppingCart className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-[9px] font-extrabold uppercase text-slate-400 tracking-wider">Bills Issued</p>
-                <p className="text-sm font-black text-slate-900 mt-0.5">{storeSales.length} Invoices</p>
+                <p className="text-[9px] font-extrabold uppercase text-slate-400 tracking-wider">Invoices Count</p>
+                <p className="text-sm font-black text-slate-900 mt-0.5">{bills.length} Total</p>
               </div>
             </div>
 
@@ -4143,8 +4232,284 @@ export default function StoreManager({
             </div>
           </div>
 
-          <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
-              
+          {/* Mode Switcher Pills */}
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl max-w-md gap-1">
+            <button
+              type="button"
+              onClick={() => setSalesRecordsMode('bills')}
+              className={`flex-1 py-2 text-xs font-black rounded-xl cursor-pointer transition-all ${
+                salesRecordsMode === 'bills'
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              🧾 Sale Invoices (Bills)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSalesRecordsMode('ledger')}
+              className={`flex-1 py-2 text-xs font-black rounded-xl cursor-pointer transition-all ${
+                salesRecordsMode === 'ledger'
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              📊 Individual Sales Ledger
+            </button>
+          </div>
+
+          {salesRecordsMode === 'bills' ? (
+            <div className="space-y-4">
+              {/* Search & Filter Controls */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="relative flex-1">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+                  <input
+                    type="text"
+                    placeholder="Search by Bill ID, Customer, or Store Name..."
+                    value={billSearchQuery}
+                    onChange={e => setBillSearchQuery(e.target.value)}
+                    className="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/15 focus:border-emerald-600 transition-all font-semibold"
+                  />
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Status:</span>
+                  <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                    {(['All', 'Active', 'Cancelled'] as const).map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setBillStatusFilter(f)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          billStatusFilter === f
+                            ? 'bg-white text-emerald-800 shadow-xs font-black'
+                            : 'text-zinc-500 hover:text-zinc-800'
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bills List / Grid */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="font-bold text-zinc-900">Invoices Registry</h3>
+                    <p className="text-xs text-zinc-400">Showing all records compiled across all trading branches.</p>
+                  </div>
+                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-full px-2.5 py-0.5 text-[10px] font-black">
+                    {(() => {
+                      const filteredBills = bills.filter(bill => {
+                        if (billStatusFilter !== 'All') {
+                          if (bill.status !== billStatusFilter && !(billStatusFilter === 'Active' && !bill.status)) {
+                            return false;
+                          }
+                        }
+                        if (billSearchQuery.trim()) {
+                          const query = billSearchQuery.toLowerCase();
+                          const matchId = (bill.id || '').toLowerCase().includes(query);
+                          const matchCustomer = (bill.customerName || '').toLowerCase().includes(query);
+                          const matchStore = (bill.storeName || '').toLowerCase().includes(query);
+                          return matchId || matchCustomer || matchStore;
+                        }
+                        return true;
+                      });
+                      return filteredBills.length;
+                    })()} matched
+                  </span>
+                </div>
+
+                <div className="space-y-3.5 max-h-[600px] overflow-y-auto pr-1">
+                  {(() => {
+                    const filteredBills = bills.filter(bill => {
+                      if (billStatusFilter !== 'All') {
+                        if (bill.status !== billStatusFilter && !(billStatusFilter === 'Active' && !bill.status)) {
+                          return false;
+                        }
+                      }
+                      if (billSearchQuery.trim()) {
+                        const query = billSearchQuery.toLowerCase();
+                        const matchId = (bill.id || '').toLowerCase().includes(query);
+                        const matchCustomer = (bill.customerName || '').toLowerCase().includes(query);
+                        const matchStore = (bill.storeName || '').toLowerCase().includes(query);
+                        return matchId || matchCustomer || matchStore;
+                      }
+                      return true;
+                    });
+
+                    return filteredBills.map((bill: any) => {
+                      const isEditing = editingBillId === bill.id;
+                      const isCancelled = bill.status === 'Cancelled';
+                      return (
+                        <div 
+                          key={bill.id} 
+                          className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row justify-between gap-4 ${
+                            isCancelled 
+                              ? 'border-red-150 bg-red-50/20' 
+                              : 'border-slate-150 hover:bg-slate-50/50'
+                          }`}
+                        >
+                          <div className="space-y-2.5 flex-1 min-w-0">
+                            {/* Invoice Number & Store Name */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isEditing ? (
+                                <div className="flex items-center gap-1.5 bg-white border border-emerald-300 p-1 rounded-xl">
+                                  <span className="text-xs font-black text-slate-400 pl-1.5">No.</span>
+                                  <input
+                                    type="text"
+                                    value={editingBillNoVal}
+                                    onChange={e => setEditingBillNoVal(e.target.value)}
+                                    className="text-xs font-black text-slate-800 w-36 focus:outline-none bg-transparent"
+                                    autoFocus
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveBillNo(bill.id)}
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black px-2.5 py-1 rounded-lg cursor-pointer transition-all"
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingBillId(null)}
+                                    className="text-[10px] text-slate-500 hover:text-slate-800 px-1.5 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <span className="font-mono text-xs font-black text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                                    📄 #{bill.id}
+                                    {!isCancelled && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingBillId(bill.id);
+                                          setEditingBillNoVal(bill.id);
+                                        }}
+                                        title="Edit Invoice Number"
+                                        className="ml-1 text-[10px] text-emerald-600 hover:text-emerald-700 font-bold hover:underline"
+                                      >
+                                        ✏️
+                                      </button>
+                                    )}
+                                  </span>
+                                </>
+                              )}
+                              
+                              <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full px-2.5 py-0.5 font-bold">
+                                📍 {bill.storeName || 'Unknown Store'}
+                              </span>
+
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                isCancelled 
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-100' 
+                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                              }`}>
+                                {isCancelled ? '🔴 Cancelled' : '🟢 Active'}
+                              </span>
+                            </div>
+
+                            {/* Customer, Date, Payment details */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-1.5 gap-x-4 text-[11px] text-slate-500">
+                              <div>
+                                <span className="font-extrabold text-slate-400 block uppercase tracking-wider text-[8px]">Customer Name</span>
+                                <span className="font-bold text-slate-800">👤 {bill.customerName || 'Retail Customer'}</span>
+                              </div>
+                              <div>
+                                <span className="font-extrabold text-slate-400 block uppercase tracking-wider text-[8px]">Date & Timestamp</span>
+                                <span className="font-medium text-slate-800">📅 {bill.date}</span>
+                              </div>
+                              <div>
+                                <span className="font-extrabold text-slate-400 block uppercase tracking-wider text-[8px]">Payment Method</span>
+                                <span className="font-bold text-slate-800">💳 {bill.paymentMode || 'Cash'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Amount & Action Buttons */}
+                          <div className="flex flex-col sm:flex-row md:flex-col justify-between items-end gap-3 shrink-0 self-start md:self-auto w-full md:w-auto border-t md:border-t-0 border-slate-100 pt-3 md:pt-0">
+                            <div className="text-right w-full sm:w-auto md:w-full">
+                              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Total Paid</span>
+                              <span className={`text-base font-black font-mono ${isCancelled ? 'text-slate-400 line-through' : 'text-emerald-700'}`}>
+                                ₹{bill.totalAmount.toFixed(2)}
+                              </span>
+                              {bill.discount > 0 && (
+                                <p className="text-[9px] text-red-500 font-bold">Coupon Slashed ₹{bill.discount.toFixed(2)}</p>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 w-full sm:w-auto md:w-full md:justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedPreviewBill(bill)}
+                                className="flex-1 sm:flex-none text-[10px] font-black bg-slate-900 text-white hover:bg-slate-800 px-3 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                👁️ Preview Receipt
+                              </button>
+                              
+                              {!isCancelled && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCancelBill(bill.id)}
+                                  className="flex-1 sm:flex-none text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-100 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  🛑 Cancel
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadPDF(bill)}
+                                title="Download PDF Invoice Summary"
+                                className="text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-100 hover:bg-emerald-100 p-1.5 rounded-xl transition-all flex items-center justify-center cursor-pointer"
+                              >
+                                📥 PDF
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+
+                  {(() => {
+                    const filteredBills = bills.filter(bill => {
+                      if (billStatusFilter !== 'All') {
+                        if (bill.status !== billStatusFilter && !(billStatusFilter === 'Active' && !bill.status)) {
+                          return false;
+                        }
+                      }
+                      if (billSearchQuery.trim()) {
+                        const query = billSearchQuery.toLowerCase();
+                        const matchId = (bill.id || '').toLowerCase().includes(query);
+                        const matchCustomer = (bill.customerName || '').toLowerCase().includes(query);
+                        const matchStore = (bill.storeName || '').toLowerCase().includes(query);
+                        return matchId || matchCustomer || matchStore;
+                      }
+                      return true;
+                    });
+                    if (filteredBills.length === 0) {
+                      return (
+                        <div className="py-24 text-center text-zinc-400">
+                          <TrendingUp className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
+                          <p className="text-xs font-semibold">No invoices match your filters</p>
+                          <p className="text-[10px] text-zinc-500">Search for a different ID or check other status tabs.</p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
               {/* Recent Sales History Log */}
               <div className="lg:col-span-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm flex flex-col h-full max-h-[500px]">
                 <div className="mb-4">
@@ -4214,9 +4579,9 @@ export default function StoreManager({
                   )}
                 </div>
               </div>
-
             </div>
-          </div>
+          )}
+        </div>
       )}
 
       {/* --- SUB-TAB CONTENT: PURCHASE --- */}
@@ -8689,6 +9054,158 @@ export default function StoreManager({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- RECEIPT MODAL PREVIEW (PRINTABLE RECEIPT LAYOUT) --- */}
+      {selectedPreviewBill && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-200 overflow-hidden my-8">
+            
+            {/* Modal Controls Bar (Hidden on print) */}
+            <div className="bg-slate-900 px-5 py-3.5 flex items-center justify-between text-white print:hidden">
+              <span className="text-xs font-black tracking-wider uppercase">Receipt Preview</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] px-3 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-1"
+                >
+                  🖨️ Print Receipt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPreviewBill(null)}
+                  className="bg-white/10 hover:bg-white/20 text-white font-extrabold text-xs px-3 py-1.5 rounded-xl cursor-pointer transition-all"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* Receipt Printable Area */}
+            <div id="print-receipt-area" className="p-8 space-y-6 font-sans text-xs text-slate-800 bg-white">
+              {/* Receipt Header */}
+              <div className="text-center space-y-1.5">
+                <h2 className="text-2xl font-black tracking-tight text-slate-900 uppercase">FARMER'S GATE</h2>
+                <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-widest">
+                  📍 {selectedPreviewBill.storeName || store.name}
+                </p>
+                {selectedPreviewBill.storeId && (
+                  <p className="text-[9px] font-mono text-slate-400 uppercase">
+                    Store ID: {selectedPreviewBill.storeId}
+                  </p>
+                )}
+                <div className="inline-block px-3 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-100 border border-slate-200 mt-1">
+                  Invoice No: #{selectedPreviewBill.id}
+                </div>
+              </div>
+
+              {/* Status Banner */}
+              {selectedPreviewBill.status === 'Cancelled' ? (
+                <div className="bg-rose-50 border border-rose-150 rounded-xl p-2.5 text-center text-rose-700 font-bold uppercase tracking-wider text-[10px]">
+                  🚨 Cancelled Transaction 🚨
+                </div>
+              ) : (
+                <div className="border-y border-dashed border-slate-200 py-2.5 text-[10px] text-slate-500 flex justify-between font-medium">
+                  <span>📅 Date: {selectedPreviewBill.date}</span>
+                  <span className="font-bold text-emerald-700">🟢 Paid Active</span>
+                </div>
+              )}
+
+              {/* Customer Info */}
+              <div className="space-y-1">
+                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Billed To</span>
+                <span className="font-bold text-slate-800 text-[11px]">👤 {selectedPreviewBill.customerName || 'Retail Customer'}</span>
+              </div>
+
+              {/* Purchased Items Table */}
+              <div className="space-y-2">
+                <div className="border-b border-slate-200 pb-1 flex justify-between text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                  <span className="w-1/2">Item Description</span>
+                  <span className="w-1/4 text-center">Qty / Rate</span>
+                  <span className="w-1/4 text-right">Amount</span>
+                </div>
+
+                <div className="space-y-3 pt-1">
+                  {selectedPreviewBill.items && selectedPreviewBill.items.map((it: any, idx: number) => {
+                    const unitLabel = it.unit || 'kg';
+                    const baseLabel = unitLabel === 'g' ? 'kg' : 'unit';
+                    return (
+                      <div key={idx} className="flex justify-between items-start text-xs">
+                        <div className="w-1/2">
+                          <span className="font-bold text-slate-800 block capitalize">{it.vegetableName.toLowerCase()}</span>
+                        </div>
+                        <div className="w-1/4 text-center text-slate-500 font-mono text-[11px]">
+                          {it.quantity} {unitLabel} @ {it.pricePerKg}/{baseLabel}
+                        </div>
+                        <div className="w-1/4 text-right font-bold text-slate-900 font-mono">
+                          ₹{it.totalPrice.toFixed(2)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Totals Breakdown */}
+              <div className="border-t border-dashed border-slate-300 pt-4 space-y-1.5 font-medium text-slate-600">
+                {selectedPreviewBill.subtotal !== undefined && (
+                  <div className="flex justify-between">
+                    <span>Subtotal</span>
+                    <span className="font-mono">₹{selectedPreviewBill.subtotal.toFixed(2)}</span>
+                  </div>
+                )}
+                {selectedPreviewBill.discount !== undefined && selectedPreviewBill.discount > 0 && (
+                  <div className="flex justify-between text-red-500 font-bold">
+                    <span>Promo Discount</span>
+                    <span className="font-mono">-₹{selectedPreviewBill.discount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-baseline pt-2 text-slate-900 font-black text-sm">
+                  <span>TOTAL AMOUNT</span>
+                  <span className="font-mono text-base text-emerald-700">₹{selectedPreviewBill.totalAmount.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Payment details */}
+              <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 flex justify-between items-center text-[10px] uppercase font-bold text-slate-500">
+                <span>Payment Mode:</span>
+                <span className="text-slate-800">{selectedPreviewBill.paymentMode || 'Cash'}</span>
+              </div>
+
+              {/* Footer notes */}
+              <div className="text-center text-[10px] text-slate-400 italic pt-4 border-t border-dashed border-slate-200">
+                <p>🌱 Thank you for choosing fresh organic farming!</p>
+                <p>Support local organic farmers. Have a vital day!</p>
+              </div>
+            </div>
+
+            {/* Extra style tag to target print media */}
+            <style dangerouslySetInnerHTML={{__html: `
+              @media print {
+                body * {
+                  visibility: hidden !important;
+                }
+                #print-receipt-area, #print-receipt-area * {
+                  visibility: visible !important;
+                }
+                #print-receipt-area {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  padding: 20px !important;
+                  margin: 0 !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  background: white !important;
+                  color: black !important;
+                }
+              }
+            `}} />
+
           </div>
         </div>
       )}
