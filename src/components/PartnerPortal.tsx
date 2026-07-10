@@ -413,7 +413,7 @@ export default function PartnerPortal({ appVersion }: { appVersion?: string }) {
                       <div 
                         key={order.id} 
                         onClick={() => setSelectedOrder(order)}
-                        className="bg-slate-100 border border-slate-200 rounded-2xl p-3 flex justify-between items-center cursor-pointer hover:bg-slate-150 transition-all"
+                        className="bg-slate-100 border border-slate-200 rounded-2xl p-3 flex justify-between items-center cursor-pointer hover:bg-slate-200 transition-all"
                       >
                         <div className="min-w-0">
                           <p className="text-xs font-bold text-slate-700 truncate">{order.customerName}</p>
@@ -450,7 +450,7 @@ export default function PartnerPortal({ appVersion }: { appVersion?: string }) {
                       </button>
                     </div>
 
-                    <div className="p-3 bg-slate-50 rounded-2xl text-xs space-y-1.5 border border-slate-150">
+                    <div className="p-3 bg-slate-50 rounded-2xl text-xs space-y-1.5 border border-slate-200">
                       <p className="font-extrabold text-slate-800 flex items-center gap-1.5">
                         👤 {selectedOrder.customerName}
                       </p>
@@ -483,7 +483,7 @@ export default function PartnerPortal({ appVersion }: { appVersion?: string }) {
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Packed Basket Items</p>
                       <div className="space-y-1.5">
                         {selectedOrder.items.map((item, idx) => (
-                          <div key={idx} className="flex justify-between items-center text-xs p-2 bg-slate-50 border border-slate-150 rounded-xl">
+                          <div key={idx} className="flex justify-between items-center text-xs p-2 bg-slate-50 border border-slate-200 rounded-xl">
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span>{item.emoji || '🥦'}</span>
                               <p className="font-bold text-slate-800 truncate">{item.vegetableName}</p>

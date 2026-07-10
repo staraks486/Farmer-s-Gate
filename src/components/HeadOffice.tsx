@@ -657,8 +657,8 @@ export default function HeadOffice({
     { key: 'Vegetable', label: 'Veggies Catalog', emoji: '🥦', description: 'Fresh organic leafy vegetables, roots, and farm greens', color: 'from-emerald-50 to-emerald-100/30 border-emerald-100 text-emerald-800' },
     { key: 'Fruit', label: 'Fruits Catalog', emoji: '🍊', description: 'Sweet organic summer fruits, berries, and citrus', color: 'from-orange-50 to-orange-100/30 border-orange-100 text-orange-850' },
     { key: 'Herbs', label: 'Fresh Herbs Catalog', emoji: '🌿', description: 'Local aromatic herbs, organic seasonings, and mints', color: 'from-teal-50 to-teal-100/30 border-teal-100 text-teal-850' },
-    { key: 'Grocery', label: 'Essential Grocery Catalog', emoji: '🌾', description: 'Whole grains, organic flours, rice, pulses, and staples', color: 'from-amber-50 to-amber-100/30 border-amber-150 text-amber-850' },
-    { key: 'Recipes', label: 'Quick Recipes Catalog', emoji: '🍳', description: 'Chef-paired organic meal kits and easy farm-to-table recipes', color: 'from-purple-50 to-purple-100/30 border-purple-150 text-purple-850' },
+    { key: 'Grocery', label: 'Essential Grocery Catalog', emoji: '🌾', description: 'Whole grains, organic flours, rice, pulses, and staples', color: 'from-amber-50 to-amber-100/30 border-amber-200 text-amber-850' },
+    { key: 'Recipes', label: 'Quick Recipes Catalog', emoji: '🍳', description: 'Chef-paired organic meal kits and easy farm-to-table recipes', color: 'from-purple-50 to-purple-100/30 border-purple-200 text-purple-850' },
   ];
 
   // Effect to automatically generate QR Codes when settings change
@@ -2381,7 +2381,7 @@ export default function HeadOffice({
           {/* Left Panel: Direct HQ Allocation Action Console */}
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
-              <div className="flex items-center gap-2 border-b border-slate-150 pb-3">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
                 <Send className="h-5 w-5 text-emerald-600" />
                 <h3 className="font-extrabold text-sm text-slate-900">Direct HQ Allocation</h3>
               </div>
@@ -3508,7 +3508,7 @@ export default function HeadOffice({
                       <th className="p-3.5 text-center">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-150 font-medium">
+                  <tbody className="divide-y divide-slate-200 font-medium">
                     {filteredInventory.map((item, index) => {
                       const targetStore = stores.find(s => s.id === item.storeId);
                       const storeName = targetStore ? targetStore.name.replace("Farmer's Gate - ", "") : 'Unknown';
@@ -3889,15 +3889,15 @@ export default function HeadOffice({
                     <div className="space-y-1.5 pt-2">
                       <p className="font-black text-[9px] uppercase tracking-wider text-slate-400">Live Financial & Auditing Analytics</p>
                       <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                        <div className="border border-slate-150 p-2 rounded-xl bg-white">
+                        <div className="border border-slate-200 p-2 rounded-xl bg-white">
                           <span className="text-[8px] uppercase text-slate-400 block font-bold">Stock Value</span>
                           <span className="font-black text-slate-850">₹{cumulativeVal.toLocaleString()}</span>
                         </div>
-                        <div className="border border-slate-150 p-2 rounded-xl bg-white">
+                        <div className="border border-slate-200 p-2 rounded-xl bg-white">
                           <span className="text-[8px] uppercase text-slate-400 block font-bold">Total Sales</span>
                           <span className="font-black text-emerald-600">₹{rev.toLocaleString()}</span>
                         </div>
-                        <td className="border border-slate-150 p-2 rounded-xl bg-white flex flex-col justify-center">
+                        <td className="border border-slate-200 p-2 rounded-xl bg-white flex flex-col justify-center">
                           <span className="text-[8px] uppercase text-slate-400 block font-bold">Total Volume</span>
                           <span className="font-black text-slate-800">{vol.toLocaleString()} kg</span>
                         </td>
@@ -3958,7 +3958,7 @@ export default function HeadOffice({
                       </button>
 
                       {expandedStoreStock[store.id] && (
-                        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-2 max-h-[180px] overflow-y-auto animate-fade-in">
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2 max-h-[180px] overflow-y-auto animate-fade-in">
                           {items.length === 0 ? (
                             <p className="text-[10px] text-slate-400 text-center py-4 font-bold">No items in this store's inventory yet.</p>
                           ) : (
@@ -4112,7 +4112,7 @@ export default function HeadOffice({
                 className={`text-[10px] font-black uppercase tracking-wider px-3.5 py-2 rounded-xl border transition-all cursor-pointer ${
                   isBackgroundSyncing 
                     ? 'bg-slate-100 text-slate-400 border-slate-200' 
-                    : 'bg-white hover:bg-slate-150 border-slate-300 text-slate-700 shadow-xs'
+                    : 'bg-white hover:bg-slate-200 border-slate-300 text-slate-700 shadow-xs'
                 }`}
               >
                 {isBackgroundSyncing ? 'Syncing...' : 'Sync Master Catalog ⚡'}
@@ -5152,7 +5152,7 @@ export default function HeadOffice({
                     </div>
 
                     {/* Pricing Detail Block */}
-                    <div className="bg-slate-50/80 border border-slate-150 rounded-2xl p-3.5 space-y-2 mb-5">
+                    <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-2 mb-5">
                       <div className="grid grid-cols-2 gap-2 text-center">
                         <div className="border-r border-slate-200/60 pb-1">
                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Std Wholesale Cost</p>
@@ -5709,7 +5709,7 @@ export default function HeadOffice({
                         <Link className="h-3 w-3" />
                         <span>Target Store Link</span>
                       </div>
-                      <div className="bg-white px-3 py-1.5 rounded-xl border border-slate-150 text-[10px] font-semibold text-slate-600 truncate max-w-[240px] mx-auto font-mono">
+                      <div className="bg-white px-3 py-1.5 rounded-xl border border-slate-200 text-[10px] font-semibold text-slate-600 truncate max-w-[240px] mx-auto font-mono">
                         ?portal=customer&category={cat.key}#customer
                       </div>
                     </div>
@@ -5917,7 +5917,7 @@ export default function HeadOffice({
                       className={`w-full text-left p-3.5 rounded-2xl border transition-all flex flex-col gap-1.5 cursor-pointer ${
                         selectedCustomerOrderId === order.id
                           ? 'border-slate-900 bg-slate-900 text-white shadow-md'
-                          : 'border-slate-150 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300'
+                          : 'border-slate-200 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -5997,7 +5997,7 @@ export default function HeadOffice({
                   </div>
 
                   {/* Customer Information Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
                     <div className="space-y-1.5 text-xs">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Customer Details</p>
                       <p className="font-extrabold text-slate-800">{selectedOrder.customerName}</p>
@@ -6013,10 +6013,10 @@ export default function HeadOffice({
                   {/* Ordered Items Table */}
                   <div className="space-y-2">
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Ordered Vegetables & Fruits</p>
-                    <div className="border border-slate-150 rounded-xl overflow-hidden text-xs">
+                    <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="bg-slate-50 border-b border-slate-150 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                          <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-wider">
                             <th className="p-2.5">Crop Name</th>
                             <th className="p-2.5 text-center">Qty (Kg)</th>
                             <th className="p-2.5 text-right">Price per Kg</th>
@@ -6037,7 +6037,7 @@ export default function HeadOffice({
                           ))}
                         </tbody>
                         <tfoot>
-                          <tr className="bg-slate-50 border-t border-slate-150 font-black text-slate-900">
+                          <tr className="bg-slate-50 border-t border-slate-200 font-black text-slate-900">
                             <td colSpan={3} className="p-2.5 text-right uppercase text-[10px]">Grand Paid Total:</td>
                             <td className="p-2.5 text-right text-emerald-700 text-sm">₹{selectedOrder.totalAmount}</td>
                           </tr>
@@ -6766,7 +6766,7 @@ export default function HeadOffice({
                           className={`border rounded-2xl p-4 transition-all flex flex-col justify-between relative ${
                             !isVisible 
                               ? 'bg-slate-50 border-slate-200/80 opacity-70' 
-                              : 'bg-white border-slate-150 shadow-3xs hover:shadow hover:border-emerald-500/30'
+                              : 'bg-white border-slate-200 shadow-3xs hover:shadow hover:border-emerald-500/30'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -6869,7 +6869,7 @@ export default function HeadOffice({
                 </p>
 
                 {masterCrops.length === 0 ? (
-                  <div className="py-6 text-center text-slate-400 border border-dashed border-slate-150 rounded-2xl bg-slate-50 text-[11px] font-semibold">
+                  <div className="py-6 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-slate-50 text-[11px] font-semibold">
                     No crops configured in the Master Catalog. Add crops inside the "Master Catalog" tab first.
                   </div>
                 ) : (
@@ -6883,7 +6883,7 @@ export default function HeadOffice({
                           className={`p-3 border rounded-2xl flex items-center justify-between gap-3 transition-colors ${
                             alreadyInStore 
                               ? 'bg-emerald-50/40 border-emerald-100 opacity-75' 
-                              : 'bg-white border-slate-150 hover:bg-slate-50'
+                              : 'bg-white border-slate-200 hover:bg-slate-50'
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0 text-left">
@@ -6925,7 +6925,7 @@ export default function HeadOffice({
           {/* Product Config Form Modal */}
           {isAddingShopperProduct && (
             <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-              <div className="relative max-w-md w-full bg-white border border-slate-150 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-800">
+              <div className="relative max-w-md w-full bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-800">
                 <button
                   type="button"
                   onClick={resetShopperForm}
@@ -7027,7 +7027,7 @@ export default function HeadOffice({
                     <div className="space-y-1">
                       <label className="block text-[10px] font-extrabold uppercase text-slate-400">Custom Emoji</label>
                       <div className="flex gap-2 items-center">
-                        <span className="text-2xl p-1 border border-slate-150 rounded-lg select-none bg-slate-50 shrink-0 w-10 h-10 flex items-center justify-center">
+                        <span className="text-2xl p-1 border border-slate-200 rounded-lg select-none bg-slate-50 shrink-0 w-10 h-10 flex items-center justify-center">
                           {shopperFormEmoji || '🥦'}
                         </span>
                         <input
@@ -7242,7 +7242,7 @@ export default function HeadOffice({
                         key={offer.id}
                         className={`p-4 rounded-2xl border transition relative flex flex-col justify-between h-44 ${
                           offer.isActive
-                            ? 'border-indigo-150 bg-indigo-50/15'
+                            ? 'border-indigo-200 bg-indigo-50/15'
                             : 'border-slate-200 bg-slate-50/50 grayscale opacity-75'
                         }`}
                       >
@@ -7258,7 +7258,7 @@ export default function HeadOffice({
                           <p className="text-[10px] text-slate-500 font-medium mt-1 leading-relaxed line-clamp-2">{offer.description}</p>
                         </div>
 
-                        <div className="pt-3 border-t border-slate-150/50 flex justify-between items-center">
+                        <div className="pt-3 border-t border-slate-200/50 flex justify-between items-center">
                           <div>
                             <span className="block text-[9px] text-slate-400 font-bold uppercase">Benefit</span>
                             <span className="text-xs font-black text-indigo-700">

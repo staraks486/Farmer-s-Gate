@@ -1080,7 +1080,7 @@ export default function StaffAttendanceManager({
                     </strong>
                   </p>
                 </div>
-                <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 flex flex-col justify-center items-center text-center">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col justify-center items-center text-center">
                   <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest leading-none">Attendance Score</span>
                   <span className="text-3xl font-black text-emerald-600 mt-2 font-mono">{employeeCalculatedDetails.attendanceRate}%</span>
                   <span className="text-[9px] text-slate-400 font-bold mt-1">
@@ -1091,19 +1091,19 @@ export default function StaffAttendanceManager({
 
               {/* Roster Statistics Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
                   <span className="text-[8px] font-extrabold text-slate-400 uppercase block">Present Days</span>
                   <span className="text-lg font-black text-emerald-600 block mt-1">{employeeCalculatedDetails.presentDays} Days</span>
                 </div>
-                <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
                   <span className="text-[8px] font-extrabold text-slate-400 uppercase block">Leave Days</span>
                   <span className="text-lg font-black text-amber-600 block mt-1">{employeeCalculatedDetails.leaveDays} Days</span>
                 </div>
-                <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
                   <span className="text-[8px] font-extrabold text-slate-400 uppercase block">Absent Days</span>
                   <span className="text-lg font-black text-rose-600 block mt-1">{employeeCalculatedDetails.absentDays} Days</span>
                 </div>
-                <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
                   <span className="text-[8px] font-extrabold text-slate-400 uppercase block">Punctuality Score</span>
                   <span className="text-lg font-black text-indigo-600 block mt-1">{employeeCalculatedDetails.punctualityScore}%</span>
                 </div>
@@ -1167,7 +1167,7 @@ export default function StaffAttendanceManager({
                   📅 Daily Attendance & Workday Logs
                 </h4>
                 {employeeCalculatedDetails.dailyBreakdown.length > 0 ? (
-                  <div className="border border-slate-150 rounded-2xl overflow-hidden divide-y divide-slate-150 text-xs">
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-200 text-xs">
                     {employeeCalculatedDetails.dailyBreakdown.map((log, idx) => (
                       <div key={idx} className="p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3 hover:bg-slate-50/30">
                         <div className="space-y-1">
@@ -1213,7 +1213,7 @@ export default function StaffAttendanceManager({
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-8 bg-slate-50 border border-slate-150 rounded-2xl italic text-xs text-slate-400 font-semibold">
+                  <div className="text-center py-8 bg-slate-50 border border-slate-200 rounded-2xl italic text-xs text-slate-400 font-semibold">
                     No historic attendance logs found for this employee.
                   </div>
                 )}
@@ -1221,7 +1221,7 @@ export default function StaffAttendanceManager({
             </div>
 
             {/* Footer actions */}
-            <div className="p-6 bg-slate-50 border-t border-slate-150 shrink-0 flex gap-2.5">
+            <div className="p-6 bg-slate-50 border-t border-slate-200 shrink-0 flex gap-2.5">
               <button
                 type="button"
                 onClick={() => setSelectedDetailsStaffId(null)}

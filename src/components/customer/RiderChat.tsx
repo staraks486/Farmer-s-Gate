@@ -133,7 +133,7 @@ export default function RiderChat({ onClose }: RiderChatProps) {
               <div className={`max-w-[85%] rounded-2xl p-3 text-xs text-left shadow-sm relative ${
                 isUser 
                   ? 'bg-emerald-600 text-white rounded-tr-none' 
-                  : 'bg-white text-slate-800 border border-slate-150 rounded-tl-none'
+                  : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none'
               }`}>
                 <p className="font-semibold leading-relaxed break-words">{m.text}</p>
                 <div className={`flex items-center justify-end gap-1 text-[8.5px] mt-1.5 ${
@@ -150,7 +150,7 @@ export default function RiderChat({ onClose }: RiderChatProps) {
       </div>
 
       {/* Message Input Footer */}
-      <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-150 bg-white flex gap-2 shrink-0">
+      <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-200 bg-white flex gap-2 shrink-0">
         <input
           type="text"
           placeholder="Ask Rohit: 'leave with guard' or 'call me'..."

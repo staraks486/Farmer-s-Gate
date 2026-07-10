@@ -1082,7 +1082,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                         key={item.id}
                         whileHover={{ y: -2 }}
                         className={`bg-white border rounded-3xl p-4 shadow-3xs hover:shadow-md transition-all flex flex-col justify-between relative ${
-                          item.stock <= 0 ? 'opacity-60 bg-slate-50 border-slate-200' : 'border-slate-150/80 hover:border-emerald-500/30'
+                          item.stock <= 0 ? 'opacity-60 bg-slate-50 border-slate-200' : 'border-slate-200/80 hover:border-emerald-500/30'
                         }`}
                       >
                         {/* Organic Tag */}
@@ -1154,7 +1154,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                           ) : (
                             <div className="flex flex-col gap-2">
                               {/* Hidden selectors made compact */}
-                              <div className="flex items-center bg-slate-50 border border-slate-150 rounded-xl px-2.5 py-1 text-center justify-center gap-1.5">
+                              <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-center justify-center gap-1.5">
                                 <span className="text-[8.5px] text-slate-400 font-bold">Qty:</span>
                                 <input
                                   type="number"
@@ -1272,7 +1272,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                     {/* Basket list */}
                     <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
                       {cartItemsList.map(({ item, quantity }) => (
-                        <div key={item.id} className="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-xl border border-slate-150">
+                        <div key={item.id} className="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-xl border border-slate-200">
                           <div className="flex items-center gap-1 min-w-0">
                             <span>{item.emoji || '🥦'}</span>
                             <span className="font-extrabold text-slate-800 truncate max-w-[100px]">{item.vegetableName}</span>
@@ -1332,7 +1332,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                     </div>
 
                     {/* Receipts details */}
-                    <div className="p-3 bg-slate-50 border border-slate-150 rounded-2xl text-[10.5px] space-y-1 text-slate-500 font-semibold">
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-[10.5px] space-y-1 text-slate-500 font-semibold">
                       <div className="flex justify-between">
                         <span>Cart Subtotal:</span>
                         <span className="font-bold text-slate-800">₹{cartSubtotal}</span>
@@ -1519,7 +1519,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                             <span className="text-[10px] text-emerald-800 font-extrabold uppercase mt-1.5">✓ Thank you for rating this order!</span>
                           </div>
                         ) : (
-                          <div className="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-150 space-y-1">
+                          <div className="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 space-y-1">
                             <span className="text-[9.5px] font-bold text-slate-500 text-center">Tap to rate Ramesh & fresh produce:</span>
                             <div className="flex gap-1.5">
                               {[1, 2, 3, 4, 5].map((s) => (
@@ -2024,7 +2024,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                           setAuthPassword('farmersgate123');
                           handleInstantGuestLogin('customer');
                         }}
-                        className="p-2.5 bg-white hover:bg-emerald-50/50 border border-slate-150 hover:border-emerald-200 rounded-xl text-left cursor-pointer transition-all space-y-1 group"
+                        className="p-2.5 bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-200 rounded-xl text-left cursor-pointer transition-all space-y-1 group"
                       >
                         <span className="text-[10px] font-black text-emerald-800 uppercase block group-hover:text-emerald-700">🛒 Shopper Demo</span>
                         <span className="text-[8.5px] font-semibold text-slate-400 font-mono block">demo_shopper@farmersgate.com</span>
@@ -2038,7 +2038,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                           setAuthPassword('farmersgate123');
                           handleInstantGuestLogin('partner');
                         }}
-                        className="p-2.5 bg-white hover:bg-slate-100 border border-slate-150 hover:border-slate-350 rounded-xl text-left cursor-pointer transition-all space-y-1 group"
+                        className="p-2.5 bg-white hover:bg-slate-100 border border-slate-200 hover:border-slate-350 rounded-xl text-left cursor-pointer transition-all space-y-1 group"
                       >
                         <span className="text-[10px] font-black text-slate-800 uppercase block group-hover:text-slate-700">🏍️ Rider Demo</span>
                         <span className="text-[8.5px] font-semibold text-slate-400 font-mono block">partner@farmersgate.com</span>
@@ -2211,7 +2211,7 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
       </AnimatePresence>
 
       {/* Responsive Bottom Navigation Bar for Mobile Devices */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-150 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-6 py-2 flex justify-around items-center md:hidden">
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-6 py-2 flex justify-around items-center md:hidden">
         <button
           onClick={() => { setActiveTab('shop'); setSelectedCategory('All'); }}
           className={`flex flex-col items-center gap-1 cursor-pointer transition ${

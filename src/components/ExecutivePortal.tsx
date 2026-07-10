@@ -370,7 +370,7 @@ export default function ExecutivePortal({ isAdmin = false, appVersion }: { isAdm
 
               {/* Crop Stock Table */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-150 pb-1.5">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
                   <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <Package className="h-4 w-4 text-emerald-600" />
                     Live Crop Stock levels
@@ -378,10 +378,10 @@ export default function ExecutivePortal({ isAdmin = false, appVersion }: { isAdm
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">REAL TIME UPDATES</span>
                 </div>
 
-                <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-3xs">
+                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-3xs">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-500 text-[9px] uppercase tracking-wider border-b border-slate-150 font-black">
+                      <tr className="bg-slate-50 text-slate-500 text-[9px] uppercase tracking-wider border-b border-slate-200 font-black">
                         <th className="py-2.5 px-4">Crop Name</th>
                         <th className="py-2.5 px-4 text-center">Stock Level</th>
                         <th className="py-2.5 px-4 text-right">Cost Price</th>
@@ -389,7 +389,7 @@ export default function ExecutivePortal({ isAdmin = false, appVersion }: { isAdm
                         <th className="py-2.5 px-4 text-right">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-150 font-bold text-slate-700">
+                    <tbody className="divide-y divide-slate-200 font-bold text-slate-700">
                       {branchInventory.map(item => {
                         const isDepleted = item.quantity === 0;
                         const isLow = item.quantity > 0 && item.quantity <= item.minStockThreshold;
@@ -427,7 +427,7 @@ export default function ExecutivePortal({ isAdmin = false, appVersion }: { isAdm
 
               {/* Recent Branch Activity Logs */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-150 pb-1.5">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
                   <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <TrendingUp className="h-4 w-4 text-emerald-600" />
                     Recent sales activities

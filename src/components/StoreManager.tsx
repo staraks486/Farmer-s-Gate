@@ -224,6 +224,10 @@ export default function StoreManager({
       return [];
     }
   });
+  const storeBills = React.useMemo(() => {
+    return bills.filter(b => b.storeId === store.id || b.storeName === store.name);
+  }, [bills, store.id, store.name]);
+
   const [billSearchQuery, setBillSearchQuery] = useState('');
   const [billStatusFilter, setBillStatusFilter] = useState<'All' | 'Active' | 'Cancelled'>('All');
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
@@ -3285,7 +3289,7 @@ export default function StoreManager({
                           className={`absolute right-2.5 top-1.5 p-1 rounded-lg transition-all ${
                             isListening
                               ? 'bg-rose-500 text-white animate-pulse shadow-md shadow-rose-500/20'
-                              : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-150'
+                              : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-200'
                           }`}
                           title="Speak crop name to search"
                         >
@@ -3588,7 +3592,7 @@ export default function StoreManager({
                         </button>
                       </div>
                     ) : storeInventory.filter(item => item.vegetableName.toLowerCase().includes(posSearch.toLowerCase())).length === 0 ? (
-                      <div className="py-16 text-center text-slate-400 bg-white border border-slate-150 rounded-2xl">
+                      <div className="py-16 text-center text-slate-400 bg-white border border-slate-200 rounded-2xl">
                         <p className="text-xs font-bold">No matching crops found</p>
                       </div>
                     ) : null}
@@ -3945,17 +3949,17 @@ export default function StoreManager({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
                         <span className="block text-[8px] font-black text-slate-400 uppercase tracking-wide">Registered Crops</span>
                         <span className="text-base font-black text-slate-800 mt-1 block">{storeInventory.length} crop catalog line items</span>
                       </div>
 
-                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
                         <span className="block text-[8px] font-black text-slate-400 uppercase tracking-wide">Revenue Today</span>
                         <span className="text-base font-black text-emerald-600 mt-1 block font-mono">₹{storeSales.reduce((a,c) => a + c.totalPrice, 0).toFixed(2)}</span>
                       </div>
 
-                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
                         <span className="block text-[8px] font-black text-slate-400 uppercase tracking-wide">Volume Dispatched</span>
                         <span className="text-base font-black text-amber-600 mt-1 block font-mono">{storeSales.reduce((a,c) => a + c.quantity, 0).toFixed(1)} kg</span>
                       </div>
@@ -4020,7 +4024,7 @@ export default function StoreManager({
                       <div className="space-y-5">
                         {/* Central Catalog Broadcasts section */}
                         {broadcastNotifications.length > 0 && (
-                          <div className="bg-gradient-to-br from-emerald-50/70 to-teal-50/30 border border-emerald-150 p-5 rounded-3xl shadow-3xs space-y-3">
+                          <div className="bg-gradient-to-br from-emerald-50/70 to-teal-50/30 border border-emerald-200 p-5 rounded-3xl shadow-3xs space-y-3">
                             <div className="flex items-center justify-between border-b border-emerald-100 pb-2.5">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-base">📢</span>
@@ -4054,7 +4058,7 @@ export default function StoreManager({
                             </div>
                             <div className="space-y-3">
                               {pendingOrders.map(order => (
-                                <div key={order.id} className="p-3 bg-slate-50 rounded-xl border border-slate-150 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                <div key={order.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                                   <div>
                                     <div className="flex items-center gap-2">
                                       <span className="text-xs font-black text-slate-800">#{order.orderNumber} - {order.customerName}</span>
@@ -4146,7 +4150,7 @@ export default function StoreManager({
                             </div>
                             <div className="space-y-3">
                               {pendingRequests.map(req => (
-                                <div key={req.id} className="p-3 bg-slate-50 rounded-xl border border-slate-150 flex items-center justify-between gap-3 text-xs">
+                                <div key={req.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
                                   <div>
                                     <div className="flex items-center gap-2">
                                       <span className="text-sm">{getVegEmoji(req.vegetableName)}</span>
@@ -4196,7 +4200,7 @@ export default function StoreManager({
               </div>
               <div className="min-w-0">
                 <p className="text-[9px] font-extrabold uppercase text-slate-400 tracking-wider">Invoices Count</p>
-                <p className="text-sm font-black text-slate-900 mt-0.5">{bills.length} Total</p>
+                <p className="text-sm font-black text-slate-900 mt-0.5">{storeBills.length} Total</p>
               </div>
             </div>
 
@@ -4299,11 +4303,11 @@ export default function StoreManager({
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                   <div>
                     <h3 className="font-bold text-zinc-900">Invoices Registry</h3>
-                    <p className="text-xs text-zinc-400">Showing all records compiled across all trading branches.</p>
+                    <p className="text-xs text-zinc-400">Showing all records compiled for this branch.</p>
                   </div>
                   <span className="bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-full px-2.5 py-0.5 text-[10px] font-black">
                     {(() => {
-                      const filteredBills = bills.filter(bill => {
+                      const filteredBills = storeBills.filter(bill => {
                         if (billStatusFilter !== 'All') {
                           if (bill.status !== billStatusFilter && !(billStatusFilter === 'Active' && !bill.status)) {
                             return false;
@@ -4325,7 +4329,7 @@ export default function StoreManager({
 
                 <div className="space-y-3.5 max-h-[600px] overflow-y-auto pr-1">
                   {(() => {
-                    const filteredBills = bills.filter(bill => {
+                    const filteredBills = storeBills.filter(bill => {
                       if (billStatusFilter !== 'All') {
                         if (bill.status !== billStatusFilter && !(billStatusFilter === 'Active' && !bill.status)) {
                           return false;
@@ -4349,8 +4353,8 @@ export default function StoreManager({
                           key={bill.id} 
                           className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row justify-between gap-4 ${
                             isCancelled 
-                              ? 'border-red-150 bg-red-50/20' 
-                              : 'border-slate-150 hover:bg-slate-50/50'
+                              ? 'border-red-200 bg-red-50/20' 
+                              : 'border-slate-200 hover:bg-slate-50/50'
                           }`}
                         >
                           <div className="space-y-2.5 flex-1 min-w-0">
@@ -4479,7 +4483,7 @@ export default function StoreManager({
                   })()}
 
                   {(() => {
-                    const filteredBills = bills.filter(bill => {
+                    const filteredBills = storeBills.filter(bill => {
                       if (billStatusFilter !== 'All') {
                         if (bill.status !== billStatusFilter && !(billStatusFilter === 'Active' && !bill.status)) {
                           return false;
@@ -5129,7 +5133,7 @@ export default function StoreManager({
               <div className="max-h-[280px] overflow-y-auto space-y-2 pr-1">
                 {storeRequirements.filter(r => r.status === 'Fulfilled').length > 0 ? (
                   storeRequirements.filter(r => r.status === 'Fulfilled').map(req => (
-                    <div key={req.id} className="p-2.5 rounded-xl border border-zinc-150 bg-white flex items-center justify-between gap-2.5 shadow-3xs hover:bg-zinc-50 transition-colors">
+                    <div key={req.id} className="p-2.5 rounded-xl border border-zinc-200 bg-white flex items-center justify-between gap-2.5 shadow-3xs hover:bg-zinc-50 transition-colors">
                       <div className="text-left">
                         <h4 className="text-[11px] font-bold text-zinc-850">{req.quantity}kg of {req.vegetableName}</h4>
                         <p className="text-[9px] text-emerald-600 font-extrabold flex items-center gap-0.5 mt-0.5">
@@ -5718,7 +5722,7 @@ export default function StoreManager({
                     <span className="block text-[9px] font-black tracking-wider text-zinc-400 uppercase">Crop Manifest</span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {order.items.map((it, idx) => (
-                        <div key={idx} className="bg-white rounded-lg border border-zinc-150 p-2 flex justify-between items-center text-xs">
+                        <div key={idx} className="bg-white rounded-lg border border-zinc-200 p-2 flex justify-between items-center text-xs">
                           <div>
                             <span className="font-bold text-zinc-800">{it.vegetableName}</span>
                             <span className="text-[9px] text-zinc-400 ml-1.5">(₹{it.pricePerKg.toFixed(2)}/kg)</span>
@@ -6606,7 +6610,7 @@ export default function StoreManager({
 
                                 {/* Present Time Inputs */}
                                 {status === 'Present' && (
-                                  <div className="flex items-center gap-1.5 border-l border-slate-150 pl-4">
+                                  <div className="flex items-center gap-1.5 border-l border-slate-200 pl-4">
                                     <div className="space-y-0.5">
                                       <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">In</span>
                                       <input
@@ -7384,7 +7388,7 @@ export default function StoreManager({
               )}
 
               {/* Multi-Billing Registers inside Checkout Pop-up */}
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-150/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 sm:pb-0">
                   <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider pr-2 border-r border-slate-200">
                     Registers
@@ -7505,7 +7509,7 @@ export default function StoreManager({
                             </button>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2 bg-white p-2 rounded-xl border border-slate-150">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2 bg-white p-2 rounded-xl border border-slate-200">
                             {/* Quantity Adjuster */}
                             <div className="flex flex-col gap-0.5 text-left">
                               <span className="text-[8px] uppercase font-bold text-slate-400">Qty / Wt</span>
@@ -7805,7 +7809,7 @@ export default function StoreManager({
             </div>
 
             <div className="space-y-4">
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-150 text-xs text-slate-600">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs text-slate-600">
                 <p className="font-semibold text-slate-800">Customer Details:</p>
                 <p className="mt-1">Name: <strong className="text-slate-900">{cancellingOrder.customerName}</strong></p>
                 <p>Phone: <strong className="text-slate-900 font-mono">{cancellingOrder.customerPhone}</strong></p>
@@ -7929,7 +7933,7 @@ export default function StoreManager({
             {/* Profile Package & Calculated KPIs */}
             <div className="p-6 space-y-5">
               {/* Sync Status / Progress indicator */}
-              <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-2.5">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                     <span className={`h-2 w-2 rounded-full ${
@@ -7955,8 +7959,8 @@ export default function StoreManager({
               </div>
 
               {/* Extraction Package Body */}
-              <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-3xs bg-slate-50/20">
-                <div className="bg-slate-50/50 px-4.5 py-3 border-b border-slate-150 flex justify-between items-center">
+              <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-3xs bg-slate-50/20">
+                <div className="bg-slate-50/50 px-4.5 py-3 border-b border-slate-200 flex justify-between items-center">
                   <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">
                     📦 Extracted Data Package
                   </span>
@@ -7993,9 +7997,9 @@ export default function StoreManager({
                     <div>
                       <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Attendance Status</span>
                       <span className={`inline-flex items-center gap-1 font-extrabold px-2 py-0.5 rounded mt-1 text-[11px] ${
-                        extractedStaffDetails.record.status === 'Present' ? 'bg-emerald-50 text-emerald-800 border border-emerald-150' :
-                        extractedStaffDetails.record.status === 'Leave' ? 'bg-amber-50 text-amber-800 border border-amber-150' :
-                        'bg-rose-50 text-rose-800 border border-rose-150'
+                        extractedStaffDetails.record.status === 'Present' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                        extractedStaffDetails.record.status === 'Leave' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
+                        'bg-rose-50 text-rose-800 border border-rose-200'
                       }`}>
                         {extractedStaffDetails.record.status === 'Present' ? '✓ Present' :
                          extractedStaffDetails.record.status === 'Leave' ? '⚠ Leave' : '✗ Absent'}
@@ -8017,25 +8021,25 @@ export default function StoreManager({
 
                   {/* Calculated KPI Details */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
                       <span className="text-[8px] font-extrabold text-slate-400 uppercase block leading-none">Attendance Rate</span>
                       <span className="text-base font-black text-slate-800 block mt-1.5">{extractedStaffDetails.attendanceRate}%</span>
                       <span className="text-[8px] text-slate-400 font-bold block mt-0.5">({extractedStaffDetails.presentDays} Days present)</span>
                     </div>
 
-                    <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
                       <span className="text-[8px] font-extrabold text-slate-400 uppercase block leading-none">Days Recorded</span>
                       <span className="text-base font-black text-slate-800 block mt-1.5">{extractedStaffDetails.presentDays + extractedStaffDetails.leaveDays} Days</span>
                       <span className="text-[8px] text-slate-400 font-bold block mt-0.5">Roster total</span>
                     </div>
 
-                    <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
                       <span className="text-[8px] font-extrabold text-slate-400 uppercase block leading-none">Hours Worked</span>
                       <span className="text-base font-black text-slate-800 block mt-1.5 font-mono">{extractedStaffDetails.hoursWorked} hrs</span>
                       <span className="text-[8px] text-slate-400 font-bold block mt-0.5">Shift Total</span>
                     </div>
 
-                    <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center bg-emerald-50/20 border-emerald-150">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center bg-emerald-50/20 border-emerald-200">
                       <span className="text-[8px] font-extrabold text-emerald-600 uppercase block leading-none">Est. Shift Pay</span>
                       <span className="text-base font-black text-emerald-700 block mt-1.5 font-mono">₹{extractedStaffDetails.payout}</span>
                       <span className="text-[8px] text-emerald-600 font-bold block mt-0.5">Today Payout</span>
@@ -8098,7 +8102,7 @@ export default function StoreManager({
           {/* Quick Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-amber-50 border border-amber-150 flex items-center justify-center text-xl text-amber-600 shrink-0">
+              <div className="h-12 w-12 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-xl text-amber-600 shrink-0">
                 💡
               </div>
               <div>
@@ -8111,7 +8115,7 @@ export default function StoreManager({
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-blue-50 border border-blue-150 flex items-center justify-center text-xl text-blue-600 shrink-0">
+              <div className="h-12 w-12 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-xl text-blue-600 shrink-0">
                 📦
               </div>
               <div>
@@ -8148,7 +8152,7 @@ export default function StoreManager({
               </div>
 
               {expenseSuccessMsg && (
-                <div className="bg-emerald-50 text-emerald-800 text-[11px] font-bold p-2.5 rounded-xl border border-emerald-150 animate-pulse">
+                <div className="bg-emerald-50 text-emerald-800 text-[11px] font-bold p-2.5 rounded-xl border border-emerald-200 animate-pulse">
                   ✓ {expenseSuccessMsg}
                 </div>
               )}
@@ -8366,7 +8370,7 @@ export default function StoreManager({
       {/* --- SUB-TAB CONTENT: DAILY REPORT & CASH NOTE CALCULATOR --- */}
       {activeSubTab === 'report' && (() => {
         const selectedDateStr = reportDate;
-        const salesOnDate = sales.filter(s => s.saleDate && s.saleDate.substring(0, 10) === selectedDateStr);
+        const salesOnDate = storeSales.filter(s => s.saleDate && s.saleDate.substring(0, 10) === selectedDateStr);
         const cashSales = isManualReport
           ? (parseFloat(manualCashSales) || 0)
           : salesOnDate.filter(s => s.paymentMode === 'Cash' || !s.paymentMode).reduce((sum, s) => sum + s.totalPrice, 0);
@@ -8783,7 +8787,7 @@ export default function StoreManager({
                       })()}
                     </div>
 
-                    <div className="py-4 mt-1 bg-slate-50/50 border border-slate-150 rounded-xl px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="py-4 mt-1 bg-slate-50/50 border border-slate-200 rounded-xl px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <h4 className="text-xs font-extrabold text-slate-700">Cash Drawer Reconciliation</h4>
                         <p className="text-[10px] text-slate-400 mt-0.5">Comparison between recorded Cash Sales and actual notes counted in the cash drawer.</p>
@@ -8896,7 +8900,7 @@ export default function StoreManager({
                   <button
                     type="button"
                     onClick={clearDenominators}
-                    className="text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-150 transition-all"
+                    className="text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 transition-all"
                   >
                     Clear All
                   </button>
@@ -9015,7 +9019,7 @@ export default function StoreManager({
                       className={`relative p-3 rounded-2xl border transition-all cursor-pointer flex flex-col items-center justify-center gap-1 text-center group active:scale-95 ${
                         countInCart > 0
                           ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-3xs'
-                          : 'bg-slate-50/50 border-slate-150 hover:border-slate-300 text-slate-700'
+                          : 'bg-slate-50/50 border-slate-200 hover:border-slate-300 text-slate-700'
                       }`}
                     >
                       {countInCart > 0 && (
@@ -9104,7 +9108,7 @@ export default function StoreManager({
 
               {/* Status Banner */}
               {selectedPreviewBill.status === 'Cancelled' ? (
-                <div className="bg-rose-50 border border-rose-150 rounded-xl p-2.5 text-center text-rose-700 font-bold uppercase tracking-wider text-[10px]">
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center text-rose-700 font-bold uppercase tracking-wider text-[10px]">
                   🚨 Cancelled Transaction 🚨
                 </div>
               ) : (
@@ -9170,7 +9174,7 @@ export default function StoreManager({
               </div>
 
               {/* Payment details */}
-              <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 flex justify-between items-center text-[10px] uppercase font-bold text-slate-500">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-center text-[10px] uppercase font-bold text-slate-500">
                 <span>Payment Mode:</span>
                 <span className="text-slate-800">{selectedPreviewBill.paymentMode || 'Cash'}</span>
               </div>

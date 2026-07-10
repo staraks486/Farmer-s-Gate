@@ -1620,7 +1620,7 @@ export default function AdminPanel({
                     <button
                       type="button"
                       onClick={() => setActiveMessageStoreId(null)}
-                      className="text-white hover:text-emerald-150 transition text-lg font-bold p-1"
+                      className="text-white hover:text-emerald-200 transition text-lg font-bold p-1"
                     >
                       ✕
                     </button>
@@ -1698,7 +1698,7 @@ export default function AdminPanel({
 
               <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                 {messageLogs.map(log => (
-                  <div key={log.id} className="p-3 bg-zinc-50 rounded-xl border border-zinc-150 text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                  <div key={log.id} className="p-3 bg-zinc-50 rounded-xl border border-zinc-200 text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-zinc-800">{log.storeName}</span>
@@ -2485,7 +2485,7 @@ export default function AdminPanel({
                       ...cpanelSettings,
                       ...preset.details
                     })}
-                    className="px-2.5 py-1.5 bg-zinc-50 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl text-[10px] font-extrabold text-zinc-600 transition border border-zinc-150 cursor-pointer"
+                    className="px-2.5 py-1.5 bg-zinc-50 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl text-[10px] font-extrabold text-zinc-600 transition border border-zinc-200 cursor-pointer"
                   >
                     🎯 {preset.name}
                   </button>
@@ -2554,7 +2554,7 @@ export default function AdminPanel({
             </div>
 
             {/* Advanced Controlling Options & Operations Group */}
-            <div className="border-t border-zinc-150 pt-5 mt-5 space-y-4">
+            <div className="border-t border-zinc-200 pt-5 mt-5 space-y-4">
               <div className="flex items-center gap-3 border-b border-zinc-100 pb-2">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                   <Sliders className="h-4 w-4" />
@@ -2697,13 +2697,13 @@ export default function AdminPanel({
               Developer Diagnosis & Performance Tuning
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
-              <div className="bg-white p-3 rounded-xl border border-zinc-150 text-zinc-600">
+              <div className="bg-white p-3 rounded-xl border border-zinc-200 text-zinc-600">
                 <span className="block text-[9px] text-zinc-400 uppercase font-black tracking-wider mb-1">State Size</span>
                 <span className="font-bold text-zinc-800 text-sm">
                   {stores.length} outlets • {requirements.length} requests
                 </span>
               </div>
-              <div className="bg-white p-3 rounded-xl border border-zinc-150 text-zinc-600">
+              <div className="bg-white p-3 rounded-xl border border-zinc-200 text-zinc-600">
                 <span className="block text-[9px] text-zinc-400 uppercase font-black tracking-wider mb-1">Cache Optimization</span>
                 <button
                   type="button"
@@ -2715,14 +2715,14 @@ export default function AdminPanel({
                   🚀 Prune & Optimize Indices
                 </button>
               </div>
-              <div className="bg-white p-3 rounded-xl border border-zinc-150 text-zinc-600">
+              <div className="bg-white p-3 rounded-xl border border-zinc-200 text-zinc-600">
                 <span className="block text-[9px] text-zinc-400 uppercase font-black tracking-wider mb-1">Live Database Ping</span>
                 <span className="font-mono font-bold text-emerald-600 text-sm flex items-center gap-1.5 mt-1">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
                   {dbConfig.isConnected ? '8ms Latency' : 'Offline Cache Mode'}
                 </span>
               </div>
-              <div className="bg-white p-3 rounded-xl border border-zinc-150 text-zinc-600 font-bold">
+              <div className="bg-white p-3 rounded-xl border border-zinc-200 text-zinc-600 font-bold">
                 <span className="block text-[9px] text-zinc-400 uppercase font-black tracking-wider mb-1">System Clean Slate</span>
                 <button
                   type="button"

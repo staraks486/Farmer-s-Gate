@@ -508,7 +508,7 @@ export default function Dashboard({
                 }
 
                 return sortedStream.slice(0, 15).map(event => {
-                  let severityClasses = 'bg-slate-50 border-slate-150 text-slate-700';
+                  let severityClasses = 'bg-slate-50 border-slate-200 text-slate-700';
                   let icon = '📢';
 
                   if (event.severity === 'success') {
@@ -570,7 +570,7 @@ export default function Dashboard({
               )}
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-slate-150 flex-1 max-h-[350px] overflow-y-auto">
+            <div className="overflow-x-auto rounded-xl border border-slate-200 flex-1 max-h-[350px] overflow-y-auto">
               <table className="w-full text-left border-collapse text-[11px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase text-slate-500 tracking-wider sticky top-0 z-10">

@@ -1118,7 +1118,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
                       </div>
 
                       {/* Official testing link badge at the bottom of the card */}
-                      <div className="border-t border-slate-150 pt-4 text-center">
+                      <div className="border-t border-slate-200 pt-4 text-center">
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                           For Verified Testing & Audits
                         </p>
@@ -1155,11 +1155,11 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
                             <span>📍 {st.location}</span>
                           </p>
                           <div className="mt-2 flex items-center gap-2 flex-wrap">
-                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-150">
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
                               🟢 Secure POS Terminal
                             </span>
                             {st.whatsappNumber && (
-                              <span className="text-[9px] font-bold text-slate-500 bg-slate-50 border border-slate-150 px-2 py-0.5 rounded">
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">
                                 📞 {st.whatsappNumber}
                               </span>
                             )}

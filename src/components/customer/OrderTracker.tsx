@@ -107,7 +107,7 @@ export default function OrderTracker({
   return (
     <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-5 transition-all text-left">
       {/* Order Info Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-150 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-200 pb-3">
         <div>
           <span className="font-mono text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-lg">
             {order.orderNumber}
@@ -232,7 +232,7 @@ export default function OrderTracker({
 
       {/* Vegetable list summary */}
       <div className="bg-slate-50 p-4 rounded-2xl space-y-2 border border-slate-100 text-xs text-slate-700">
-        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider pb-1 border-b border-slate-150">
+        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider pb-1 border-b border-slate-200">
           Farmed Items Packaged ({order.items.length} items)
         </span>
         {order.items.map((item, idx) => (
@@ -246,14 +246,14 @@ export default function OrderTracker({
         ))}
         
         {order.notes && (
-          <div className="border-t border-slate-150 pt-2 mt-2 text-[10.5px] text-slate-400 italic">
+          <div className="border-t border-slate-200 pt-2 mt-2 text-[10.5px] text-slate-400 italic">
             "Delivery Note/Address: {order.notes}"
           </div>
         )}
       </div>
 
       {/* Actions and chat button */}
-      <div className="pt-3 border-t border-slate-150 flex flex-wrap gap-2.5 justify-between items-center">
+      <div className="pt-3 border-t border-slate-200 flex flex-wrap gap-2.5 justify-between items-center">
         <div className="flex gap-2 w-full sm:w-auto">
           <button
             type="button"
