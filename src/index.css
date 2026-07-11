@@ -164,3 +164,51 @@
   background-color: #080d0a !important;
 }
 
+/* Highly optimized Smart Device Lite Mode */
+.light-device-mode {
+  font-size: 14px !important;
+}
+
+.light-device-mode * {
+  transition: none !important;
+  animation: none !important;
+  text-shadow: none !important;
+}
+
+.light-device-mode .shadow-lg,
+.light-device-mode .shadow-xl,
+.light-device-mode .shadow-2xl,
+.light-device-mode .shadow-3xl,
+.light-device-mode .shadow-sm,
+.light-device-mode .shadow-xs,
+.light-device-mode .shadow-md {
+  box-shadow: none !important;
+  border-width: 1px !important;
+  border-color: #cbd5e1 !important;
+}
+
+.light-device-mode input,
+.light-device-mode select,
+.light-device-mode button {
+  border-radius: 6px !important;
+}
+
+.light-device-mode .bg-white,
+.light-device-mode .bg-slate-50,
+.light-device-mode .bg-slate-100 {
+  background-color: #ffffff !important;
+  color: #1e293b !important;
+}
+
+.light-device-mode .border-emerald-600 {
+  border-color: #059669 !important;
+}
+
+.light-device-mode .bg-emerald-50\/20,
+.light-device-mode .bg-emerald-100,
+.light-device-mode .bg-emerald-50 {
+  background-color: #f0fdf4 !important;
+  color: #166534 !important;
+}
+
+

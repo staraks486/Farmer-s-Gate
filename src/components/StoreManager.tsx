@@ -226,6 +226,24 @@ export default function StoreManager({
 }: StoreManagerProps) {
   const currencySymbol = cpanelSettings?.currencySymbol || '₹';
   const [activeSubTab, setActiveSubTab] = useState<'sale' | 'sales-history' | 'purchase' | 'inventory' | 'requirements' | 'info' | 'qr-code' | 'attendance' | 'expenses' | 'report' | 'stock-transfer' | 'stock-waste' | 'milk-subscribers'>('sale');
+
+  // Smart Device lightweight layout toggle
+  const [smartDeviceMode, setSmartDeviceMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('fg_smart_device_mode');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSmartDeviceMode = () => {
+    setSmartDeviceMode(prev => {
+      const newVal = !prev;
+      localStorage.setItem('fg_smart_device_mode', String(newVal));
+      return newVal;
+    });
+  };
   
   // State variables for managing bills, search query, status filter, and bill number editing
   const [bills, setBills] = useState<any[]>(() => {
@@ -1734,7 +1752,8 @@ export default function StoreManager({
               date: todayStr,
               cowQuantityTaken: cowTaken,
               buffaloQuantityTaken: buffaloTaken,
-              totalAmount: totalAmt
+              totalAmount: totalAmt,
+              billId: generatedBillId // MAPPED STORE BILL ID!
             };
 
             if (existingLogIdx > -1) {
@@ -3015,8 +3034,30 @@ export default function StoreManager({
   };
 
   return (
-    <div className="space-y-4 animate-fade-in text-slate-900">
+    <div className={`space-y-4 animate-fade-in text-slate-900 ${smartDeviceMode ? 'light-device-mode density-high font-sans' : ''}`}>
       
+      {/* Smart Device Performance Toggle strip */}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100/90 p-2.5 rounded-2xl border border-slate-200/80 shadow-3xs">
+        <div className="flex items-center gap-2">
+          <span className="text-[14px]">⚡</span>
+          <div>
+            <p className="text-xs font-black text-slate-800">Smart Device Optimization</p>
+            <p className="text-[9px] text-slate-500 font-bold">Lightweight layout, standard elements, low memory for smart POS & terminals</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={toggleSmartDeviceMode}
+          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+            smartDeviceMode
+              ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-3xs font-black'
+              : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+          }`}
+        >
+          {smartDeviceMode ? '💡 Lite Mode Active' : '🔌 Standard UI'}
+        </button>
+      </div>
+
       {/* Categories Tabs Menu - Simplified & Adaptive for all devices */}
       <div className="flex border-b border-slate-200 gap-1 overflow-x-auto scrollbar-none shrink-0 py-1 bg-white/50 backdrop-blur-md sticky top-0 z-10 touch-pan-x overscroll-contain">
         <button
@@ -3216,7 +3257,7 @@ export default function StoreManager({
       {/* --- SUB-TAB CONTENT: MILK SUBSCRIBERS --- */}
       {activeSubTab === 'milk-subscribers' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-200/85 shadow-xs animate-in fade-in duration-300">
-          <CustomerMilkRegistry storeId={store.id} />
+          <CustomerMilkRegistry />
         </div>
       )}
 
@@ -9678,6 +9719,20 @@ export default function StoreManager({
             <div className="bg-slate-900 px-5 py-3.5 flex items-center justify-between text-white print:hidden">
               <span className="text-xs font-black tracking-wider uppercase">Receipt Preview</span>
               <div className="flex items-center gap-2">
+                {selectedPreviewBill.status !== 'Cancelled' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to cancel Invoice #${selectedPreviewBill.id}? This will restore all associated item quantities back to the stock.`)) {
+                        handleCancelBill(selectedPreviewBill.id);
+                        setSelectedPreviewBill(prev => prev ? { ...prev, status: 'Cancelled' } : null);
+                      }
+                    }}
+                    className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] px-3 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-1"
+                  >
+                    🛑 Cancel Bill
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => window.print()}

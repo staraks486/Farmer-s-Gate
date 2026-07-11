@@ -183,6 +183,13 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     } catch (e) {}
     return [];
   });
+  const [bills, setBills] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('fg_bills');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
   const [purchases, setPurchases] = useState<Purchase[]>(() => {
     try {
       const cached = localStorage.getItem('fg_purchases');
@@ -352,7 +359,14 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
       });
       let finalStores = Array.from(uniqueStoresMap.values());
 
-      if (finalStores.length === 0) {
+      // Load tombstones to prevent resurrecting deleted default store
+      let deletedIds: string[] = [];
+      try {
+        const deletedStr = localStorage.getItem('fg_deleted_stores') || '[]';
+        deletedIds = JSON.parse(deletedStr);
+      } catch (e) {}
+
+      if (finalStores.length === 0 && !deletedIds.includes('store-1')) {
         const defaultStore: Store = {
           id: 'store-1',
           name: "Farmer's Gate - Patiala Model Town",
@@ -398,6 +412,12 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
         }
       }
       setSales(fetchedSales);
+      try {
+        const savedBillsStr = localStorage.getItem('fg_bills') || '[]';
+        setBills(JSON.parse(savedBillsStr));
+      } catch (e) {
+        console.warn("Failed to load bills:", e);
+      }
       setPurchases(fetchedPurchases);
       setInventory(fetchedInventory);
       setRequirements(fetchedRequirements);
@@ -479,6 +499,12 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
       localStorage.setItem('fg_sales', JSON.stringify(sales));
     } catch (e) {}
   }, [sales]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fg_bills', JSON.stringify(bills));
+    } catch (e) {}
+  }, [bills]);
 
   useEffect(() => {
     try {
@@ -584,6 +610,8 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   };
 
   const handleDeleteStore = async (id: string) => {
+    // Optimistically update React state for instant visual response
+    setStores(prev => prev.filter(s => s.id !== id));
     await dbDeleteStore(id);
     await triggerDataUpdate();
   };
@@ -1012,7 +1040,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
           )}
 
           {activeTab === 'customers' && (
-            <CustomerMilkRegistry />
+            <CustomerMilkRegistry storeId={selectedStore?.id || 'store-1'} />
           )}
 
           {activeTab === 'customer-directory' && (
@@ -1020,7 +1048,8 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
               <CustomerDirectory 
                 generalCustomers={generalCustomers}
                 setGeneralCustomers={setGeneralCustomers}
-                storeBills={sales}
+                storeBills={bills}
+                storeId={selectedStore?.id}
               />
             </div>
           )}

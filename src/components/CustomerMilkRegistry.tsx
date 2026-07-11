@@ -358,6 +358,69 @@ export default function CustomerMilkRegistry({ storeId }: CustomerMilkRegistryPr
     }));
   };
 
+  // Cancels a linked POS invoice and updates subscriber logs accordingly
+  const handleCancelLinkedBill = (billId: string) => {
+    if (!confirm(`Are you sure you want to cancel the linked POS Invoice #${billId}? This will mark the bill as cancelled and void its items.`)) {
+      return;
+    }
+
+    try {
+      // 1. Update in fg_bills in localStorage
+      const savedBillsStr = localStorage.getItem('fg_bills') || '[]';
+      const parsedBills = JSON.parse(savedBillsStr);
+      const updatedBills = parsedBills.map((b: any) => {
+        if (b.id === billId) {
+          return { ...b, status: 'Cancelled' };
+        }
+        return b;
+      });
+      localStorage.setItem('fg_bills', JSON.stringify(updatedBills));
+
+      // 2. Also remove/update the milkTakenLog entry that is linked, or set its status as cancelled
+      setCustomers(prev => prev.map(c => {
+        const logs = c.milkTakenLogs ? [...c.milkTakenLogs] : [];
+        const updatedLogs = logs.map(l => {
+          if (l.billId === billId) {
+            return {
+              ...l,
+              cowQuantityTaken: 0,
+              buffaloQuantityTaken: 0,
+              totalAmount: 0,
+              isCancelled: true
+            };
+          }
+          return l;
+        });
+        return { ...c, milkTakenLogs: updatedLogs };
+      }));
+
+      // 3. Restore inventory if we can find the bill items
+      const targetBill = parsedBills.find((b: any) => b.id === billId);
+      if (targetBill && targetBill.items) {
+        const inventoryStr = localStorage.getItem('fg_store_inventory') || '[]';
+        const parsedInventory = JSON.parse(inventoryStr);
+        let updatedInv = [...parsedInventory];
+        
+        for (const item of targetBill.items) {
+          const itemStoreId = targetBill.storeId;
+          const matchIdx = updatedInv.findIndex((inv: any) => inv.storeId === itemStoreId && inv.vegetableName.toLowerCase() === item.vegetableName.toLowerCase());
+          if (matchIdx > -1) {
+            updatedInv[matchIdx] = {
+              ...updatedInv[matchIdx],
+              quantity: updatedInv[matchIdx].quantity + item.quantity
+            };
+          }
+        }
+        localStorage.setItem('fg_store_inventory', JSON.stringify(updatedInv));
+      }
+
+      alert(`POS Invoice #${billId} and its associated subscriber delivery log have been successfully cancelled!`);
+    } catch (err) {
+      console.error("Failed to cancel linked bill:", err);
+      alert("Error occurred while canceling the linked bill.");
+    }
+  };
+
   // Computes active today stats for the sidebar summary panel
   const getGlobalMilkStats = () => {
     let totalCowLiters = 0;
@@ -921,19 +984,89 @@ export default function CustomerMilkRegistry({ storeId }: CustomerMilkRegistryPr
                               : `${c.milkType === 'Cow' ? cowQty : buffaloQty}L`;
 
                             return (
-                              <div key={c.id} className="flex items-center justify-between gap-2 p-2 bg-white rounded-lg border border-slate-150 text-xs shadow-3xs">
+                              <div key={c.id} className="flex items-center justify-between gap-2 p-2.5 bg-white rounded-lg border border-slate-150 text-xs shadow-3xs hover:shadow-2xs transition-all">
                                 <div className="min-w-0 flex-1">
                                   <p className="font-extrabold text-slate-800 truncate text-[11px]">{c.name}</p>
                                   <p className="text-[9px] text-slate-400 font-mono font-bold">
                                     {displayQty} • {c.milkType}
                                   </p>
                                 </div>
+                                
+                                {/* Quantity adjusters */}
+                                {!isSkipped && (
+                                  <div className="flex items-center gap-1.5 mr-1.5 shrink-0">
+                                    {c.milkType === 'Both' ? (
+                                      <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-[8px] text-slate-400 font-black">C:</span>
+                                          <button
+                                            type="button"
+                                            disabled={cowQty <= 0}
+                                            onClick={() => updateMilkTakenLog(c.id, todayStr, 'cow', -0.5)}
+                                            className="h-4 w-4 bg-slate-50 border border-slate-200 hover:bg-slate-100 active:bg-slate-200 rounded text-[10px] flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 cursor-pointer"
+                                          >
+                                            -
+                                          </button>
+                                          <span className="text-[9px] font-bold font-mono min-w-[20px] text-center">{cowQty.toFixed(1)}L</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => updateMilkTakenLog(c.id, todayStr, 'cow', 0.5)}
+                                            className="h-4 w-4 bg-slate-50 border border-slate-200 hover:bg-slate-100 active:bg-slate-200 rounded text-[10px] flex items-center justify-center font-bold text-slate-600 cursor-pointer"
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-[8px] text-slate-400 font-black">B:</span>
+                                          <button
+                                            type="button"
+                                            disabled={buffaloQty <= 0}
+                                            onClick={() => updateMilkTakenLog(c.id, todayStr, 'buffalo', -0.5)}
+                                            className="h-4 w-4 bg-slate-50 border border-slate-200 hover:bg-slate-100 active:bg-slate-200 rounded text-[10px] flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 cursor-pointer"
+                                          >
+                                            -
+                                          </button>
+                                          <span className="text-[9px] font-bold font-mono min-w-[20px] text-center">{buffaloQty.toFixed(1)}L</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => updateMilkTakenLog(c.id, todayStr, 'buffalo', 0.5)}
+                                            className="h-4 w-4 bg-slate-50 border border-slate-200 hover:bg-slate-100 active:bg-slate-200 rounded text-[10px] flex items-center justify-center font-bold text-slate-600 cursor-pointer"
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          disabled={(c.milkType === 'Cow' ? cowQty : buffaloQty) <= 0}
+                                          onClick={() => updateMilkTakenLog(c.id, todayStr, c.milkType === 'Cow' ? 'cow' : 'buffalo', -0.5)}
+                                          className="h-5 w-5 bg-slate-50 border border-slate-200 hover:bg-slate-100 active:bg-slate-200 rounded text-[11px] flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 cursor-pointer"
+                                        >
+                                          -
+                                        </button>
+                                        <span className="text-[10px] font-bold font-mono min-w-[24px] text-center">
+                                          {(c.milkType === 'Cow' ? cowQty : buffaloQty).toFixed(1)}L
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateMilkTakenLog(c.id, todayStr, c.milkType === 'Cow' ? 'cow' : 'buffalo', 0.5)}
+                                          className="h-5 w-5 bg-slate-50 border border-slate-200 hover:bg-slate-100 active:bg-slate-200 rounded text-[11px] flex items-center justify-center font-bold text-slate-600 cursor-pointer"
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
                                 <button
                                   type="button"
                                   onClick={() => toggleDateDelivery(c.id, todayStr)}
-                                  className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer shrink-0 ${
+                                  className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer shrink-0 ${
                                     !isSkipped
-                                      ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 border border-emerald-600/20'
+                                      ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 border border-emerald-600/20 shadow-3xs'
                                       : 'bg-slate-100 text-slate-400 hover:bg-slate-200 border border-slate-200'
                                   }`}
                                 >
@@ -1500,6 +1633,27 @@ export default function CustomerMilkRegistry({ storeId }: CustomerMilkRegistryPr
                                         ₹{logEntry ? logEntry.totalAmount.toFixed(1) : (((cowQty * (c.milkType === 'Cow' ? c.price : (c.cowPrice ?? 60))) + (buffaloQty * (c.milkType === 'Buffalo' ? c.price : (c.buffaloPrice ?? 75))))).toFixed(1)}
                                       </span>
                                     </div>
+
+                                    {logEntry && logEntry.billId && (
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2 w-full justify-between">
+                                        <div className="flex items-center gap-1.5 text-[9px] text-slate-500 font-extrabold bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/40">
+                                          <span>🧾 Linked Bill: </span>
+                                          <span className="font-mono text-slate-800 font-black">{logEntry.billId}</span>
+                                          {logEntry.isCancelled && (
+                                            <span className="text-red-600 font-black uppercase text-[8px] bg-red-100 px-1 rounded">Cancelled</span>
+                                          )}
+                                        </div>
+                                        {!logEntry.isCancelled && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleCancelLinkedBill(logEntry.billId)}
+                                            className="text-[9px] font-black text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-100 px-2 py-0.5 rounded-md cursor-pointer transition-all active:scale-95"
+                                          >
+                                            🛑 Cancel Bill
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}

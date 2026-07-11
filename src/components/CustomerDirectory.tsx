@@ -178,6 +178,11 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
   const getCustomerStats = (custName: string, custPhone: string) => {
     // Match either by phone number or by name
     const custBills = storeBills.filter(b => {
+      // Strict filter: only view customer bills generated in this specific store if storeId is defined
+      if (storeId && b.storeId !== storeId) {
+        return false;
+      }
+      
       const billPhone = b.whatsappPhone ? b.whatsappPhone.replace(/[^\d]/g, '') : '';
       const matchPhone = custPhone ? custPhone.replace(/[^\d]/g, '') : '';
       
@@ -187,12 +192,54 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
       return hasPhoneMatch || hasNameMatch;
     });
 
-    const totalSpent = custBills.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+    const activeBills = custBills.filter(b => b.status !== 'Cancelled');
+    const totalSpent = activeBills.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
     return {
       bills: custBills,
-      count: custBills.length,
+      count: activeBills.length,
       spent: totalSpent
     };
+  };
+
+  const handleCancelBill = (billId: string) => {
+    if (!confirm(`Are you sure you want to cancel POS Invoice #${billId}? This will restore its items to the store inventory.`)) {
+      return;
+    }
+    try {
+      // 1. Update status in fg_bills in localStorage
+      const savedBillsStr = localStorage.getItem('fg_bills') || '[]';
+      const parsedBills = JSON.parse(savedBillsStr);
+      const updatedBills = parsedBills.map((b: any) => {
+        if (b.id === billId) {
+          return { ...b, status: 'Cancelled' };
+        }
+        return b;
+      });
+      localStorage.setItem('fg_bills', JSON.stringify(updatedBills));
+
+      // 2. Restore inventory
+      const targetBill = parsedBills.find((b: any) => b.id === billId);
+      if (targetBill && targetBill.items) {
+        const storeInvStr = localStorage.getItem('fg_store_inventory') || '[]';
+        let storeInv = JSON.parse(storeInvStr);
+        let updatedStoreInv = [...storeInv];
+        
+        for (const item of targetBill.items) {
+          const itemStoreId = targetBill.storeId || 'store-1';
+          const matchIdx = updatedStoreInv.findIndex((inv: any) => inv.storeId === itemStoreId && inv.vegetableName.toLowerCase() === item.vegetableName.toLowerCase());
+          if (matchIdx > -1) {
+            updatedStoreInv[matchIdx].quantity += item.quantity;
+          }
+        }
+        localStorage.setItem('fg_store_inventory', JSON.stringify(updatedStoreInv));
+      }
+
+      alert(`Invoice #${billId} has been successfully cancelled and stock restored!`);
+      window.location.reload();
+    } catch (err) {
+      console.error("Failed to cancel bill:", err);
+      alert("Error occurred while canceling the bill.");
+    }
   };
 
   return (
@@ -446,8 +493,15 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                       {stats.bills.map((bill: any) => (
                         <div key={bill.id} className="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5 shadow-3xs">
                           <div className="flex justify-between items-center">
-                            <span className="font-black text-[10px] text-slate-800 font-mono">{bill.id}</span>
-                            <span className="text-[10px] text-emerald-600 font-black font-mono">₹{bill.totalAmount.toFixed(2)}</span>
+                            <span className="font-black text-[10px] text-slate-800 font-mono">
+                              {bill.id}
+                              {bill.status === 'Cancelled' && (
+                                <span className="ml-1.5 text-red-600 font-black uppercase text-[8px] bg-red-50 border border-red-200/50 px-1 py-0.2 rounded">Cancelled</span>
+                              )}
+                            </span>
+                            <span className={`text-[10px] font-black font-mono ${bill.status === 'Cancelled' ? 'text-slate-400 line-through' : 'text-emerald-600'}`}>
+                              ₹{bill.totalAmount.toFixed(2)}
+                            </span>
                           </div>
                           
                           <div className="text-[10px] text-slate-500 font-medium flex justify-between">
@@ -456,13 +510,25 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                           </div>
 
                           <div className="text-[10px] text-slate-500 bg-slate-50/80 rounded-lg p-1.5 font-mono max-h-16 overflow-y-auto pr-1">
-                            {bill.items.map((it: any, i: number) => (
+                            {bill.items && bill.items.map((it: any, i: number) => (
                               <div key={i} className="flex justify-between">
                                 <span className="truncate max-w-[120px]">{it.vegetableName}</span>
                                 <span className="text-[9px] text-slate-400">x{it.quantity}{it.unit || 'kg'}</span>
                               </div>
                             ))}
                           </div>
+
+                          {bill.status !== 'Cancelled' && (
+                            <div className="flex justify-end pt-1">
+                              <button
+                                type="button"
+                                onClick={() => handleCancelBill(bill.id)}
+                                className="text-[9px] font-black text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-100 px-2 py-0.5 rounded-md cursor-pointer transition-all active:scale-95"
+                              >
+                                🛑 Cancel Bill
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
