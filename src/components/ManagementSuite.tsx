@@ -277,6 +277,18 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     localStorage.setItem('fg_general_customers', JSON.stringify(generalCustomers));
   }, [generalCustomers]);
 
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'fg_general_customers' && e.newValue) {
+        try {
+          setGeneralCustomers(JSON.parse(e.newValue));
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Real-time Firebase states
   const [firebaseOrders, setFirebaseOrders] = useState<FirebaseOrder[]>([]);
   const [firebaseNotifications, setFirebaseNotifications] = useState<AppNotification[]>([]);

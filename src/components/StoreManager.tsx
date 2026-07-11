@@ -889,6 +889,19 @@ export default function StoreManager({
       return [];
     }
   });
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'fg_general_customers' && e.newValue) {
+        try {
+          setGeneralCustomers(JSON.parse(e.newValue));
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const [activeBillingTabId, setActiveBillingTabId] = useState<string>('bill-1');
 
   // New States for Redesigned Sale Panel, Breadcrumbs, and Voice Speech Input
@@ -2573,11 +2586,17 @@ export default function StoreManager({
       const itemsToUpdate: InventoryItem[] = [];
 
       for (const mCrop of cropsToSync) {
-        // Find if this crop exists in currentStoreInventory
+        // Find if this crop exists in currentStoreInventory using precise normalized matching
+        const normalizeCropName = (name: string) => {
+          return name.split('(')[0].trim().toLowerCase()
+            .replace(/s$/, '') // simple singularization
+            .replace(/[^a-z0-9]/g, '');
+        };
+
         const existing = currentStoreInventory.find(i => {
-          const invName = i.vegetableName.toLowerCase();
-          const syncName = mCrop.vegetableName.toLowerCase();
-          return invName === syncName || invName.includes(syncName) || syncName.includes(invName);
+          const invNorm = normalizeCropName(i.vegetableName);
+          const syncNorm = normalizeCropName(mCrop.vegetableName);
+          return invNorm === syncNorm;
         });
 
         if (!existing) {
@@ -2623,10 +2642,10 @@ export default function StoreManager({
     };
 
     syncStoreInventory();
-    // Run every 5 seconds for instant, lag-free automatic background sync across branches
-    const intervalId = setInterval(syncStoreInventory, 5000);
+    // Run every 30 seconds for highly optimized background sync without lagging the main thread
+    const intervalId = setInterval(syncStoreInventory, 30000);
     return () => clearInterval(intervalId);
-  }, [store?.id, activeSubTab, masterCrops]);
+  }, [store?.id]);
 
   // Quick seed standard items to inventory
   const handleBulkSeedCrops = async () => {

@@ -139,6 +139,9 @@ export default function CustomerMilkRegistry({ storeId }: CustomerMilkRegistryPr
 
   // Expanded History Panel State
   const [expandedSubId, setExpandedSubId] = useState<string | null>(null);
+  const [expandedTab, setExpandedTab] = useState<'calendar' | 'list'>('calendar');
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
 
   // Calculates 15-day milk taken statistics for a customer
   const getCalculatedMilkStats = (c: MilkCustomer) => {
@@ -193,6 +196,66 @@ export default function CustomerMilkRegistry({ storeId }: CustomerMilkRegistryPr
     stats.totalCowLiters = parseFloat(stats.totalCowLiters.toFixed(2));
     stats.totalBuffaloLiters = parseFloat(stats.totalBuffaloLiters.toFixed(2));
     return { stats, dates };
+  };
+
+  // Calculates monthly statistics for a customer
+  const getCalculatedMonthlyStats = (c: MilkCustomer, year: number, month: number) => {
+    const stats = {
+      totalCowLiters: 0,
+      totalBuffaloLiters: 0,
+      totalLiters: 0,
+      totalCost: 0,
+      daysTaken: 0,
+      daysSkipped: 0
+    };
+
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const defaultCowQty = c.milkType === 'Cow' ? c.quantity : (c.milkType === 'Both' ? (c.cowQuantity ?? 0) : 0);
+    const defaultBuffaloQty = c.milkType === 'Buffalo' ? c.quantity : (c.milkType === 'Both' ? (c.buffaloQuantity ?? 0) : 0);
+    const cowRate = c.milkType === 'Cow' ? c.price : (c.milkType === 'Both' ? (c.cowPrice ?? 60) : 60);
+    const buffaloRate = c.milkType === 'Buffalo' ? c.price : (c.milkType === 'Both' ? (c.buffaloPrice ?? 75) : 75);
+
+    const logs = c.milkTakenLogs || [];
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const yyyy = year;
+      const mm = String(month + 1).padStart(2, '0');
+      const dd = String(day).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      const logged = logs.find(l => l.date === dateStr);
+      if (logged) {
+        stats.totalCowLiters += logged.cowQuantityTaken;
+        stats.totalBuffaloLiters += logged.buffaloQuantityTaken;
+        stats.totalCost += logged.totalAmount;
+        if (logged.cowQuantityTaken > 0 || logged.buffaloQuantityTaken > 0) {
+          stats.daysTaken++;
+        } else {
+          stats.daysSkipped++;
+        }
+      } else {
+        // If date is in future, we don't count it towards taken/skipped yet
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (dateStr > todayStr) {
+          continue;
+        }
+
+        if (c.takenDaily !== false) {
+          stats.totalCowLiters += defaultCowQty;
+          stats.totalBuffaloLiters += defaultBuffaloQty;
+          stats.totalCost += (defaultCowQty * cowRate) + (defaultBuffaloQty * buffaloRate);
+          stats.daysTaken++;
+        } else {
+          stats.daysSkipped++;
+        }
+      }
+    }
+
+    stats.totalLiters = parseFloat((stats.totalCowLiters + stats.totalBuffaloLiters).toFixed(2));
+    stats.totalCost = parseFloat(stats.totalCost.toFixed(2));
+    stats.totalCowLiters = parseFloat(stats.totalCowLiters.toFixed(2));
+    stats.totalBuffaloLiters = parseFloat(stats.totalBuffaloLiters.toFixed(2));
+    return stats;
   };
 
   // Adjusts the Cow or Buffalo quantity taken for a specific customer on a specific date
@@ -423,6 +486,54 @@ export default function CustomerMilkRegistry({ storeId }: CustomerMilkRegistryPr
       setCustomers(prev => prev.map(c => c.id === editingId ? customerData : c));
     } else {
       setCustomers(prev => [customerData, ...prev]);
+    }
+
+    // Sync to general customer directory (Customer Directory)
+    try {
+      const savedGeneral = localStorage.getItem('fg_general_customers');
+      let generalCustomers: any[] = savedGeneral ? JSON.parse(savedGeneral) : [];
+      
+      const phoneClean = customerData.mobile.trim();
+      const matchIdx = generalCustomers.findIndex(gc => 
+        (gc.phone && gc.phone.replace(/[^\d]/g, '') === phoneClean.replace(/[^\d]/g, '')) || 
+        gc.milkSubId === customerData.id
+      );
+
+      const formattedPhone = phoneClean.startsWith('+91') ? phoneClean : `+91 ${phoneClean.replace(/[^\d]/g, '')}`;
+
+      if (matchIdx > -1) {
+        generalCustomers[matchIdx] = {
+          ...generalCustomers[matchIdx],
+          name: customerData.name,
+          phone: formattedPhone,
+          address: customerData.address || generalCustomers[matchIdx].address,
+          storeId: customerData.storeId,
+          milkSubId: customerData.id,
+          notes: `Milk Subscriber (${customerData.milkType}) • Updated in Registry`
+        };
+      } else {
+        generalCustomers.push({
+          id: `cust-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          storeId: customerData.storeId,
+          name: customerData.name,
+          phone: formattedPhone,
+          address: customerData.address,
+          milkSubId: customerData.id,
+          loyaltyPoints: 0,
+          createdAt: new Date().toISOString(),
+          notes: `Milk Subscriber (${customerData.milkType}) • Added from Registry`
+        });
+      }
+
+      localStorage.setItem('fg_general_customers', JSON.stringify(generalCustomers));
+      
+      // Dispatch storage event to notify other modules
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'fg_general_customers',
+        newValue: JSON.stringify(generalCustomers)
+      }));
+    } catch (err) {
+      console.error("Error syncing milk subscriber to general directory:", err);
     }
 
     setIsFormOpen(false);
@@ -1055,26 +1166,222 @@ export default function CustomerMilkRegistry({ storeId }: CustomerMilkRegistryPr
                     </div>
 
                     {/* Expand/Collapse Button for calculations */}
-                    {!storeId && (
-                      <>
-                        <div className="border-t border-slate-100/80 pt-2.5 flex items-center justify-between">
+                    <div className="border-t border-slate-100/80 pt-2.5 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedSubId(isExpanded ? null : c.id)}
+                        className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-700 hover:text-emerald-800 transition-all cursor-pointer bg-emerald-50 hover:bg-emerald-100/80 px-2.5 py-1.5 rounded-xl"
+                      >
+                        <Calendar className="h-3.5 w-3.5 text-emerald-600" />
+                        {isExpanded ? 'Hide Delivery Details' : '📊 View Deliveries & Calculate Taken Milk'}
+                      </button>
+
+                      <div className="text-[11px] text-slate-500 font-semibold">
+                        15-Day Rollup: <strong className="text-slate-800 font-bold font-mono">{stats.totalLiters.toFixed(1)} L</strong> (₹{stats.totalCost.toFixed(0)})
+                      </div>
+                    </div>
+
+                    {/* Delivery Log and Calculation Details */}
+                    {isExpanded && (
+                      <div className="bg-slate-100/50 rounded-2xl border border-slate-200 p-4 space-y-4 animate-in slide-in-from-top-2 duration-300">
+                        {/* Tab Selector: Calendar vs List */}
+                        <div className="flex border-b border-slate-200 gap-2">
                           <button
                             type="button"
-                            onClick={() => setExpandedSubId(isExpanded ? null : c.id)}
-                            className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-700 hover:text-emerald-800 transition-all cursor-pointer bg-emerald-50 hover:bg-emerald-100/80 px-2.5 py-1.5 rounded-xl"
+                            onClick={() => setExpandedTab('calendar')}
+                            className={`px-4 py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                              expandedTab === 'calendar'
+                                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/30 rounded-t-lg'
+                                : 'border-transparent text-slate-500 hover:text-slate-800'
+                            }`}
                           >
-                            <Calendar className="h-3.5 w-3.5 text-emerald-600" />
-                            {isExpanded ? 'Hide Delivery Details' : '📊 View Deliveries & Calculate Taken Milk'}
+                            📅 Monthly Calendar View
                           </button>
-
-                          <div className="text-[11px] text-slate-500 font-semibold">
-                            15-Day Rollup: <strong className="text-slate-800 font-bold font-mono">{stats.totalLiters.toFixed(1)} L</strong> (₹{stats.totalCost.toFixed(0)})
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedTab('list')}
+                            className={`px-4 py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                              expandedTab === 'list'
+                                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/30 rounded-t-lg'
+                                : 'border-transparent text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            📊 15-Day List View
+                          </button>
                         </div>
 
-                        {/* Delivery Log and Calculation Details */}
-                        {isExpanded && (
-                          <div className="bg-slate-100/50 rounded-2xl border border-slate-200 p-4 space-y-4 animate-in slide-in-from-top-2 duration-300">
+                        {expandedTab === 'calendar' ? (
+                          // Calendar View Block
+                          <div className="space-y-4">
+                            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white p-3 rounded-xl border border-slate-200">
+                              <div className="flex items-center gap-2 justify-between sm:justify-start">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (calendarMonth === 0) {
+                                      setCalendarMonth(11);
+                                      setCalendarYear(prev => prev - 1);
+                                    } else {
+                                      setCalendarMonth(prev => prev - 1);
+                                    }
+                                  }}
+                                  className="p-1 px-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-extrabold text-xs cursor-pointer"
+                                >
+                                  ← Prev
+                                </button>
+                                <span className="font-extrabold text-sm text-slate-800 min-w-[120px] text-center">
+                                  {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][calendarMonth]} {calendarYear}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (calendarMonth === 11) {
+                                      setCalendarMonth(0);
+                                      setCalendarYear(prev => prev + 1);
+                                    } else {
+                                      setCalendarMonth(prev => prev + 1);
+                                    }
+                                  }}
+                                  className="p-1 px-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-extrabold text-xs cursor-pointer"
+                                >
+                                  Next →
+                                </button>
+                              </div>
+
+                              <div className="text-[11px] font-black text-slate-500 text-right">
+                                Active Monthly Delivery Log
+                              </div>
+                            </div>
+
+                            {/* Monthly stats card */}
+                            {(() => {
+                              const mStats = getCalculatedMonthlyStats(c, calendarYear, calendarMonth);
+                              return (
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 text-xs">
+                                  <div className="text-center bg-white p-1.5 rounded-lg border border-slate-100">
+                                    <span className="block text-[8px] font-black text-slate-400 uppercase">Monthly Liters</span>
+                                    <span className="font-black font-mono text-slate-700">{mStats.totalLiters.toFixed(1)}L</span>
+                                  </div>
+                                  <div className="text-center bg-white p-1.5 rounded-lg border border-slate-100">
+                                    <span className="block text-[8px] font-black text-slate-400 uppercase">Delivered Days</span>
+                                    <span className="font-black font-mono text-emerald-700">{mStats.daysTaken} Days</span>
+                                  </div>
+                                  <div className="text-center bg-white p-1.5 rounded-lg border border-slate-100">
+                                    <span className="block text-[8px] font-black text-slate-400 uppercase">Skipped Days</span>
+                                    <span className="font-black font-mono text-rose-600">{mStats.daysSkipped} Days</span>
+                                  </div>
+                                  <div className="text-center bg-emerald-600 text-white p-1.5 rounded-lg flex flex-col justify-center">
+                                    <span className="block text-[8px] font-black text-slate-900 uppercase">Grand Total</span>
+                                    <span className="font-black font-mono text-slate-950">₹{mStats.totalCost.toFixed(1)}</span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            {/* Calendar Grid */}
+                            <div className="grid grid-cols-7 gap-1 border border-slate-200 p-2.5 rounded-2xl bg-white shadow-sm">
+                              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(wd => (
+                                <div key={wd} className="text-center text-[10px] font-black text-slate-400 uppercase py-1">
+                                  {wd}
+                                </div>
+                              ))}
+                              
+                              {Array.from({ length: new Date(calendarYear, calendarMonth, 1).getDay() }).map((_, idx) => (
+                                <div key={`blank-${idx}`} className="aspect-square bg-slate-50/40 rounded-lg" />
+                              ))}
+
+                              {Array.from({ length: new Date(calendarYear, calendarMonth + 1, 0).getDate() }).map((_, idx) => {
+                                const dayNum = idx + 1;
+                                const formatDateString = (y: number, m: number, d: number) => {
+                                  const mm = String(m + 1).padStart(2, '0');
+                                  const dd = String(d).padStart(2, '0');
+                                  return `${y}-${mm}-${dd}`;
+                                };
+                                const dateStr = formatDateString(calendarYear, calendarMonth, dayNum);
+                                
+                                const logs = c.milkTakenLogs || [];
+                                const logEntry = logs.find(l => l.date === dateStr);
+                                
+                                const defaultCowQty = c.milkType === 'Cow' ? c.quantity : (c.milkType === 'Both' ? (c.cowQuantity ?? 0) : 0);
+                                const defaultBuffaloQty = c.milkType === 'Buffalo' ? c.quantity : (c.milkType === 'Both' ? (c.buffaloQuantity ?? 0) : 0);
+
+                                const cowQty = logEntry ? logEntry.cowQuantityTaken : (c.takenDaily !== false ? defaultCowQty : 0);
+                                const buffaloQty = logEntry ? logEntry.buffaloQuantityTaken : (c.takenDaily !== false ? defaultBuffaloQty : 0);
+                                
+                                const isSkipped = cowQty === 0 && buffaloQty === 0;
+                                const todayStr = new Date().toISOString().split('T')[0];
+                                const isFuture = dateStr > todayStr;
+
+                                return (
+                                  <div
+                                    key={`day-${dayNum}`}
+                                    className={`aspect-square p-1 rounded-xl border flex flex-col justify-between transition-all group relative cursor-pointer ${
+                                      isFuture
+                                        ? 'bg-slate-50/50 border-slate-100 opacity-40 cursor-not-allowed text-slate-350'
+                                        : isSkipped
+                                        ? 'bg-rose-50/70 border-rose-100 hover:border-rose-300 text-rose-800'
+                                        : 'bg-emerald-50/75 border-emerald-100 hover:border-emerald-300 text-emerald-900 shadow-sm'
+                                    }`}
+                                    onClick={() => {
+                                      if (!isFuture) {
+                                        toggleDateDelivery(c.id, dateStr);
+                                      }
+                                    }}
+                                  >
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-[10px] font-extrabold">{dayNum}</span>
+                                      {!isFuture && (
+                                        <span className="text-[9px] font-black">
+                                          {isSkipped ? '❌' : '🥛'}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {!isFuture && (
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-[9px] font-black font-mono">
+                                          {isSkipped ? 'Skip' : `${(cowQty + buffaloQty).toFixed(1)}L`}
+                                        </span>
+                                        
+                                        {/* Micro Adjusters on Hover */}
+                                        {!isSkipped && (
+                                          <div className="absolute inset-x-0 bottom-0.5 hidden group-hover:flex items-center justify-center gap-1 bg-white/95 p-0.5 rounded-lg border border-slate-200/80 shadow-md" onClick={e => e.stopPropagation()}>
+                                            <button
+                                              type="button"
+                                              disabled={cowQty + buffaloQty <= 0.5}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const fieldToAdjust = c.milkType === 'Buffalo' ? 'buffalo' : 'cow';
+                                                updateMilkTakenLog(c.id, dateStr, fieldToAdjust, -0.5);
+                                              }}
+                                              className="h-3.5 w-3.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 rounded text-[10px] flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                            >
+                                              -
+                                            </button>
+                                            <span className="text-[8px] font-bold font-mono">{(cowQty + buffaloQty).toFixed(1)}L</span>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const fieldToAdjust = c.milkType === 'Buffalo' ? 'buffalo' : 'cow';
+                                                updateMilkTakenLog(c.id, dateStr, fieldToAdjust, 0.5);
+                                              }}
+                                              className="h-3.5 w-3.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 rounded text-[10px] flex items-center justify-center font-bold text-slate-600 cursor-pointer"
+                                            >
+                                              +
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          // List View Block
+                          <div className="space-y-4 animate-in fade-in duration-200">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-200/60 pb-3">
                               <div>
                                 <h5 className="text-[11px] font-black uppercase text-slate-400 tracking-wider">🧮 15-Day Delivery Calc Summary</h5>
@@ -1197,12 +1504,13 @@ export default function CustomerMilkRegistry({ storeId }: CustomerMilkRegistryPr
                                 );
                               })}
                             </div>
-                            <p className="text-[9px] text-slate-400 italic font-medium leading-relaxed">
-                              * Tip: Adjustments are automatically saved to subscriber's delivery record profile. You can increase or decrease quantities by 0.5 Liters on any date, or skip a day completely.
-                            </p>
                           </div>
                         )}
-                      </>
+
+                        <p className="text-[9px] text-slate-400 italic font-medium leading-relaxed">
+                          * Tip: Deliveries are synced in real-time. Click any day on the calendar to toggle its status or hover to adjust milk quantities.
+                        </p>
+                      </div>
                     )}
                   </div>
                 );
