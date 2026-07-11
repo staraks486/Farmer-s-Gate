@@ -459,7 +459,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   };
 
   useEffect(() => {
-    loadAllData(true);
+    loadAllData(false);
   }, [appVersion]);
 
   const loadAllDataRef = useRef(loadAllData);

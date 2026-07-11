@@ -1007,74 +1007,79 @@ export async function dbGetInventory(storeId?: string): Promise<InventoryItem[]>
 }
 
 export async function dbAddOrUpdateInventoryItem(item: InventoryItem): Promise<InventoryItem> {
+  const local = localStorage.getItem('fg_inventory');
+  const inventory: InventoryItem[] = local ? JSON.parse(local) : [];
+  const index = inventory.findIndex(i => i.storeId === item.storeId && i.vegetableName.toLowerCase() === item.vegetableName.toLowerCase());
+  const localItem = { ...item, lastUpdated: item.lastUpdated || new Date().toISOString() };
+
+  if (index !== -1) {
+    inventory[index] = { ...inventory[index], ...localItem, lastUpdated: new Date().toISOString() };
+  } else {
+    inventory.push(localItem);
+  }
+  localStorage.setItem('fg_inventory', JSON.stringify(inventory));
+
   const config = getSupabaseConfig();
   if (config.isConnected && supabaseInstance) {
     try {
       const { data, error } = await supabaseInstance
         .from('inventory')
-        .upsert(item)
+        .upsert(index !== -1 ? inventory[index] : localItem)
         .select()
         .single();
       if (error) throw error;
       return data as InventoryItem;
     } catch (e) {
       console.warn('Supabase upsert inventory failed, writing to local storage:', e);
-      dbAddUnsyncedOp('inventory', 'insert', item);
+      dbAddUnsyncedOp('inventory', 'insert', index !== -1 ? inventory[index] : localItem);
     }
   } else {
-    dbAddUnsyncedOp('inventory', 'insert', item);
+    dbAddUnsyncedOp('inventory', 'insert', index !== -1 ? inventory[index] : localItem);
   }
 
-  const inventory = await dbGetInventory();
-  const index = inventory.findIndex(i => i.storeId === item.storeId && i.vegetableName.toLowerCase() === item.vegetableName.toLowerCase());
-  if (index !== -1) {
-    inventory[index] = { ...inventory[index], ...item, lastUpdated: new Date().toISOString() };
-    localStorage.setItem('fg_inventory', JSON.stringify(inventory));
-    return inventory[index];
-  } else {
-    inventory.push(item);
-    localStorage.setItem('fg_inventory', JSON.stringify(inventory));
-    return item;
-  }
+  return index !== -1 ? inventory[index] : localItem;
 }
 
 export async function dbAddOrUpdateInventoryItems(items: InventoryItem[]): Promise<InventoryItem[]> {
+  const local = localStorage.getItem('fg_inventory');
+  const inventory: InventoryItem[] = local ? JSON.parse(local) : [];
+  const updatedItems: InventoryItem[] = [];
+  
+  for (const item of items) {
+    const index = inventory.findIndex(i => i.storeId === item.storeId && i.vegetableName.toLowerCase() === item.vegetableName.toLowerCase());
+    const localItem = { ...item, lastUpdated: item.lastUpdated || new Date().toISOString() };
+    if (index !== -1) {
+      inventory[index] = { ...inventory[index], ...localItem, lastUpdated: new Date().toISOString() };
+      updatedItems.push(inventory[index]);
+    } else {
+      inventory.push(localItem);
+      updatedItems.push(localItem);
+    }
+  }
+  
+  localStorage.setItem('fg_inventory', JSON.stringify(inventory));
+
   const config = getSupabaseConfig();
   if (config.isConnected && supabaseInstance) {
     try {
       const { data, error } = await supabaseInstance
         .from('inventory')
-        .upsert(items)
+        .upsert(updatedItems)
         .select();
       if (error) throw error;
       return data as InventoryItem[];
     } catch (e) {
       console.warn('Supabase bulk upsert inventory failed, writing to local storage:', e);
-      for (const item of items) {
+      for (const item of updatedItems) {
         dbAddUnsyncedOp('inventory', 'insert', item);
       }
     }
   } else {
-    for (const item of items) {
+    for (const item of updatedItems) {
       dbAddUnsyncedOp('inventory', 'insert', item);
     }
   }
 
-  const inventory = await dbGetInventory();
-  const updatedItems: InventoryItem[] = [];
-  
-  for (const item of items) {
-    const index = inventory.findIndex(i => i.storeId === item.storeId && i.vegetableName.toLowerCase() === item.vegetableName.toLowerCase());
-    if (index !== -1) {
-      inventory[index] = { ...inventory[index], ...item, lastUpdated: new Date().toISOString() };
-      updatedItems.push(inventory[index]);
-    } else {
-      inventory.push(item);
-      updatedItems.push(item);
-    }
-  }
-  
-  localStorage.setItem('fg_inventory', JSON.stringify(inventory));
   return updatedItems;
 }
 
