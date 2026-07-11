@@ -275,7 +275,7 @@ export interface AppUserRole {
   role: 'admin' | 'supply_office' | 'ledger' | 'supply_chain' | 'store_pos' | 'staff' | 'customer';
   label: string;
   allowedPortals: ('customer' | 'partner' | 'management')[];
-  allowedTabs?: ('dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'staff' | 'admin' | 'customers')[];
+  allowedTabs?: ('dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'staff' | 'admin' | 'customers' | 'customer-directory')[];
 }
 
 export function getUserRole(email: string | null | undefined): AppUserRole {

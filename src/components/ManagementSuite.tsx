@@ -111,6 +111,7 @@ import AdminPanel from './AdminPanel';
 import ExecutivePortal from './ExecutivePortal';
 import StaffAttendanceManager from './StaffAttendanceManager';
 import CustomerMilkRegistry from './CustomerMilkRegistry';
+import { CustomerDirectory } from './CustomerDirectory';
 
 const DEFAULT_CPANEL_SETTINGS: CpanelSettings = {
   currencySymbol: '₹',
@@ -145,7 +146,10 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   const roleInfo = getUserRole(user?.email);
   let allowedTabs = roleInfo.allowedTabs || ['dashboard', 'headoffice', 'store', 'suppliers', 'accounts', 'admin'];
   if (!isStorePosPortal && !allowedTabs.includes('customers')) {
-    allowedTabs = [...allowedTabs, 'customers'];
+    allowedTabs = [...allowedTabs, 'customers', 'customer-directory'];
+  }
+  if (!isStorePosPortal && !allowedTabs.includes('customer-directory')) {
+    allowedTabs = [...allowedTabs, 'customer-directory'];
   }
   if (isStorePosPortal) {
     allowedTabs = ['store'];
@@ -153,7 +157,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   const defaultTab = allowedTabs[0] || 'dashboard';
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin' | 'staff' | 'customers'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'headoffice' | 'store' | 'suppliers' | 'accounts' | 'admin' | 'staff' | 'customers' | 'customer-directory'>(defaultTab);
 
   useEffect(() => {
     setActiveTab(defaultTab);
@@ -259,6 +263,19 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
   });
   const [cpanelSettings, setCpanelSettings] = useState<CpanelSettings>(DEFAULT_CPANEL_SETTINGS);
   const [dbConfig, setDbConfig] = useState<SupabaseConfig>({ supabaseUrl: '', supabaseAnonKey: '', isConnected: false });
+
+  // General Store Customers State
+  const [generalCustomers, setGeneralCustomers] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('fg_general_customers');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('fg_general_customers', JSON.stringify(generalCustomers));
+  }, [generalCustomers]);
 
   // Real-time Firebase states
   const [firebaseOrders, setFirebaseOrders] = useState<FirebaseOrder[]>([]);
@@ -839,6 +856,7 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
     { id: 'dashboard', name: 'Executive Dashboard', icon: BarChart3 },
     { id: 'headoffice', name: 'HQ Supply Office', icon: Building2 },
     { id: 'customers', name: 'Milk Subscribers', icon: Users },
+    { id: 'customer-directory', name: 'Customer Directory', icon: Users },
     { id: 'store', name: 'Store POS & Retail', icon: StoreIcon },
     { id: 'suppliers', name: 'Supply Chain POs', icon: Truck },
     { id: 'accounts', name: 'Double Entry Ledger', icon: Receipt },
@@ -930,6 +948,8 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
               {activeTab === 'accounts' && 'Profit analysis ledger sheet reflecting cost of goods & miscellaneous bills.'}
               {activeTab === 'staff' && 'Manage employee rosters, cross-branch shifts, and log daily check-ins.'}
               {activeTab === 'admin' && 'Supabase & database connection parameters control board.'}
+              {activeTab === 'customers' && 'Centralized record book for milk subscriptions and rolling billing across all trading branches.'}
+              {activeTab === 'customer-directory' && 'HQ Customer Database, CRM profiles, WhatsApp sales totals, and loyalty point balances.'}
             </p>
           </div>
 
@@ -981,6 +1001,16 @@ export default function ManagementSuite({ user, isStorePosPortal, appVersion }: 
 
           {activeTab === 'customers' && (
             <CustomerMilkRegistry />
+          )}
+
+          {activeTab === 'customer-directory' && (
+            <div className="flex-1 overflow-y-auto w-full">
+              <CustomerDirectory 
+                generalCustomers={generalCustomers}
+                setGeneralCustomers={setGeneralCustomers}
+                storeBills={sales}
+              />
+            </div>
           )}
 
           {activeTab === 'store' && (

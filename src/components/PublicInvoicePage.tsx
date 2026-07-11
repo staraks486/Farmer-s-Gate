@@ -65,19 +65,20 @@ export default function PublicInvoicePage({ invoiceId, onClose }: PublicInvoiceP
       doc.setFont("helvetica", "normal");
       doc.setFontSize(6.5);
       doc.text(`Invoice ID: ${invoice.id}`, 5, 30);
-      doc.text(`Date: ${invoice.date}`, 5, 34);
-      doc.text(`Customer: ${invoice.customerName || 'Retail Customer'}`, 5, 38);
-      doc.line(5, 41, 75, 41);
+      doc.text(`Store ID: ${invoice.storeId || 'store-1'}`, 5, 34);
+      doc.text(`Date: ${invoice.date}`, 5, 38);
+      doc.text(`Customer: ${invoice.customerName || 'Retail Customer'}`, 5, 42);
+      doc.line(5, 45, 75, 45);
       
       doc.setFont("helvetica", "bold");
-      doc.text("Item Summary", 5, 45);
-      doc.text("Qty", 48, 45);
-      doc.text("Rate", 58, 45);
-      doc.text("Total", 75, 45, { align: 'right' });
-      doc.line(5, 47, 75, 47);
+      doc.text("Item Summary", 5, 49);
+      doc.text("Qty", 48, 49);
+      doc.text("Rate", 58, 49);
+      doc.text("Total", 75, 49, { align: 'right' });
+      doc.line(5, 51, 75, 51);
       
       doc.setFont("helvetica", "normal");
-      let currentY = 51;
+      let currentY = 55;
       invoice.items.forEach((item: any) => {
         const namePart = item.vegetableName.split('(')[0].trim();
         doc.text(namePart, 5, currentY);
@@ -213,6 +214,10 @@ export default function PublicInvoicePage({ invoiceId, onClose }: PublicInvoiceP
                 <span className="font-bold text-slate-800">{invoice.customerName}</span>
               </div>
               <div className="text-right">
+                <span className="text-slate-400 font-black uppercase text-[9px] block">Store ID / Code</span>
+                <span className="font-extrabold text-indigo-700 font-mono uppercase">{invoice.storeId || 'store-1'}</span>
+              </div>
+              <div>
                 <span className="text-slate-400 font-black uppercase text-[9px] block">Payment Mode</span>
                 <span className="font-extrabold text-emerald-600 uppercase">{invoice.paymentMode || 'CASH'}</span>
               </div>

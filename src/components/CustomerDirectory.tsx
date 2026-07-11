@@ -18,8 +18,8 @@ import {
 } from 'lucide-react';
 
 interface CustomerDirectoryProps {
-  storeId: string;
-  storeName: string;
+  storeId?: string;
+  storeName?: string;
   generalCustomers: any[];
   setGeneralCustomers: (custs: any[]) => void;
   storeBills: any[];
@@ -33,6 +33,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
   storeBills
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [hqStoreFilter, setHqStoreFilter] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
   
@@ -43,12 +44,38 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+  const [selectedStoreBranchId, setSelectedStoreBranchId] = useState(storeId || 'store-1');
 
   // History detail drawer state
   const [activeHistoryCust, setActiveHistoryCust] = useState<any | null>(null);
 
-  // Filter customers belonging to the current store
-  const branchCustomers = generalCustomers.filter(c => c.storeId === storeId);
+  // Load stores list from cache/localstorage
+  const storesList = React.useMemo(() => {
+    try {
+      const saved = localStorage.getItem('fg_cached_stores') || localStorage.getItem('fg_stores');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      { id: 'store-1', name: "Farmer's Gate - Patiala Model Town" },
+      { id: 'store-2', name: "Farmer's Gate - Patiala Urban Estate" }
+    ];
+  }, []);
+
+  const getStoreNameFromId = (id: string) => {
+    const st = storesList.find(s => s.id === id);
+    return st ? st.name.replace("Farmer's Gate - ", "") : "Default Branch";
+  };
+
+  // Filter customers belonging to the current store or hq filtered store
+  const branchCustomers = React.useMemo(() => {
+    if (storeId) {
+      return generalCustomers.filter(c => c.storeId === storeId);
+    }
+    if (hqStoreFilter !== 'All') {
+      return generalCustomers.filter(c => c.storeId === hqStoreFilter);
+    }
+    return generalCustomers;
+  }, [generalCustomers, storeId, hqStoreFilter]);
 
   // Search filter
   const filteredCustomers = branchCustomers.filter(c => {
@@ -77,6 +104,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
         if (c.id === editingCustomer.id) {
           return {
             ...c,
+            storeId: storeId || selectedStoreBranchId,
             name: name.trim(),
             phone: formattedPhone,
             email: email.trim() || undefined,
@@ -93,7 +121,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
       // Add mode
       const newCustomer = {
         id: `cust-${Date.now()}`,
-        storeId,
+        storeId: storeId || selectedStoreBranchId || 'store-1',
         name: name.trim(),
         phone: formattedPhone,
         email: email.trim() || undefined,
@@ -119,6 +147,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
     setAddress(cust.address || '');
     setNotes(cust.notes || '');
     setLoyaltyPoints(cust.loyaltyPoints || 0);
+    setSelectedStoreBranchId(cust.storeId || 'store-1');
     setShowAddModal(true);
   };
 
@@ -142,6 +171,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
     setAddress('');
     setNotes('');
     setLoyaltyPoints(0);
+    setSelectedStoreBranchId(storeId || 'store-1');
   };
 
   // Helper: Get bills count and total spent for a customer
@@ -172,7 +202,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-emerald-50/40 p-5 rounded-3xl border border-emerald-100">
         <div>
           <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-            <span>👥</span> {storeName} Customer Directory
+            <span>👥</span> {storeName ? `${storeName} ` : "General "}Customer Directory
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             Maintain general store customer profiles, log delivery addresses, and track loyalty point earnings.
@@ -232,7 +262,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-3xs overflow-hidden flex flex-col">
           
           {/* List Toolbar */}
-          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-4">
+          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-md">
               <span className="absolute left-3.5 top-2.5 text-slate-400">
                 <Search className="h-4 w-4" />
@@ -245,10 +275,27 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                 className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder-slate-400"
               />
             </div>
+            {!storeId && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase text-slate-400 whitespace-nowrap">Filter Branch:</span>
+                <select
+                  value={hqStoreFilter}
+                  onChange={(e) => setHqStoreFilter(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
+                >
+                  <option value="All">All Branches</option>
+                  {storesList.map(st => (
+                    <option key={st.id} value={st.id}>
+                      {st.name.replace("Farmer's Gate - ", "")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery('')}
-                className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
+                className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer whitespace-nowrap"
               >
                 Clear Filter
               </button>
@@ -270,6 +317,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 font-black uppercase text-[9px] tracking-wider">
                     <th className="py-3 px-4">Customer Details</th>
+                    {!storeId && <th className="py-3 px-4">Branch</th>}
                     <th className="py-3 px-4">Address & Delivery</th>
                     <th className="py-3 px-4 text-center">Loyalty Balance</th>
                     <th className="py-3 px-4 text-center font-mono">Sales Vol</th>
@@ -308,6 +356,13 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                             </div>
                           </div>
                         </td>
+                        {!storeId && (
+                          <td className="py-3.5 px-4 text-[10.5px]">
+                            <span className="bg-emerald-50 border border-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+                              {getStoreNameFromId(cust.storeId)}
+                            </span>
+                          </td>
+                        )}
                         <td className="py-3.5 px-4 text-[10px] max-w-[200px] truncate text-slate-600">
                           {cust.address ? (
                             <span className="flex items-center gap-1">
@@ -497,6 +552,25 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                   className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
                 />
               </div>
+
+              {!storeId && (
+                <div className="space-y-1">
+                  <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Assign to Store Branch *</label>
+                  <select
+                    required
+                    value={selectedStoreBranchId}
+                    onChange={(e) => setSelectedStoreBranchId(e.target.value)}
+                    className="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-slate-50/50"
+                  >
+                    <option value="">Select a Branch...</option>
+                    {storesList.map(st => (
+                      <option key={st.id} value={st.id}>
+                        {st.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="space-y-1">
                 <label className="block text-[9px] font-extrabold uppercase tracking-wide text-slate-400">Delivery Address (Optional)</label>

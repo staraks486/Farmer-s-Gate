@@ -46,7 +46,6 @@ import StockTransferTab from './StockTransferTab';
 import StockWasteTab from './StockWasteTab';
 import FarmersGateLogo from './FarmersGateLogo';
 import CustomerMilkRegistry from './CustomerMilkRegistry';
-import { CustomerDirectory } from './CustomerDirectory';
 
 interface StoreManagerProps {
   store: Store;
@@ -1566,7 +1565,8 @@ export default function StoreManager({
     const savedBillsStrForCount = localStorage.getItem('fg_bills') || '[]';
     let existingCount = 0;
     try {
-      existingCount = JSON.parse(savedBillsStrForCount).length;
+      const allBills = JSON.parse(savedBillsStrForCount);
+      existingCount = allBills.filter((b: any) => b.storeId === store.id).length;
     } catch {}
 
     const nextInvoiceNum = hqConfig.invoiceStartingNo + existingCount;
@@ -1849,6 +1849,7 @@ export default function StoreManager({
       doc.setTextColor(71, 85, 105); // Slate-600
       doc.text(`Receipt No: ${billToUse.id}`, 140, 24);
       doc.text(`Date: ${billToUse.date}`, 140, 29);
+      doc.text(`Store ID: ${billToUse.storeId || store.id}`, 140, 34);
 
       // Section divider line
       doc.setDrawColor(226, 232, 240);
@@ -2622,10 +2623,10 @@ export default function StoreManager({
     };
 
     syncStoreInventory();
-    // Run every 25 seconds instead of 15 seconds to make the app extra light and fast on mobile/tablet
-    const intervalId = setInterval(syncStoreInventory, 25000);
+    // Run every 5 seconds for instant, lag-free automatic background sync across branches
+    const intervalId = setInterval(syncStoreInventory, 5000);
     return () => clearInterval(intervalId);
-  }, [store?.id]);
+  }, [store?.id, activeSubTab, masterCrops]);
 
   // Quick seed standard items to inventory
   const handleBulkSeedCrops = async () => {
@@ -3026,19 +3027,6 @@ export default function StoreManager({
         </button>
 
         <button
-          id="tab-customers"
-          onClick={() => setActiveSubTab('customers')}
-          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all active:scale-95 duration-100 cursor-pointer ${
-            activeSubTab === 'customers'
-              ? 'border-emerald-600 text-emerald-600 bg-emerald-50/20 font-black'
-              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-          }`}
-        >
-          <span>👥</span>
-          Customer Directory
-        </button>
-
-        <button
           id="tab-sales-history"
           onClick={() => setActiveSubTab('sales-history')}
           className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-all active:scale-95 duration-100 cursor-pointer ${
@@ -3210,19 +3198,6 @@ export default function StoreManager({
       {activeSubTab === 'milk-subscribers' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-200/85 shadow-xs animate-in fade-in duration-300">
           <CustomerMilkRegistry storeId={store.id} />
-        </div>
-      )}
-
-      {/* --- SUB-TAB CONTENT: STORE CUSTOMERS --- */}
-      {activeSubTab === 'customers' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200/85 shadow-xs animate-in fade-in duration-300">
-          <CustomerDirectory 
-            storeId={store.id}
-            storeName={store.name}
-            generalCustomers={generalCustomers}
-            setGeneralCustomers={setGeneralCustomers}
-            storeBills={storeBills}
-          />
         </div>
       )}
 
@@ -4182,7 +4157,7 @@ export default function StoreManager({
                                 const branchSubs = list.filter((c: any) => c.storeId === store.id);
                                 return branchSubs.map((c: any) => (
                                   <option key={c.id} value={c.id}>
-                                    {c.name} ({c.milkType} • {c.quantity}L @ ₹{c.price})
+                                    [{c.id}] {c.name} ({c.milkType} • {c.quantity}L @ ₹{c.price})
                                   </option>
                                 ));
                               } catch {
@@ -4214,61 +4189,7 @@ export default function StoreManager({
                           </div>
                         </div>
 
-                        {/* Interactive Summary: Daily Date, Quantity Taken */}
-                        {selectedSubId && (() => {
-                          try {
-                            const saved = localStorage.getItem('fg_milk_customers');
-                            const list = saved ? JSON.parse(saved) : [];
-                            const found = list.find((c: any) => c.id === selectedSubId);
-                            if (!found) return null;
-                            return (
-                              <div className="bg-emerald-100/40 border border-emerald-150/80 rounded-xl p-3.5 space-y-2 mt-2 text-xs animate-in fade-in duration-200">
-                                <div className="flex justify-between items-center border-b border-emerald-200/50 pb-1.5">
-                                  <span className="text-[9px] font-black uppercase text-emerald-800">📋 Connect Details Summary</span>
-                                  <span className="text-[10px] font-mono text-emerald-700 font-black">
-                                    📅 Daily Date: {new Date().toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-slate-700">
-                                  <div>
-                                    <p className="text-[8px] text-slate-400 uppercase font-black tracking-wider">Subscriber Name</p>
-                                    <p className="font-extrabold text-slate-900">{found.name}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[8px] text-slate-400 uppercase font-black tracking-wider">Quantity Taken</p>
-                                    <p className="font-extrabold text-emerald-800 font-mono">{found.quantity} Liters ({found.milkType})</p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center justify-between pt-1 text-[11px]">
-                                  <span className="text-slate-500 font-semibold">Daily Delivery Toggle:</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const updatedList = list.map((c: any) => {
-                                        if (c.id === found.id) {
-                                          return { ...c, takenDaily: c.takenDaily === false ? true : false };
-                                        }
-                                        return c;
-                                      });
-                                      localStorage.setItem('fg_milk_customers', JSON.stringify(updatedList));
-                                      // Force update
-                                      setSelectedSubId(found.id);
-                                    }}
-                                    className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase cursor-pointer transition-all ${
-                                      found.takenDaily !== false
-                                        ? 'bg-emerald-600 text-slate-950 hover:bg-emerald-500 font-black'
-                                        : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                                    }`}
-                                  >
-                                    {found.takenDaily !== false ? '🥛 Taken Today' : '❌ Skipped Today'}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          } catch {
-                            return null;
-                          }
-                        })()}
+
                       </div>
 
                       {/* Customer Info Form */}

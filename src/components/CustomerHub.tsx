@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { 
   auth, 
+  db,
   getProductsFromFirestore, 
   placeOrderInFirestore, 
   subscribeToCustomerOrders, 
@@ -43,6 +44,7 @@ import {
   rateOrderInFirestore,
   FirebaseOrder
 } from '../lib/firebase';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
@@ -125,6 +127,12 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
   const [socialReviews, setSocialReviews] = useState<CommunityReview[]>(initialReviews);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
 
+  // Order History Lookup state
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyLookupId, setHistoryLookupId] = useState('');
+  const [lookedUpOrders, setLookedUpOrders] = useState<FirebaseOrder[] | null>(null);
+  const [isSearchingHistory, setIsSearchingHistory] = useState(false);
+
   // Indian Cities & Market Regions Switcher
   const [cityToastMsg, setCityToastMsg] = useState<string | null>(null);
   const indianCitiesList = [
@@ -160,6 +168,38 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
   const [customerOrders, setCustomerOrders] = useState<FirebaseOrder[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<FirebaseOrder | null>(null);
   const [customerChatMessage, setCustomerChatMessage] = useState('');
+
+  useEffect(() => {
+    if (isHistoryModalOpen && user) {
+      const emailOrPhone = authPhone || user.email || '';
+      setHistoryLookupId(emailOrPhone);
+      if (emailOrPhone) {
+        setIsSearchingHistory(true);
+        const colRef = collection(db, 'orders');
+        const q = query(
+          colRef, 
+          where('customerPhone', '==', emailOrPhone.trim()), 
+          orderBy('orderDate', 'desc')
+        );
+        getDocs(q).then((snapshot) => {
+          const list: FirebaseOrder[] = [];
+          snapshot.forEach((docSnap) => {
+            list.push({ ...docSnap.data() as FirebaseOrder, id: docSnap.id });
+          });
+          setLookedUpOrders(list);
+          setIsSearchingHistory(false);
+        }).catch(err => {
+          console.error('Error fetching order history:', err);
+          setLookedUpOrders(customerOrders); // fallback
+          setIsSearchingHistory(false);
+        });
+      } else {
+        setLookedUpOrders(customerOrders);
+      }
+    } else if (isHistoryModalOpen && !user) {
+      setLookedUpOrders(null);
+    }
+  }, [isHistoryModalOpen, user, authPhone, customerOrders]);
 
   // Auto-seed and load products
   useEffect(() => {
@@ -582,6 +622,31 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
       return;
     }
     setAppliedCoupon(coupon);
+  };
+
+  // Dynamic Lookup for Customer Order History (Guest + Registered)
+  const handleLookupHistory = () => {
+    const lookupClean = historyLookupId.trim();
+    if (!lookupClean) return;
+    setIsSearchingHistory(true);
+    const colRef = collection(db, 'orders');
+    const q = query(
+      colRef, 
+      where('customerPhone', '==', lookupClean), 
+      orderBy('orderDate', 'desc')
+    );
+    getDocs(q).then((snapshot) => {
+      const list: FirebaseOrder[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push({ ...docSnap.data() as FirebaseOrder, id: docSnap.id });
+      });
+      setLookedUpOrders(list);
+      setIsSearchingHistory(false);
+    }).catch(err => {
+      console.error('Error fetching order history:', err);
+      setIsSearchingHistory(false);
+      setLookedUpOrders([]);
+    });
   };
 
   // Pre-fills a beautifully formatted WhatsApp message containing selected items
@@ -1394,6 +1459,31 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                       >
                         <span className="text-sm">💬</span> Quick Order via WhatsApp
                       </a>
+
+                      {/* View Past Purchases Order History Option */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsHistoryModalOpen(true);
+                        }}
+                        className="w-full bg-emerald-50 hover:bg-emerald-100/80 text-emerald-800 font-extrabold py-2.5 rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer border border-emerald-200/40"
+                      >
+                        📜 View Order History
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('track');
+                          setTimeout(() => {
+                            const elem = document.getElementById('previous-purchases-section');
+                            if (elem) elem.scrollIntoView({ behavior: 'smooth' });
+                          }, 100);
+                        }}
+                        className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-slate-200"
+                      >
+                        📜 View Sourced Order History & Receipts
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1614,6 +1704,133 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
               ) : (
                 <div className="text-center py-12 text-slate-400">
                   <p className="text-xs font-bold uppercase">Select a ticket from the selector dropdown to track live status.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Dedicated Previous Purchases & Order History Card */}
+            <div id="previous-purchases-section" className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-black text-slate-800 text-sm uppercase flex items-center gap-1.5">
+                    📜 Order History & Previous Purchases
+                  </h3>
+                  <p className="text-[10.5px] text-slate-400 font-bold uppercase mt-0.5">
+                    Track details, rate quality, and instantly repeat past purchases
+                  </p>
+                </div>
+                {customerOrders.length > 0 && (
+                  <span className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-black uppercase">
+                    {customerOrders.length} Orders Sourced
+                  </span>
+                )}
+              </div>
+
+              {!user ? (
+                <div className="bg-slate-50 rounded-2xl p-6 text-center border border-dashed border-slate-300 space-y-4">
+                  <span className="text-3xl block">🔒</span>
+                  <h4 className="text-xs font-black text-slate-700 uppercase">Secure Order Tracker</h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Sign in to view your complete order logs, download official tax receipts, submit rating surveys, and enjoy 1-click reordering.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('profile')}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10.5px] px-5 py-2.5 rounded-xl cursor-pointer uppercase tracking-wider transition-all"
+                  >
+                    Go to Account Sign In
+                  </button>
+                </div>
+              ) : customerOrders.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 italic text-xs">
+                  <p>You haven't placed any orders yet. Fresh farm veggies are just a few taps away!</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {customerOrders.map((order) => (
+                    <div 
+                      key={order.id} 
+                      className="border border-slate-200 rounded-2xl p-4 hover:border-emerald-500/25 transition-all space-y-3 bg-slate-50/30 text-left text-xs"
+                    >
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-slate-800 text-xs font-mono">Order #{order.orderNumber}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-wider ${
+                              order.status === 'Pending' ? 'bg-amber-100 text-amber-800' :
+                              order.status === 'Packing' ? 'bg-blue-100 text-blue-800' :
+                              order.status === 'On The Way' ? 'bg-emerald-100 text-emerald-800' :
+                              'bg-slate-100 text-slate-700'
+                            }`}>
+                              {order.status}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                            Placed on {order.createdAt ? new Date(order.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'Recent Date'}
+                          </span>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="font-black text-emerald-700 text-xs block">Total: ₹{order.finalPaid || order.totalAmount || '0'}</span>
+                          <span className="text-[9px] text-slate-400 font-bold block">Paid via {order.paymentMethod || 'COD'}</span>
+                        </div>
+                      </div>
+
+                      {/* Items list detail */}
+                      <div className="space-y-1">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block text-left">Sourced Items</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {order.items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-xs p-2 bg-white rounded-xl border border-slate-200">
+                              <span className="font-semibold text-slate-700">{item.vegetableName}</span>
+                              <span className="text-[10.5px] font-bold text-slate-500">{item.quantity} Qty</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedOrder(order);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="px-3 py-1.5 bg-white border border-slate-200 hover:border-emerald-500/20 text-slate-700 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          📍 Live Track Status
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadInvoice(order)}
+                          className="px-3 py-1.5 bg-white border border-slate-200 hover:border-emerald-500/20 text-slate-700 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          📥 PDF Invoice
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newCart = { ...cart };
+                            order.items.forEach(it => {
+                              const foundProd = products.find(p => p.id === it.id || p.vegetableName.toLowerCase() === it.vegetableName.toLowerCase());
+                              if (foundProd) {
+                                newCart[foundProd.id] = (newCart[foundProd.id] || 0) + it.quantity;
+                              }
+                            });
+                            setCart(newCart);
+                            setActiveTab('shop');
+                            alert("🚀 Basket Updated! Past order items have been added to your shopping bag.");
+                          }}
+                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer flex items-center gap-1 border border-emerald-200"
+                        >
+                          🔁 Repeat Order
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -1898,6 +2115,163 @@ export default function CustomerHub({ changePortal, appVersion }: { changePortal
                   className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-emerald-950"
                 >
                   Confirm Selection
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 📜 Customer Order & Purchase History Modal */}
+      <AnimatePresence>
+        {isHistoryModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl max-w-xl w-full relative space-y-6 text-left animate-scale-in max-h-[85vh] flex flex-col"
+            >
+              {/* Close Button */}
+              <button 
+                type="button"
+                onClick={() => {
+                  setIsHistoryModalOpen(false);
+                  setLookedUpOrders(null);
+                }}
+                className="absolute top-4 right-4 h-8 w-8 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-full flex items-center justify-center font-black cursor-pointer text-xs transition-colors z-10"
+              >
+                ✕
+              </button>
+
+              <div className="space-y-1 shrink-0">
+                <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 flex items-center gap-2">
+                  📜 Your Purchases & Order History
+                </h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  View past receipts, dispatch tickets, and delivery statuses
+                </p>
+              </div>
+
+              {/* Lookup Search Input */}
+              <div className="p-4 bg-slate-50 border border-slate-150 rounded-2xl shrink-0 space-y-2.5">
+                <label className="block text-[9.5px] font-black uppercase text-slate-500 tracking-wider">
+                  🔍 Past Order Lookup (Guest or Registered Phone/Email)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={historyLookupId}
+                    onChange={(e) => setHistoryLookupId(e.target.value)}
+                    placeholder="Enter phone or email to load purchases..."
+                    className="flex-1 text-xs font-semibold rounded-xl bg-white border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleLookupHistory}
+                    disabled={isSearchingHistory || !historyLookupId.trim()}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-[11px] uppercase tracking-wider px-4 rounded-xl cursor-pointer shadow-3xs transition-all flex items-center gap-1.5 shrink-0"
+                  >
+                    {isSearchingHistory ? 'Fetching...' : 'Lookup'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Order List container */}
+              <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-[250px]">
+                {(() => {
+                  const ordersToDisplay = lookedUpOrders !== null ? lookedUpOrders : (user ? customerOrders : []);
+                  
+                  if (isSearchingHistory) {
+                    return (
+                      <div className="text-center py-12 text-slate-400 italic text-xs">
+                        Searching secure dispatch logs...
+                      </div>
+                    );
+                  }
+
+                  if (ordersToDisplay.length === 0) {
+                    return (
+                      <div className="text-center py-12 space-y-2">
+                        <span className="text-2xl block">🛍️</span>
+                        <p className="text-slate-400 italic text-xs">No registered orders found for this identifier.</p>
+                        <p className="text-[10px] text-slate-400 max-w-xs mx-auto font-bold uppercase">
+                          Make sure to search using the exact mobile number or email used during your storefront checkouts.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return ordersToDisplay.map((order) => {
+                    const formattedDate = new Date(order.orderDate).toLocaleString('en-IN', {
+                      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                    });
+
+                    return (
+                      <div key={order.id} className="border border-slate-200 bg-slate-50/20 rounded-2xl p-4 space-y-3.5 hover:border-emerald-500/30 transition-all">
+                        {/* Title and status row */}
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-xs font-black text-slate-800 uppercase block">Ticket #{order.orderNumber}</span>
+                            <span className="text-[10px] text-slate-400 font-mono font-medium">{formattedDate}</span>
+                          </div>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                            order.status === 'Delivered' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                            order.status === 'Cancelled' ? 'bg-red-100 text-red-800 border border-red-200' :
+                            'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+
+                        {/* Items detailed list */}
+                        <div className="bg-white rounded-xl border border-slate-100 p-2.5 text-xs space-y-1.5 font-medium text-slate-600">
+                          {order.items.map((it, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-[11px]">
+                              <span>{it.emoji || '🥦'} {it.vegetableName} <strong className="text-slate-400 font-normal">x {it.quantity}</strong></span>
+                              <span className="font-mono text-slate-700">₹{it.totalPrice?.toFixed(1) || (it.pricePerKg * it.quantity).toFixed(1)}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Totals & actions row */}
+                        <div className="flex justify-between items-center border-t border-slate-100/80 pt-2.5">
+                          <div>
+                            <span className="text-[9px] text-slate-400 font-bold uppercase block">Paid Amount</span>
+                            <span className="text-xs font-black text-emerald-700 font-mono">₹{order.finalPaid?.toFixed(2) || order.totalAmount?.toFixed(2)}</span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedOrder(order);
+                                setActiveTab('track');
+                                setIsHistoryModalOpen(false);
+                              }}
+                              className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[10px] uppercase tracking-wider px-3 py-2 rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-3xs"
+                            >
+                              🚚 Track live status
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-slate-100 pt-4 flex justify-end shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsHistoryModalOpen(false);
+                    setLookedUpOrders(null);
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/50 font-extrabold px-5 py-2 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  Close History
                 </button>
               </div>
             </motion.div>
