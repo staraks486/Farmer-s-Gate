@@ -1,0 +1,379 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Satisfy&family=Dancing+Script:wght@700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Custom fade in and staggered entry animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Smooth custom scrollbars for logs and grids */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #e4e4e7;
+  border-radius: 9999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #d4d4d8;
+}
+
+/* Premium Dark Theme Styles */
+.dark-theme {
+  color: #f1f5f9 !important;
+}
+
+.dark-theme header,
+.dark-theme aside,
+.dark-theme .bg-white,
+.dark-theme .bg-slate-50\/50,
+.dark-theme .bg-emerald-50\/10 {
+  background-color: #111d17 !important;
+  color: #f1f5f9 !important;
+  border-color: #1a2e24 !important;
+}
+
+.dark-theme main.bg-slate-50,
+.dark-theme .bg-slate-50,
+.dark-theme .bg-zinc-50 {
+  background-color: #0b130f !important;
+  color: #f1f5f9 !important;
+}
+
+.dark-theme h1,
+.dark-theme h2,
+.dark-theme h3,
+.dark-theme h4,
+.dark-theme h5,
+.dark-theme h6,
+.dark-theme .text-slate-900,
+.dark-theme .text-zinc-900,
+.dark-theme .text-slate-800,
+.dark-theme .text-slate-700,
+.dark-theme .text-zinc-800 {
+  color: #f8fafc !important;
+}
+
+.dark-theme p,
+.dark-theme span:not(.font-mono),
+.dark-theme .text-slate-600,
+.dark-theme .text-zinc-600,
+.dark-theme .text-slate-500,
+.dark-theme .text-zinc-500 {
+  color: #cbd5e1 !important;
+}
+
+.dark-theme .text-slate-400,
+.dark-theme .text-zinc-400 {
+  color: #94a3b8 !important;
+}
+
+.dark-theme .border,
+.dark-theme .border-b,
+.dark-theme .border-t,
+.dark-theme .border-l,
+.dark-theme .border-r,
+.dark-theme .border-slate-200,
+.dark-theme .border-slate-100,
+.dark-theme .border-slate-200\/60,
+.dark-theme .border-zinc-200,
+.dark-theme .border-zinc-200\/60 {
+  border-color: #1a2e24 !important;
+}
+
+.dark-theme input,
+.dark-theme select,
+.dark-theme textarea {
+  background-color: #0b130f !important;
+  color: #f8fafc !important;
+  border-color: #15803d !important;
+}
+
+.dark-theme input::placeholder {
+  color: #64748b !important;
+}
+
+.dark-theme table th {
+  background-color: #1a2e24 !important;
+  color: #a7f3d0 !important;
+  border-color: #1a2e24 !important;
+}
+
+.dark-theme table td {
+  border-color: #1a2e24 !important;
+  color: #f1f5f9 !important;
+}
+
+.dark-theme .bg-slate-100,
+.dark-theme .bg-zinc-100,
+.dark-theme .bg-slate-150 {
+  background-color: #1a2e24 !important;
+  color: #a7f3d0 !important;
+  border-color: #15803d !important;
+}
+
+.dark-theme .text-emerald-600,
+.dark-theme .text-emerald-700 {
+  color: #4ade80 !important;
+}
+
+.dark-theme .text-emerald-800 {
+  color: #a7f3d0 !important;
+}
+
+.dark-theme .bg-emerald-50 {
+  background-color: #112d1e !important;
+  color: #4ade80 !important;
+  border-color: #15803d !important;
+}
+
+.dark-theme .bg-emerald-600 {
+  background-color: #16a34a !important;
+  color: #022c22 !important;
+}
+
+.dark-theme .hover\:bg-slate-50:hover,
+.dark-theme .hover\:bg-zinc-50:hover {
+  background-color: #1a2e24 !important;
+}
+
+.dark-theme .bg-emerald-950 {
+  background-color: #080d0a !important;
+}
+
+/* Highly optimized Smart Device Lite Mode */
+.light-device-mode {
+  font-size: 14px !important;
+}
+
+.light-device-mode * {
+  transition: none !important;
+  animation: none !important;
+  text-shadow: none !important;
+}
+
+.light-device-mode .shadow-lg,
+.light-device-mode .shadow-xl,
+.light-device-mode .shadow-2xl,
+.light-device-mode .shadow-3xl,
+.light-device-mode .shadow-sm,
+.light-device-mode .shadow-xs,
+.light-device-mode .shadow-md {
+  box-shadow: none !important;
+  border-width: 1px !important;
+  border-color: #cbd5e1 !important;
+}
+
+.light-device-mode input,
+.light-device-mode select,
+.light-device-mode button {
+  border-radius: 6px !important;
+}
+
+.light-device-mode .bg-white,
+.light-device-mode .bg-slate-50,
+.light-device-mode .bg-slate-100 {
+  background-color: #ffffff !important;
+  color: #1e293b !important;
+}
+
+.light-device-mode .border-emerald-600 {
+  border-color: #059669 !important;
+}
+
+.light-device-mode .bg-emerald-50\/20,
+.light-device-mode .bg-emerald-100,
+.light-device-mode .bg-emerald-50 {
+  background-color: #f0fdf4 !important;
+  color: #166534 !important;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ==========================================
+   Dedicated Print-Friendly Media Query
+   ========================================== */
+@media print {
+  /* Set clean black and white baseline on body */
+  body, html {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    font-size: 11px !important;
+    line-height: 1.4 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Automatically hide interactive, UI, and navigation components */
+  header,
+  footer,
+  aside,
+  nav,
+  button,
+  input,
+  select,
+  textarea,
+  iframe,
+  .no-print,
+  .print-hidden,
+  .print\:hidden,
+  [role="dialog"],
+  [role="status"],
+  .toast,
+  .fixed,
+  .sticky,
+  .absolute:not(#print-receipt-area) {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
+
+  /* Optimize layout container for the invoice / receipt views to fill the page */
+  .print-container,
+  #print-receipt-area,
+  .print-full-width {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    float: none !important;
+  }
+
+  /* Ensure deep nested elements inside the receipt/invoice remain visible */
+  #print-receipt-area *,
+  .print-container * {
+    visibility: visible !important;
+    color: #000000 !important;
+    background-color: transparent !important;
+  }
+
+  /* High contrast typography adjustments for solid printing legibility */
+  h1, h2, h3, h4, h5, h6 {
+    color: #000000 !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+  }
+
+  /* Print-friendly custom receipt dashes and borders */
+  .border-dashed,
+  .border-dotted {
+    border-style: dashed !important;
+    border-color: #000000 !important;
+    border-width: 1px !important;
+  }
+
+  .border,
+  .border-t,
+  .border-b,
+  .border-l,
+  .border-r {
+    border-color: #000000 !important;
+    border-width: 1px !important;
+  }
+
+  /* Ensure exact background colors / styling are preserved for tags where wanted */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+  }
+
+  /* Prevent page split / breaks in the middle of invoice or receipt blocks */
+  .print-container,
+  #print-receipt-area,
+  tr,
+  img {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Ensure tables use professional grid borders and auto-wrap text */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  table th {
+    font-weight: bold !important;
+    border-bottom: 2px solid #000000 !important;
+    background-color: #f1f5f9 !important;
+    color: #000000 !important;
+  }
+
+  table td {
+    border-bottom: 1px solid #e2e8f0 !important;
+    color: #000000 !important;
+  }
+
+  /* Explicit receipt print format optimizations */
+  .receipt-title {
+    font-size: 18px !important;
+    font-weight: 800 !important;
+    text-align: center !important;
+    letter-spacing: 0.05em !important;
+  }
+
+  .receipt-meta {
+    font-size: 10px !important;
+    text-align: center !important;
+    margin-bottom: 15px !important;
+  }
+}
+
+
+

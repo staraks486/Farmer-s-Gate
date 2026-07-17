@@ -1,0 +1,72 @@
+--- src/lib/farmersGateDb.ts
++++ src/lib/farmersGateDb.ts
+@@ -15,6 +15,16 @@
+ import { db, handleFirestoreError, OperationType } from './firebase';
+ import { MilkCustomer } from '../types';
+ 
++// Helper to strip undefined values which Firestore doesn't support
++export const stripUndefined = (obj: any): any => {
++  if (obj === undefined) return null;
++  if (obj === null || typeof obj !== 'object') return obj;
++  if (Array.isArray(obj)) return obj.map(stripUndefined);
++  return Object.keys(obj).reduce((acc: any, key) => {
++    if (obj[key] !== undefined) acc[key] = stripUndefined(obj[key]);
++    return acc;
++  }, {});
++};
++
+ // Interfaces
+ export interface StockTransfer {
+   id?: string;
+@@ -62,7 +72,7 @@
+   const path = 'transfers';
+   try {
+     const colRef = collection(db, path);
+-    const docRef = await addDoc(colRef, {
++    const docRef = await addDoc(colRef, stripUndefined({
+       ...transfer,
+       createdAt: new Date().toISOString()
+-    });
++    }));
+     return docRef.id;
+   } catch (err) {
+@@ -114,7 +124,7 @@
+   const path = 'waste';
+   try {
+     const colRef = collection(db, path);
+-    const docRef = await addDoc(colRef, {
++    const docRef = await addDoc(colRef, stripUndefined({
+       ...waste,
+       createdAt: new Date().toISOString()
+-    });
++    }));
+     return docRef.id;
+   } catch (err) {
+@@ -145,7 +155,7 @@
+   const path = 'internal_chat';
+   try {
+     const colRef = collection(db, path);
+-    const docRef = await addDoc(colRef, {
++    const docRef = await addDoc(colRef, stripUndefined({
+       ...msg,
+       timestamp: new Date().toISOString()
+-    });
++    }));
+     return docRef.id;
+   } catch (err) {
+@@ -176,14 +186,6 @@
+     const docRef = doc(db, 'milk_customers', customer.id);
+     
+-    const stripUndefined = (obj: any): any => {
+-      if (obj === undefined) return null;
+-      if (obj === null || typeof obj !== 'object') return obj;
+-      if (Array.isArray(obj)) return obj.map(stripUndefined);
+-      return Object.keys(obj).reduce((acc: any, key) => {
+-        if (obj[key] !== undefined) acc[key] = stripUndefined(obj[key]);
+-        return acc;
+-      }, {});
+-    };
+-
+     const cleanCustomer = stripUndefined(customer);
+     await setDoc(docRef, cleanCustomer);
+   } catch (err) {

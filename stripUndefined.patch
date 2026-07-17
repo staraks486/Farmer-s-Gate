@@ -1,0 +1,22 @@
+--- src/lib/farmersGateDb.ts
++++ src/lib/farmersGateDb.ts
+@@ -118,7 +118,17 @@
+ export async function saveMilkCustomerToDb(customer: MilkCustomer) {
+   const path = `milk_customers/${customer.id}`;
+   try {
++    // Deep strip undefined values to avoid Firestore errors
++    const stripUndefined = (obj: any): any => {
++      if (obj === undefined) return null;
++      if (obj === null || typeof obj !== 'object') return obj;
++      if (Array.isArray(obj)) return obj.map(stripUndefined);
++      return Object.keys(obj).reduce((acc: any, key) => {
++        if (obj[key] !== undefined) acc[key] = stripUndefined(obj[key]);
++        return acc;
++      }, {});
++    };
+     const docRef = doc(db, 'milk_customers', customer.id);
+-    await setDoc(docRef, customer);
++    await setDoc(docRef, stripUndefined(customer));
+   } catch (err) {
+     handleFirestoreError(err, OperationType.UPDATE, path);
+   }

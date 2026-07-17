@@ -1,0 +1,273 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Represents an organic crop item in the master catalogue",
+      "type": "object",
+      "properties": {
+        "vegetableName": { "type": "string", "description": "Name of the crop" },
+        "category": { "type": "string", "enum": ["Vegetable", "Fruit", "Herbs", "Grocery", "Other"], "description": "Product category classification" },
+        "sellingPrice": { "type": "number", "description": "Outward shelf retail price in Rupees" },
+        "costPrice": { "type": "number", "description": "Procurement cost in Rupees" },
+        "stock": { "type": "number", "description": "HQ or farming depot inventory stockpile" },
+        "unit": { "type": "string", "description": "Unit of measurement (e.g., kg, bunch, box, pcs)" },
+        "emoji": { "type": "string", "description": "Visual illustrative symbol" },
+        "minStockThreshold": { "type": "number", "description": "Alert triggering threshold for local outlets" }
+      },
+      "required": ["vegetableName", "category", "sellingPrice", "costPrice", "stock", "unit", "emoji", "minStockThreshold"]
+    },
+    "FirebaseOrder": {
+      "title": "FirebaseOrder",
+      "description": "Customer home delivery or pick-up order entry",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerAddress": { "type": "string" },
+        "items": {
+          "type": "array",
+          "description": "Items in the order"
+        },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Pending", "Dispatched", "Completed", "Cancelled"] },
+        "orderDate": { "type": "string" },
+        "storeId": { "type": "string" },
+        "storeName": { "type": "string" },
+        "rating": { "type": "number" },
+        "ratingComment": { "type": "string" }
+      },
+      "required": ["orderNumber", "customerName", "customerPhone", "customerAddress", "items", "totalAmount", "status", "orderDate", "storeId", "storeName"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "Broadcast notifications and alerts distributed to all store outlets",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Notification type (e.g., new_product, alert, low_stock)" },
+        "title": { "type": "string", "description": "Summary of the broadcast notification" },
+        "message": { "type": "string", "description": "Full details of the added crop item or announcement" },
+        "timestamp": { "type": "string", "description": "ISO timestamp of publication" },
+        "severity": { "type": "string", "enum": ["info", "warning", "error", "success"], "description": "Display importance tier" },
+        "linkToView": { "type": "string", "description": "Optional navigation hint" }
+      },
+      "required": ["type", "title", "message", "timestamp", "severity"]
+    },
+    "StockTransfer": {
+      "title": "StockTransfer",
+      "description": "Inventory transfer request between local store outlets",
+      "type": "object",
+      "properties": {
+        "challanId": { "type": "string" },
+        "senderStoreId": { "type": "string" },
+        "senderStoreName": { "type": "string" },
+        "receiverStoreId": { "type": "string" },
+        "receiverStoreName": { "type": "string" },
+        "itemName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "approxValue": { "type": "number" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "createdAt": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "receiveMessage": { "type": "string" }
+      },
+      "required": ["challanId", "senderStoreId", "senderStoreName", "receiverStoreId", "receiverStoreName", "itemName", "quantity", "approxValue", "status", "createdAt"]
+    },
+    "StockWaste": {
+      "title": "StockWaste",
+      "description": "Stock waste/spoilage reporting log",
+      "type": "object",
+      "properties": {
+        "storeId": { "type": "string" },
+        "storeName": { "type": "string" },
+        "itemName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "approxValue": { "type": "number" },
+        "reason": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["storeId", "storeName", "itemName", "quantity", "approxValue", "reason", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Internal chat room message with optional file uploads",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "fileData": { "type": "string" }
+      },
+      "required": ["senderId", "senderName", "message", "timestamp"]
+    },
+    "Store": {
+      "title": "Store",
+      "description": "A physical retail branch or warehouse",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "manager": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string", "enum": ["Active", "Inactive"] },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "version": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "A record of a customer transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "vegetableName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "pricePerKg": { "type": "number" },
+        "totalPrice": { "type": "number" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "saleDate": { "type": "string" },
+        "paymentMode": { "type": "string" }
+      },
+      "required": ["id", "storeId", "vegetableName", "quantity", "totalPrice"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Stock procurement from suppliers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "vegetableName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "costPerKg": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "supplierName": { "type": "string" },
+        "purchaseDate": { "type": "string" }
+      },
+      "required": ["id", "storeId", "vegetableName", "quantity", "totalCost"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Current stock levels for a produce item in a specific store",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "vegetableName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "minStockThreshold": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "lastUpdated": { "type": "string" }
+      },
+      "required": ["id", "storeId", "vegetableName", "quantity"]
+    },
+    "Requirement": {
+      "title": "Requirement",
+      "description": "A request for stock or resources",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "vegetableName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High", "Critical"] },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Fulfilled", "Cancelled"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "storeId", "vegetableName", "quantity"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "A vendor providing produce",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "MasterCrop": {
+      "title": "Master Crop",
+      "description": "Global reference for produce types and pricing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "vegetableName": { "type": "string" },
+        "category": { "type": "string" },
+        "minStockThreshold": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "sellingPrice": { "type": "number" }
+      },
+      "required": ["id", "vegetableName"]
+    }
+  },
+  "firestore": {
+    "products": {
+      "schema": "Product",
+      "description": "Master catalogue containing fresh crops sourced from registered farmers"
+    },
+    "orders": {
+      "schema": "FirebaseOrder",
+      "description": "Consolidated customer orders synchronized across regions"
+    },
+    "notifications": {
+      "schema": "AppNotification",
+      "description": "Real-time global announcements and new crop dispatch notifications for branch outlets"
+    },
+    "transfers": {
+      "schema": "StockTransfer",
+      "description": "Inter-store inventory transfers"
+    },
+    "waste": {
+      "schema": "StockWaste",
+      "description": "Detailed log of crop spoilage/waste at various stores"
+    },
+    "internal_chat": {
+      "schema": "ChatMessage",
+      "description": "Real-time multi-store chat channels for internal staff communication"
+    },
+    "stores": {
+      "schema": "Store",
+      "description": "Collection of retail branches"
+    },
+    "sales": {
+      "schema": "Sale",
+      "description": "Global sales transactions"
+    },
+    "purchases": {
+      "schema": "Purchase",
+      "description": "Global stock purchases"
+    },
+    "inventory": {
+      "schema": "InventoryItem",
+      "description": "Real-time stock levels across all stores"
+    },
+    "requirements": {
+      "schema": "Requirement",
+      "description": "Branch-level stock requirements"
+    },
+    "suppliers": {
+      "schema": "Supplier",
+      "description": "Registered vendors"
+    },
+    "master_crops": {
+      "schema": "MasterCrop",
+      "description": "Global produce catalog"
+    }
+  }
+}

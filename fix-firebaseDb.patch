@@ -1,0 +1,19 @@
+--- src/lib/firebase.ts
++++ src/lib/firebase.ts
+@@ -109,6 +109,16 @@
+   }
+ };
+ 
++export const stripUndefined = (obj: any): any => {
++  if (obj === undefined) return null;
++  if (obj === null || typeof obj !== 'object') return obj;
++  if (Array.isArray(obj)) return obj.map(stripUndefined);
++  return Object.keys(obj).reduce((acc: any, key) => {
++    if (obj[key] !== undefined) acc[key] = stripUndefined(obj[key]);
++    return acc;
++  }, {});
++};
++
+ // Seeder
+ export async function seedProductsToFirestore(products: any[]) {
+   if (!isFirebaseSyncEnabled()) return;

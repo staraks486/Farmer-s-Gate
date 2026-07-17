@@ -1,0 +1,62 @@
+[
+  {
+    "id": "store-1",
+    "name": "Farmer's Gate - Patiala Model Town",
+    "location": "Model Town, Patiala, Punjab",
+    "whatsappNumber": "919876543210",
+    "isActive": true,
+    "createdAt": "2026-07-08T08:14:12.779Z",
+    "password": "patiala123",
+    "version": 1
+  },
+  {
+    "id": "store-2",
+    "name": "Farmer's Gate - Patiala Urban Estate",
+    "location": "Urban Estate Phase II, Patiala, Punjab",
+    "whatsappNumber": "919876543211",
+    "isActive": false,
+    "createdAt": "2026-07-08T08:14:12.780Z",
+    "password": "urban123",
+    "version": 2
+  },
+  {
+    "id": "store-1783234592058",
+    "name": "Farmer's Gate - Model town",
+    "location": "Bhupindra Road, Patiala, Punjab",
+    "whatsappNumber": "9616417485",
+    "isActive": true,
+    "createdAt": "2026-07-05T06:56:32.058+00:00",
+    "password": "modeltown123",
+    "version": 1
+  },
+  {
+    "id": "store-1783237851883",
+    "name": "Farmer's Gate - Sirhind Road",
+    "location": "Sirhind Road, Patiala, Punjab",
+    "whatsappNumber": "9616417485",
+    "isActive": true,
+    "createdAt": "2026-07-05T07:50:51.883+00:00",
+    "password": "sirhind123",
+    "version": 1
+  },
+  {
+    "id": "store-1783236752708",
+    "name": "Farmer's Gate - Truck",
+    "location": "Civil Line, Patiala, Punjab",
+    "whatsappNumber": "9616417485",
+    "isActive": true,
+    "createdAt": "2026-07-05T07:32:32.708+00:00",
+    "password": "truck123",
+    "version": 1
+  },
+  {
+    "id": "store-3",
+    "name": "Farmer's Gate - Bangalore Indiranagar",
+    "location": "100 Feet Rd, Indiranagar, Bangalore",
+    "whatsappNumber": "919876543212",
+    "isActive": true,
+    "createdAt": "2026-06-30T09:43:30.030Z",
+    "password": "indira123",
+    "version": 1
+  }
+]

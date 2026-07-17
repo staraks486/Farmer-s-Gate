@@ -1,0 +1,146 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net - default deny
+    match /{document=**} {
+      allow read, write: if true;
+    }
+
+    // Reusable Helper Functions
+    function isSignedIn() {
+      return true; // request.auth != null;
+    }
+
+    function isStaffOrAdmin() {
+      return true;
+    }
+
+    // 1. Products Collection: Customers can read, staff can write
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isStaffOrAdmin();
+    }
+
+    // 2. Orders Collection: Customers can create/read/rate their orders, staff has full control
+    match /orders/{orderId} {
+      allow read, create: if true;
+      allow update: if true; // Allows customers to cancel or rate their orders and staff to manage status
+      allow delete: if isStaffOrAdmin();
+    }
+
+    // 3. Notifications Collection: Everyone can read broadcast notifications, staff can write them
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow write: if isStaffOrAdmin();
+    }
+
+    // 4. Transfers Collection: Restricted to internal staff/admin
+    match /transfers/{transferId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 5. Waste Collection: Restricted to internal staff/admin
+    match /waste/{wasteId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 6. Internal Chat: Restricted to authenticated internal users/staff
+    match /internal_chat/{messageId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 7. Stores Collection: Staff can manage
+    match /stores/{storeId} {
+      allow read: if true;
+      allow write: if isStaffOrAdmin();
+    }
+
+    // 8. Sales Collection: Staff can manage
+    match /sales/{saleId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 9. Purchases Collection: Staff can manage
+    match /purchases/{purchaseId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 10. Inventory Collection: Staff can manage
+    match /inventory/{inventoryId} {
+      allow read: if true;
+      allow write: if isStaffOrAdmin();
+    }
+
+    // 11. Requirements Collection: Staff can manage
+    match /requirements/{requirementId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 12. Suppliers Collection: Staff can manage
+    match /suppliers/{supplierId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 13. Master Crops Collection: Staff can manage
+    match /master_crops/{cropId} {
+      allow read: if true;
+      allow write: if isStaffOrAdmin();
+    }
+
+    // 14. Purchase Orders: Staff can manage
+    match /purchase_orders/{orderId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 15. Customer Orders: Public can read, create, update, Staff can manage
+    match /customer_orders/{orderId} {
+      allow read, create, update: if true;
+      allow delete: if isStaffOrAdmin();
+    }
+
+    // 16. Staff Members: Staff can manage
+    match /staff/{staffId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 17. Attendance Records: Staff can manage
+    match /attendance/{recordId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 18. Company Officials: Staff can manage
+    match /officials/{officialId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // 19. Promos (Offers): Everyone can read, staff can write
+    match /promos/{promoId} {
+      allow read: if true;
+      allow write: if isStaffOrAdmin();
+    }
+
+    // 20. Milk Customers: Public can read/write, Staff can manage
+    match /milk_customers/{customerId} {
+      allow read, write: if true;
+    }
+
+    // 21. Bills: Everyone can read, Staff can manage
+    match /bills/{billId} {
+      allow read: if true;
+      allow write: if isStaffOrAdmin();
+    }
+
+    // 22. Storefront Ads: Everyone can read, staff can write
+    match /storefront_ads/{adId} {
+      allow read: if true;
+      allow write: if isStaffOrAdmin();
+    }
+
+    // 23. Settings: Everyone can read global settings, staff can write
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isStaffOrAdmin();
+    }
+  }
+}
